@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import styles from "./auth.module.css";
 import { Logo } from "../components/Logo";
 import { useAuth } from "../auth/AuthProvider";
@@ -90,6 +90,11 @@ export function LoginPage() {
             {errors.password ? (
               <p className={styles.error} id="password-error">
                 {errors.password.message}
+              </p>
+            ) : null}
+            {!mfaRequired ? (
+              <p className={styles.subtitle} style={{ marginTop: "var(--space-1)", marginBottom: 0 }}>
+                <Link to="/forgot-password">Forgot password?</Link>
               </p>
             ) : null}
           </div>

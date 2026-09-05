@@ -131,6 +131,7 @@ type UserRepository interface {
 	UpdatePasswordHash(ctx context.Context, userID uuid.UUID, hash string, at time.Time) error
 	UpdateLastLogin(ctx context.Context, userID uuid.UUID, at time.Time) error
 	SetMFAEnabled(ctx context.Context, userID uuid.UUID, enabled bool) error
+	ListByOrganisation(ctx context.Context, organisationID uuid.UUID) ([]*User, error)
 }
 
 type SessionRepository interface {
@@ -178,4 +179,8 @@ type RoleRepository interface {
 	CreateRole(ctx context.Context, id, organisationID uuid.UUID, code, name string, isSystem bool, at time.Time) error
 	GrantAllPermissions(ctx context.Context, roleID uuid.UUID) error
 	AssignUserRole(ctx context.Context, id, organisationID, userID, roleID uuid.UUID, at time.Time) error
+	// GetIDByCode looks up an existing role by its org-unique code (e.g.
+	// "OWNER") — used to attach a newly-invited team member to a role
+	// that bootstrap already created, rather than minting a duplicate one.
+	GetIDByCode(ctx context.Context, organisationID uuid.UUID, code string) (uuid.UUID, error)
 }

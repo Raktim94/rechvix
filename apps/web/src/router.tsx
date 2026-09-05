@@ -3,6 +3,8 @@ import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect,
 import { AppShell } from "./components/AppShell";
 import { LoginPage } from "./pages/LoginPage";
 import { BootstrapPage } from "./pages/BootstrapPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { readSessionHint } from "./auth/session";
 import {
@@ -88,6 +90,24 @@ const bootstrapRoute = createRoute({
   component: BootstrapPage,
 });
 
+const forgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/forgot-password",
+  component: ForgotPasswordPage,
+});
+
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reset-password",
+  validateSearch: (search: Record<string, unknown>): { token?: string } => ({
+    token: typeof search.token === "string" ? search.token : undefined,
+  }),
+  component: () => {
+    const { token } = useSearch({ from: resetPasswordRoute.id });
+    return <ResetPasswordPage token={token} />;
+  },
+});
+
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -158,6 +178,8 @@ const notFoundRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   bootstrapRoute,
+  forgotPasswordRoute,
+  resetPasswordRoute,
   dashboardRoute,
   salesListRoute,
   salesNewRoute,

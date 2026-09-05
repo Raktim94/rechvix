@@ -13,7 +13,22 @@ import (
 	orgapp "rechvix/internal/modules/organisation/app"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/crypto"
+	"rechvix/internal/platform/permissions"
 )
+
+// fakePermissionStore grants every principal exactly the fixed,
+// org-wide set of permission codes it was built with — enough for
+// testing identity's own permission-gated methods without pulling in a
+// real RBAC catalog.
+type fakePermissionStore struct{ codes []string }
+
+func (s fakePermissionStore) Grants(ctx context.Context, userID uuid.UUID) ([]permissions.Grant, error) {
+	out := make([]permissions.Grant, len(s.codes))
+	for i, code := range s.codes {
+		out[i] = permissions.Grant{PermissionCode: code}
+	}
+	return out, nil
+}
 
 type fakeAuditRecorder struct {
 	entries []audit.Entry
@@ -63,9 +78,10 @@ func newTestFixture(t *testing.T, sessionPolicy SessionPolicy) *testFixture {
 	mfa := newFakeMFARepo()
 	auditor := &fakeAuditRecorder{}
 
+	checker := permissions.NewChecker(fakePermissionStore{codes: []string{"identity.view_users", "identity.manage_users"}}, fakeRunner{})
 	svc := NewService(
 		fakeRunner{},
-		users, sess, resets, mfa, fakeRoleRepo{}, fakeAPIKeyRepo{}, nil,
+		users, sess, resets, mfa, fakeRoleRepo{}, fakeAPIKeyRepo{}, checker,
 		fakeOrgProvisioner{result: orgapp.ProvisionResult{
 			OrganisationID: uuid.New(), LegalEntityID: uuid.New(), BranchID: uuid.New(), WarehouseID: uuid.New(),
 		}},
@@ -348,5 +364,86 @@ func TestMFAEnrollAndLoginRequiresCode(t *testing.T) {
 	_, err = f.svc.Login(context.Background(), LoginParams{Email: "owner@example.com", Password: "correct horse battery staple", MFACode: recoveryCodes[0]})
 	if !errors.Is(err, domain.ErrMFAInvalid) {
 		t.Fatalf("expected a reused recovery code to be rejected, got %v", err)
+	}
+}
+
+func TestCreateTeamMember_Success(t *testing.T) {
+	f := newTestFixture(t, SessionPolicy{IdleTimeout: time.Hour, AbsoluteTimeout: 12 * time.Hour})
+	orgID, ownerID := seedActiveUser(t, f, "owner@example.com", "correct horse battery staple")
+	principal := principalOf(orgID, ownerID)
+
+	newUserID, err := f.svc.CreateTeamMember(context.Background(), principal, CreateTeamMemberParams{
+		FullName: "New Teammate",
+		Email:    "Teammate@Example.com",
+		Password: "another very long password",
+	})
+	if err != nil {
+		t.Fatalf("CreateTeamMember: %v", err)
+	}
+
+	stored, err := f.users.GetByID(context.Background(), newUserID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if stored.Email != "teammate@example.com" {
+		t.Fatalf("expected normalized email, got %q", stored.Email)
+	}
+	if stored.OrganisationID != orgID {
+		t.Fatalf("expected new member to belong to the inviting owner's organisation")
+	}
+
+	members, err := f.svc.ListTeamMembers(context.Background(), principal)
+	if err != nil {
+		t.Fatalf("ListTeamMembers: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 team members (owner + new member), got %d", len(members))
+	}
+
+	found := false
+	for _, e := range f.auditor.entries {
+		if e.Action == "user.created" && e.EntityID != nil && *e.EntityID == newUserID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected a user.created audit entry for the new team member")
+	}
+}
+
+func TestCreateTeamMember_DuplicateEmailRejected(t *testing.T) {
+	f := newTestFixture(t, SessionPolicy{IdleTimeout: time.Hour, AbsoluteTimeout: 12 * time.Hour})
+	orgID, ownerID := seedActiveUser(t, f, "owner@example.com", "correct horse battery staple")
+	principal := principalOf(orgID, ownerID)
+
+	_, err := f.svc.CreateTeamMember(context.Background(), principal, CreateTeamMemberParams{
+		FullName: "Duplicate", Email: "owner@example.com", Password: "another very long password",
+	})
+	if !errors.Is(err, domain.ErrEmailAlreadyExists) {
+		t.Fatalf("expected ErrEmailAlreadyExists, got %v", err)
+	}
+}
+
+func TestCreateTeamMember_RequiresPermission(t *testing.T) {
+	// A principal whose role was never granted identity.manage_users —
+	// built with its own zero-grant checker rather than newTestFixture's
+	// (which grants every identity permission, to keep the rest of this
+	// file's tests focused on business logic rather than RBAC).
+	users := newFakeUserRepo()
+	checker := permissions.NewChecker(fakePermissionStore{}, fakeRunner{})
+	svc := NewService(
+		fakeRunner{}, users, newFakeSessionRepo(), newFakePasswordResetRepo(), newFakeMFARepo(),
+		fakeRoleRepo{}, fakeAPIKeyRepo{}, checker,
+		fakeOrgProvisioner{}, testHasher(t), testAEAD(t), &fakeAuditRecorder{},
+		SessionPolicy{IdleTimeout: time.Hour, AbsoluteTimeout: time.Hour},
+	)
+	unprivileged := principalOf(uuid.New(), uuid.New())
+
+	_, err := svc.CreateTeamMember(context.Background(), unprivileged, CreateTeamMemberParams{
+		FullName: "Nope", Email: "nope@example.com", Password: "another very long password",
+	})
+	var forbidden *permissions.ErrForbidden
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 }

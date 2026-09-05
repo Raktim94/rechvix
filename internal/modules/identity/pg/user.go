@@ -10,10 +10,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"rechvix/internal/modules/identity/domain"
 	"rechvix/internal/platform/database"
 )
+
+func pgUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
 
 type UserRepo struct{ pool *database.Pool }
 
@@ -28,9 +34,38 @@ func (r *UserRepo) Create(ctx context.Context, u *domain.User) error {
 		u.ID, u.OrganisationID, u.Email, u.FullName, u.PasswordHash, string(u.Status),
 		u.MFAEnabled, u.LastPasswordChangeAt, u.CreatedAt)
 	if err != nil {
+		if pgUniqueViolation(err) {
+			return domain.ErrEmailAlreadyExists
+		}
 		return fmt.Errorf("identity: inserting user: %w", err)
 	}
 	return nil
+}
+
+// ListByOrganisation powers the Settings > Team screen — every user
+// belonging to the caller's organisation, newest first.
+func (r *UserRepo) ListByOrganisation(ctx context.Context, organisationID uuid.UUID) ([]*domain.User, error) {
+	const q = `
+		SELECT id, organisation_id, email, full_name, status, mfa_enabled,
+			last_login_at, last_password_change_at, created_at, updated_at
+		FROM users WHERE organisation_id = $1 ORDER BY created_at DESC`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, organisationID)
+	if err != nil {
+		return nil, fmt.Errorf("identity: listing users: %w", err)
+	}
+	defer rows.Close()
+	var out []*domain.User
+	for rows.Next() {
+		var u domain.User
+		var status string
+		if err := rows.Scan(&u.ID, &u.OrganisationID, &u.Email, &u.FullName, &status, &u.MFAEnabled,
+			&u.LastLoginAt, &u.LastPasswordChangeAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("identity: scanning user row: %w", err)
+		}
+		u.Status = domain.UserStatus(status)
+		out = append(out, &u)
+	}
+	return out, rows.Err()
 }
 
 func (r *UserRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {

@@ -68,6 +68,8 @@ func (h *Handlers) Mount(r chi.Router, bootstrapEnabled bool) {
 		r.Post("/auth/mfa/enroll", h.enrollMFA)
 		r.Post("/auth/mfa/verify", h.verifyMFAEnroll)
 		r.Post("/auth/mfa/disable", h.disableMFA)
+		r.Get("/users", h.listUsers)
+		r.Post("/users", h.createUser)
 	})
 }
 
@@ -101,6 +103,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("SCOPES_REQUIRED", "An API key requires at least one explicit scope."))
 	case errors.Is(err, domain.ErrUnknownScope):
 		httpx.WriteError(w, r, httpx.NewBadRequest("UNKNOWN_SCOPE", "One or more requested scopes are not recognized."))
+		case errors.Is(err, domain.ErrEmailAlreadyExists):
+			httpx.WriteError(w, r, httpx.NewBadRequest("EMAIL_EXISTS", "An account with this email already exists."))
 	default:
 		var forbidden *permissions.ErrForbidden
 		if errors.As(err, &forbidden) {
@@ -380,6 +384,58 @@ func (h *Handlers) disableMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "mfa_disabled"})
+}
+
+type teamMemberDTO struct {
+	ID          string     `json:"id"`
+	Email       string     `json:"email"`
+	FullName    string     `json:"full_name"`
+	Status      string     `json:"status"`
+	MFAEnabled  bool       `json:"mfa_enabled"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
+	principal, _ := httpx.PrincipalFromContext(r.Context())
+	members, err := h.svc.ListTeamMembers(r.Context(), principal)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	out := make([]teamMemberDTO, 0, len(members))
+	for _, m := range members {
+		out = append(out, teamMemberDTO{
+			ID: m.ID.String(), Email: m.Email, FullName: m.FullName, Status: string(m.Status),
+			MFAEnabled: m.MFAEnabled, LastLoginAt: m.LastLoginAt, CreatedAt: m.CreatedAt,
+		})
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"users": out})
+}
+
+type createUserRequest struct {
+	FullName string `json:"full_name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
+	principal, _ := httpx.PrincipalFromContext(r.Context())
+	req, err := decodeJSON[createUserRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	userID, err := h.svc.CreateTeamMember(r.Context(), principal, app.CreateTeamMemberParams{
+		FullName: req.FullName,
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user_id": userID})
 }
 
 func (h *Handlers) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
