@@ -441,3 +441,128 @@ func (s *Service) LogoutAllDevices(ctx context.Context, principal permissions.Pr
 		})
 	})
 }
+
+// --- Team members ---
+
+// TeamMember is the identity module's own read projection for the
+// Settings > Team screen — deliberately narrower than domain.User (no
+// password hash) since httpapi would otherwise have to remember to trim
+// it on every response.
+type TeamMember struct {
+	ID          uuid.UUID
+	Email       string
+	FullName    string
+	Status      domain.UserStatus
+	MFAEnabled  bool
+	LastLoginAt *time.Time
+	CreatedAt   time.Time
+}
+
+// ListTeamMembers lists every user in the caller's organisation
+// (identity.view_users).
+func (s *Service) ListTeamMembers(ctx context.Context, principal permissions.Principal) ([]TeamMember, error) {
+	if err := s.permissions.Require(ctx, principal, "identity.view_users", permissions.Scope{}); err != nil {
+		return nil, err
+	}
+	var users []*domain.User
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		users, err = s.users.ListByOrganisation(ctx, principal.OrganisationID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TeamMember, 0, len(users))
+	for _, u := range users {
+		out = append(out, TeamMember{
+			ID: u.ID, Email: u.Email, FullName: u.FullName, Status: u.Status,
+			MFAEnabled: u.MFAEnabled, LastLoginAt: u.LastLoginAt, CreatedAt: u.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+type CreateTeamMemberParams struct {
+	FullName string
+	Email    string
+	Password string
+}
+
+// CreateTeamMember lets an Owner add another login to their own
+// organisation (identity.manage_users) — the account-creation path
+// bootstrap deliberately doesn't cover, since Bootstrap only ever
+// provisions the single first-run owner (see Service.Bootstrap).
+//
+// v1 has exactly one role per organisation (OWNER, granted every
+// permission — see RoleRepo.GrantAllPermissions's doc comment), so every
+// team member added this way is a full peer of the person who invited
+// them, not a restricted "staff" account. Curated, lesser roles are a
+// real product decision this pass deliberately defers, same as
+// RoleRepo.GrantAllPermissions already flags.
+func (s *Service) CreateTeamMember(ctx context.Context, principal permissions.Principal, p CreateTeamMemberParams) (uuid.UUID, error) {
+	if err := s.permissions.Require(ctx, principal, "identity.manage_users", permissions.Scope{}); err != nil {
+		return uuid.UUID{}, err
+	}
+	if err := validatePassword(p.Password); err != nil {
+		return uuid.UUID{}, fmt.Errorf("identity: %w", err)
+	}
+	if p.FullName == "" {
+		return uuid.UUID{}, fmt.Errorf("identity: full name is required")
+	}
+	email := normalizeEmail(p.Email)
+	if email == "" {
+		return uuid.UUID{}, fmt.Errorf("identity: email is required")
+	}
+
+	passwordHash, err := s.hasher.Hash(p.Password)
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("identity: hashing password: %w", err)
+	}
+	userID, err := uuid.NewV7()
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("identity: generating user id: %w", err)
+	}
+	userRoleID, err := uuid.NewV7()
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("identity: generating user_role id: %w", err)
+	}
+	now := s.now()
+
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		roleID, err := s.roles.GetIDByCode(ctx, principal.OrganisationID, "OWNER")
+		if err != nil {
+			return fmt.Errorf("looking up owner role: %w", err)
+		}
+		if err := s.users.Create(ctx, &domain.User{
+			ID:                   userID,
+			OrganisationID:       principal.OrganisationID,
+			Email:                email,
+			FullName:             p.FullName,
+			PasswordHash:         passwordHash,
+			Status:               domain.UserStatusActive,
+			LastPasswordChangeAt: now,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+		}); err != nil {
+			return fmt.Errorf("creating team member: %w", err)
+		}
+		if err := s.roles.AssignUserRole(ctx, userRoleID, principal.OrganisationID, userID, roleID, now); err != nil {
+			return fmt.Errorf("assigning role: %w", err)
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID,
+			ActorUserID:    &principal.UserID,
+			ActorType:      audit.ActorUser,
+			Action:         "user.created",
+			EntityType:     "user",
+			EntityID:       &userID,
+			AfterState:     map[string]any{"email": email},
+			At:             now,
+		})
+	})
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("identity: creating team member: %w", err)
+	}
+	return userID, nil
+}

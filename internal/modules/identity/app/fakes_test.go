@@ -32,6 +32,9 @@ func newFakeUserRepo() *fakeUserRepo {
 }
 
 func (f *fakeUserRepo) Create(ctx context.Context, u *domain.User) error {
+	if _, exists := f.byEmail[u.Email]; exists {
+		return domain.ErrEmailAlreadyExists
+	}
 	cp := *u
 	// Both maps deliberately point at the SAME struct so a later mutation
 	// (SetMFAEnabled, UpdatePasswordHash, ...) is visible through either
@@ -39,6 +42,16 @@ func (f *fakeUserRepo) Create(ctx context.Context, u *domain.User) error {
 	f.byID[u.ID] = &cp
 	f.byEmail[u.Email] = &cp
 	return nil
+}
+func (f *fakeUserRepo) ListByOrganisation(ctx context.Context, organisationID uuid.UUID) ([]*domain.User, error) {
+	var out []*domain.User
+	for _, u := range f.byID {
+		if u.OrganisationID == organisationID {
+			cp := *u
+			out = append(out, &cp)
+		}
+	}
+	return out, nil
 }
 func (f *fakeUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	u, ok := f.byID[id]
@@ -210,6 +223,10 @@ func (f *fakeMFARepo) ConsumeRecoveryCode(ctx context.Context, userID uuid.UUID,
 	return true, nil
 }
 
+// fakeRoleRepo hands out a stable, deterministic role ID per
+// (organisationID, code) pair, derived rather than stored, so
+// GetIDByCode needs no separate bookkeeping from CreateRole/AssignUserRole
+// (which this fake otherwise no-ops).
 type fakeRoleRepo struct{}
 
 func (fakeRoleRepo) CreateRole(ctx context.Context, id, organisationID uuid.UUID, code, name string, isSystem bool, at time.Time) error {
@@ -218,6 +235,9 @@ func (fakeRoleRepo) CreateRole(ctx context.Context, id, organisationID uuid.UUID
 func (fakeRoleRepo) GrantAllPermissions(ctx context.Context, roleID uuid.UUID) error { return nil }
 func (fakeRoleRepo) AssignUserRole(ctx context.Context, id, organisationID, userID, roleID uuid.UUID, at time.Time) error {
 	return nil
+}
+func (fakeRoleRepo) GetIDByCode(ctx context.Context, organisationID uuid.UUID, code string) (uuid.UUID, error) {
+	return uuid.NewSHA1(organisationID, []byte(code)), nil
 }
 
 type fakeAPIKeyRepo struct{}

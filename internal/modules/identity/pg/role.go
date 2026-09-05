@@ -2,11 +2,14 @@ package pg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
+	"rechvix/internal/modules/identity/domain"
 	"rechvix/internal/platform/database"
 )
 
@@ -43,6 +46,19 @@ func (r *RoleRepo) GrantAllPermissions(ctx context.Context, roleID uuid.UUID) er
 		return fmt.Errorf("identity: granting all permissions: %w", err)
 	}
 	return nil
+}
+
+func (r *RoleRepo) GetIDByCode(ctx context.Context, organisationID uuid.UUID, code string) (uuid.UUID, error) {
+	const q = `SELECT id FROM roles WHERE organisation_id = $1 AND code = $2`
+	var id uuid.UUID
+	err := r.pool.Q(ctx).QueryRow(ctx, q, organisationID, code).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.UUID{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("identity: querying role by code: %w", err)
+	}
+	return id, nil
 }
 
 func (r *RoleRepo) AssignUserRole(ctx context.Context, id, organisationID, userID, roleID uuid.UUID, at time.Time) error {

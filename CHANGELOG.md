@@ -4,6 +4,18 @@ Staged per `docs/architecture.md` §16 / `docs/TODO.md`. A stage is listed
 here once it has real passing unit *and* integration tests — see
 `docs/TODO.md` for exactly what's built vs. in progress within a stage.
 
+## Stage 12 — Team members, forgot-password UI, real brand assets (2026-09-06)
+- Owner/Admin can add additional logins to their own organisation
+  (`POST /users`, `identity.manage_users`/`identity.view_users`) — the
+  account-creation gap Bootstrap deliberately never covered, since it only
+  ever provisions the single first-run owner. Settings > Team lists
+  members and adds new ones.
+- Wired the frontend to the password-reset endpoints that already
+  existed on the backend but had no screen (`/forgot-password`,
+  `/reset-password`), plus a "Forgot password?" link on the login page.
+- Replaced the placeholder rupee-glyph mark (in-app header/login, favicon,
+  CasaOS icon) with the real Rechvix logo.
+
 ## Stage 10b-2 — Frontend feature screens (2026-09-03)
 - Sales screen (barcode/keyboard-driven billing, list, detail), e-Way Bill
   card, inventory/purchases/contacts/catalogue/accounting/GST/reports

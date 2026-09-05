@@ -173,3 +173,56 @@ func TestConcurrentSessionCreation(t *testing.T) {
 		}
 	}
 }
+
+// TestCreateTeamMemberRoundTrip covers the account-creation gap Bootstrap
+// deliberately leaves open (Stage 12): an Owner adding a second login to
+// their own organisation, that new login actually authenticating, and the
+// new member landing in the SAME organisation as the inviter — against
+// real Postgres, real RLS, and the real permissions.PGStore (so this also
+// proves migrations/0033's backfill actually grants identity.manage_users
+// to the Owner role bootstrap just created).
+func TestCreateTeamMemberRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	identitySvc, _ := newTestIdentityService(t)
+
+	ownerEmail := "team-owner-" + uuid.NewString()[:8] + "@example.com"
+	password := "correct horse battery staple 42"
+	boot := bootstrapTestTenant(t, ctx, identitySvc, ownerEmail, password)
+
+	ownerLogin, err := identitySvc.Login(ctx, identityapp.LoginParams{Email: ownerEmail, Password: password})
+	if err != nil {
+		t.Fatalf("owner Login: %v", err)
+	}
+	principal, err := identitySvc.ValidateSession(ctx, ownerLogin.SessionToken)
+	if err != nil {
+		t.Fatalf("ValidateSession: %v", err)
+	}
+
+	memberEmail := "team-member-" + uuid.NewString()[:8] + "@example.com"
+	memberPassword := "another very long password 99"
+	memberID, err := identitySvc.CreateTeamMember(ctx, principal, identityapp.CreateTeamMemberParams{
+		FullName: "Team Member", Email: memberEmail, Password: memberPassword,
+	})
+	if err != nil {
+		t.Fatalf("CreateTeamMember: %v", err)
+	}
+
+	members, err := identitySvc.ListTeamMembers(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListTeamMembers: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 team members (owner + new member), got %d", len(members))
+	}
+
+	memberLogin, err := identitySvc.Login(ctx, identityapp.LoginParams{Email: memberEmail, Password: memberPassword})
+	if err != nil {
+		t.Fatalf("new team member Login: %v", err)
+	}
+	if memberLogin.OrganisationID != boot.OrganisationID {
+		t.Fatalf("new team member logged into org %s, want %s", memberLogin.OrganisationID, boot.OrganisationID)
+	}
+	if memberLogin.UserID != memberID {
+		t.Fatalf("login resolved user %s, want %s", memberLogin.UserID, memberID)
+	}
+}

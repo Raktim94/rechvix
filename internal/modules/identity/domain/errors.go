@@ -15,4 +15,5 @@ var (
 	ErrAPIKeyInvalid           = errors.New("identity: api key invalid, expired, or revoked")
 	ErrEmptyScopeList          = errors.New("identity: an api key must have at least one explicit scope")
 	ErrUnknownScope            = errors.New("identity: unrecognized api key scope")
+	ErrEmailAlreadyExists      = errors.New("identity: an account with this email already exists")
 )
