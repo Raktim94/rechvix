@@ -103,8 +103,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("SCOPES_REQUIRED", "An API key requires at least one explicit scope."))
 	case errors.Is(err, domain.ErrUnknownScope):
 		httpx.WriteError(w, r, httpx.NewBadRequest("UNKNOWN_SCOPE", "One or more requested scopes are not recognized."))
-		case errors.Is(err, domain.ErrEmailAlreadyExists):
-			httpx.WriteError(w, r, httpx.NewBadRequest("EMAIL_EXISTS", "An account with this email already exists."))
+	case errors.Is(err, domain.ErrEmailAlreadyExists):
+		httpx.WriteError(w, r, httpx.NewBadRequest("EMAIL_EXISTS", "An account with this email already exists."))
 	default:
 		var forbidden *permissions.ErrForbidden
 		if errors.As(err, &forbidden) {

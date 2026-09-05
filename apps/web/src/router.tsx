@@ -102,11 +102,13 @@ const resetPasswordRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): { token?: string } => ({
     token: typeof search.token === "string" ? search.token : undefined,
   }),
-  component: () => {
-    const { token } = useSearch({ from: resetPasswordRoute.id });
-    return <ResetPasswordPage token={token} />;
-  },
+  component: ResetPasswordRoute,
 });
+
+function ResetPasswordRoute() {
+  const { token } = useSearch({ from: resetPasswordRoute.id });
+  return <ResetPasswordPage token={token} />;
+}
 
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
