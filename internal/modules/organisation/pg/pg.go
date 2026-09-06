@@ -72,6 +72,15 @@ func (r *OrganisationRepo) UpdateEWayBillMode(ctx context.Context, id uuid.UUID,
 	return nil
 }
 
+func (r *OrganisationRepo) Exists(ctx context.Context) (bool, error) {
+	const q = `SELECT EXISTS(SELECT 1 FROM organisations)`
+	var exists bool
+	if err := r.pool.Q(ctx).QueryRow(ctx, q).Scan(&exists); err != nil {
+		return false, fmt.Errorf("organisation: checking whether any organisation exists: %w", err)
+	}
+	return exists, nil
+}
+
 // --- Legal entities ---
 
 type LegalEntityRepo struct{ pool *database.Pool }

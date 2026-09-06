@@ -81,6 +81,9 @@ function withShell(Page: React.ComponentType) {
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
+  validateSearch: (search: Record<string, unknown>): { created?: boolean } => ({
+    created: search.created === true || search.created === "true" ? true : undefined,
+  }),
   component: LoginPage,
 });
 

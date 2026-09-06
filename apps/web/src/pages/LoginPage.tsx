@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -6,7 +6,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import styles from "./auth.module.css";
 import { Logo } from "../components/Logo";
 import { useAuth } from "../auth/AuthProvider";
-import { ApiError } from "../lib/api-client";
+import { api, ApiError } from "../lib/api-client";
 
 const schema = z.object({
   email: z.string().min(1, "Email is required").email("Enter a valid email address"),
@@ -14,18 +14,53 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
+interface BootstrapStatus {
+  available: boolean;
+}
+
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [serverError, setServerError] = useState<string | null>(null);
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  // Three states: null while the one-time first-run check is in flight,
+  // then locked to whatever it found (or false if the check itself
+  // failed — fail open to a normal sign-in screen rather than blocking a
+  // returning user over a transient network hiccup).
+  const [setupAvailable, setSetupAvailable] = useState<boolean | null>(null);
+  const justCreated = new URLSearchParams(window.location.search).get("created") === "true";
 
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<BootstrapStatus>("/auth/bootstrap")
+      .then((res) => {
+        if (!cancelled) setSetupAvailable(res.available);
+      })
+      .catch(() => {
+        if (!cancelled) setSetupAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    // A fresh install has nothing to sign into yet — send it straight to
+    // /setup instead of showing a Sign-in form with no accounts (matches
+    // the auto-detect pattern most self-hosted admin tools already use,
+    // e.g. WordPress's install redirect).
+    if (setupAvailable) {
+      void navigate({ to: "/setup" });
+    }
+  }, [setupAvailable, navigate]);
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
@@ -41,6 +76,12 @@ export function LoginPage() {
     }
   };
 
+  // Checking (null) or about to redirect to /setup (true): render nothing
+  // rather than flashing a Sign-in form no one can use yet.
+  if (setupAvailable !== false) {
+    return null;
+  }
+
   return (
     <div className={styles.page}>
       <div className={styles.card}>
@@ -50,6 +91,12 @@ export function LoginPage() {
         </div>
         <h1 className={styles.title}>Sign in</h1>
         <p className={styles.subtitle}>Enter your work email and password.</p>
+
+        {justCreated ? (
+          <div className={styles.formSuccess} role="status">
+            Business created — sign in to continue.
+          </div>
+        ) : null}
 
         {serverError ? (
           <div className={styles.formError} role="alert">

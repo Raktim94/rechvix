@@ -89,7 +89,7 @@ export function BootstrapPage() {
         owner_email: values.ownerEmail,
         owner_password: values.ownerPassword,
       });
-      await navigate({ to: "/login" });
+      await navigate({ to: "/login", search: { created: true } });
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : "Could not complete setup. Please try again.");
     }

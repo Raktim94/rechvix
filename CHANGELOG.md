@@ -4,6 +4,29 @@ Staged per `docs/architecture.md` §16 / `docs/TODO.md`. A stage is listed
 here once it has real passing unit *and* integration tests — see
 `docs/TODO.md` for exactly what's built vs. in progress within a stage.
 
+## Stage 13 — First-run activation flow (2026-09-07)
+- A fresh install landed on a bare Sign-in page with no discoverable path
+  to `/setup`, even though the full bootstrap form already existed there —
+  the root route always bounced an unauthenticated visitor straight to
+  `/login`, and nothing linked to setup. Added `GET /auth/bootstrap`
+  (unauthenticated, mirrors the existing `POST`), returning whether
+  first-run setup is still open; the Sign-in page now checks it on load
+  and auto-redirects a fresh install to `/setup`, matching the pattern
+  most self-hosted admin tools already use (e.g. WordPress's install
+  redirect) instead of showing a dead-end login form.
+- Bootstrap availability now also auto-closes once any organisation
+  exists, on top of the existing `ENABLE_BOOTSTRAP` env gate — belt and
+  suspenders against an operator forgetting to disable it post-setup,
+  since that endpoint has no permission check by design. Added
+  `organisation.Service.Exists`, checked once at server startup.
+- `BootstrapPage` now redirects to `/login?created=true` on success,
+  which shows a "Business created — sign in to continue" banner instead
+  of silently dropping the new owner back at a bare form.
+- Verified end-to-end against a real Postgres container (not just unit
+  tests): fresh DB reports `{"available":true}`, a real bootstrap call
+  succeeds, and restarting the server against the now-non-empty database
+  correctly reports `{"available":false}` and 405s `POST /auth/bootstrap`.
+
 ## Stage 12 — Team members, forgot-password UI, real brand assets (2026-09-06)
 - Owner/Admin can add additional logins to their own organisation
   (`POST /users`, `identity.manage_users`/`identity.view_users`) — the

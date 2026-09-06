@@ -361,6 +361,21 @@ func run() error {
 
 	bootstrapEnabled := os.Getenv("ENABLE_BOOTSTRAP") == "true"
 	if bootstrapEnabled {
+		// Auto-close bootstrap once an organisation already exists, on top
+		// of the env-var gate above — belt and suspenders against an
+		// operator forgetting to flip ENABLE_BOOTSTRAP off post-setup,
+		// since that endpoint has no permission check by design. Fails
+		// open (leaves bootstrapEnabled true) on a check error rather than
+		// blocking a genuine fresh install over a transient DB hiccup at
+		// startup — identical risk to today's env-var-only behavior, never
+		// worse.
+		if exists, err := orgSvc.Exists(ctx); err != nil {
+			logger.Warn("could not check whether an organisation already exists; leaving bootstrap enabled per ENABLE_BOOTSTRAP", "error", err)
+		} else if exists {
+			bootstrapEnabled = false
+		}
+	}
+	if bootstrapEnabled {
 		logger.Warn("POST /api/v1/auth/bootstrap is enabled — this endpoint creates a new organisation with " +
 			"no permission check by design (see identity/app.Service.Bootstrap). Disable ENABLE_BOOTSTRAP once " +
 			"initial setup is done.")

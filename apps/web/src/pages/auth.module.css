@@ -89,6 +89,24 @@
   margin-bottom: var(--space-4);
 }
 
+.formSuccess {
+  background: var(--color-positive-soft);
+  color: var(--color-positive);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+
+.setupLink {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
 .submit {
   width: 100%;
   border: none;
