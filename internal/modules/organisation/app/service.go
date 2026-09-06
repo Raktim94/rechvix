@@ -80,6 +80,14 @@ type ProvisionResult struct {
 	WarehouseID    uuid.UUID
 }
 
+// Exists reports whether any organisation has been provisioned yet.
+// Deliberately no permission check, same reasoning as Provision below: the
+// composition root calls this pre-auth, at startup, to decide whether the
+// bootstrap endpoint should be reachable at all.
+func (s *Service) Exists(ctx context.Context) (bool, error) {
+	return s.organisations.Exists(ctx)
+}
+
 // Provision creates a brand-new organisation and its first legal entity,
 // branch, and warehouse. There is deliberately no permission check here —
 // by definition, nothing can hold a permission grant scoped to an

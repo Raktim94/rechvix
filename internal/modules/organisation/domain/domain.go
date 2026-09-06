@@ -75,6 +75,11 @@ type OrganisationRepository interface {
 	Create(ctx context.Context, o *Organisation) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Organisation, error)
 	UpdateEWayBillMode(ctx context.Context, id uuid.UUID, mode string) error
+	// Exists reports whether any organisation has been provisioned yet —
+	// the composition root uses this to auto-close the bootstrap endpoint
+	// once first-run setup has happened, on top of the ENABLE_BOOTSTRAP
+	// env gate (see identity/httpapi.Handlers.Mount's doc comment).
+	Exists(ctx context.Context) (bool, error)
 }
 
 type LegalEntityRepository interface {

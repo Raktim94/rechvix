@@ -52,6 +52,11 @@ func (h *Handlers) WithPostBootstrapHook(fn func(ctx context.Context, orgID, act
 // running production system, since it has no permission check by
 // definition (see app.Service.Bootstrap's doc comment).
 func (h *Handlers) Mount(r chi.Router, bootstrapEnabled bool) {
+	// Unauthenticated on purpose, mirroring POST /auth/bootstrap itself —
+	// lets the frontend ask "is first-run setup still open" (e.g. to
+	// redirect a fresh install straight to /setup) without leaking
+	// anything beyond the same boolean the env gate already implies.
+	r.Get("/auth/bootstrap", h.bootstrapStatus(bootstrapEnabled))
 	if bootstrapEnabled {
 		r.Post("/auth/bootstrap", h.bootstrap)
 	}
@@ -140,6 +145,12 @@ type bootstrapRequest struct {
 	OwnerEmail    string `json:"owner_email"`
 	OwnerFullName string `json:"owner_full_name"`
 	OwnerPassword string `json:"owner_password"`
+}
+
+func (h *Handlers) bootstrapStatus(available bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"available": available})
+	}
 }
 
 func (h *Handlers) bootstrap(w http.ResponseWriter, r *http.Request) {
