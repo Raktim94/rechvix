@@ -107,6 +107,10 @@
   border-top: 1px solid var(--color-border);
 }
 
+.setupLink a {
+  font-weight: 600;
+}
+
 .submit {
   width: 100%;
   border: none;

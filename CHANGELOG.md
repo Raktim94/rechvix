@@ -11,9 +11,11 @@ here once it has real passing unit *and* integration tests — see
   `/login`, and nothing linked to setup. Added `GET /auth/bootstrap`
   (unauthenticated, mirrors the existing `POST`), returning whether
   first-run setup is still open; the Sign-in page now checks it on load
-  and auto-redirects a fresh install to `/setup`, matching the pattern
-  most self-hosted admin tools already use (e.g. WordPress's install
-  redirect) instead of showing a dead-end login form.
+  and shows a persistent "New to Rechvix? Set up your business" link
+  when it's open, the same always-visible-link pattern this project's
+  sibling `nodedr-restaurant-pos` already uses on its own login page
+  ("New restaurant? Create an account"), rather than a silent redirect
+  away from the login form.
 - Bootstrap availability now also auto-closes once any organisation
   exists, on top of the existing `ENABLE_BOOTSTRAP` env gate — belt and
   suspenders against an operator forgetting to disable it post-setup,

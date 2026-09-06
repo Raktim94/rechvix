@@ -52,16 +52,6 @@ export function LoginPage() {
     };
   }, []);
 
-  useEffect(() => {
-    // A fresh install has nothing to sign into yet — send it straight to
-    // /setup instead of showing a Sign-in form with no accounts (matches
-    // the auto-detect pattern most self-hosted admin tools already use,
-    // e.g. WordPress's install redirect).
-    if (setupAvailable) {
-      void navigate({ to: "/setup" });
-    }
-  }, [setupAvailable, navigate]);
-
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
     try {
@@ -75,12 +65,6 @@ export function LoginPage() {
       setServerError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     }
   };
-
-  // Checking (null) or about to redirect to /setup (true): render nothing
-  // rather than flashing a Sign-in form no one can use yet.
-  if (setupAvailable !== false) {
-    return null;
-  }
 
   return (
     <div className={styles.page}>
@@ -165,6 +149,12 @@ export function LoginPage() {
             {isSubmitting ? "Signing in…" : mfaRequired ? "Verify and sign in" : "Sign in"}
           </button>
         </form>
+
+        {setupAvailable ? (
+          <p className={styles.setupLink}>
+            New to Rechvix? <Link to="/setup">Set up your business</Link>
+          </p>
+        ) : null}
       </div>
       <p className={styles.brandFooter}>Built by NodeDR Infotech Private Limited</p>
     </div>
