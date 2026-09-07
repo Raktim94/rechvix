@@ -9,10 +9,20 @@ interface Product {
   Name: string;
   HSNSACCode: string;
   BaseUOMID: string;
+  CategoryID: string | null;
+  BrandID: string | null;
 }
 interface Unit {
   ID: string;
   Code: string;
+  Name: string;
+}
+interface Category {
+  ID: string;
+  Name: string;
+}
+interface Brand {
+  ID: string;
   Name: string;
 }
 
@@ -23,35 +33,65 @@ export function CataloguePage() {
   const [name, setName] = useState("");
   const [hsn, setHsn] = useState("");
   const [unitId, setUnitId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [brandId, setBrandId] = useState("");
+  const [gstRate, setGstRate] = useState("");
   const [skuCode, setSkuCode] = useState("");
   const [newUnitCode, setNewUnitCode] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newBrandName, setNewBrandName] = useState("");
 
   const products = useQuery({
     queryKey: ["products", query],
     queryFn: () => api.getListField<Product>(`/catalogue/products${query ? `?q=${encodeURIComponent(query)}` : ""}`, "products"),
   });
-
   const units = useQuery({
     queryKey: ["units"],
     queryFn: () => api.getListField<Unit>("/catalogue/units", "units"),
   });
+  const categories = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.getListField<Category>("/catalogue/categories", "categories"),
+  });
+  const brands = useQuery({
+    queryKey: ["brands"],
+    queryFn: () => api.getListField<Brand>("/catalogue/brands", "brands"),
+  });
+  const categoryNameById = new Map(categories.data?.map((c) => [c.ID, c.Name]));
+  const brandNameById = new Map(brands.data?.map((b) => [b.ID, b.Name]));
 
   const createUnit = useMutation({
     mutationFn: () => api.post<Unit>("/catalogue/units", { code: newUnitCode, name: newUnitName }),
     onSuccess: (u) => {
-      queryClient.invalidateQueries({ queryKey: ["units"] });
+      void queryClient.invalidateQueries({ queryKey: ["units"] });
       setUnitId(u.ID);
       setNewUnitCode("");
       setNewUnitName("");
+    },
+  });
+  const createCategory = useMutation({
+    mutationFn: () => api.post<Category>("/catalogue/categories", { name: newCategoryName, parent_id: null }),
+    onSuccess: (c) => {
+      void queryClient.invalidateQueries({ queryKey: ["categories"] });
+      setCategoryId(c.ID);
+      setNewCategoryName("");
+    },
+  });
+  const createBrand = useMutation({
+    mutationFn: () => api.post<Brand>("/catalogue/brands", { name: newBrandName }),
+    onSuccess: (b) => {
+      void queryClient.invalidateQueries({ queryKey: ["brands"] });
+      setBrandId(b.ID);
+      setNewBrandName("");
     },
   });
 
   const createProduct = useMutation({
     mutationFn: async () => {
       const product = await api.post<Product>("/catalogue/products", {
-        category_id: null,
-        brand_id: null,
+        category_id: categoryId || null,
+        brand_id: brandId || null,
         base_uom_id: unitId,
         name,
         description: "",
@@ -62,13 +102,29 @@ export function CataloguePage() {
         sku_code: skuCode || product.Name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24),
         attributes: {},
       });
+      // Optional: set this HSN code's GST rate right here instead of
+      // sending the user to a separate GST page just to make a freshly
+      // added product actually billable at the right tax rate.
+      if (gstRate) {
+        await api.post("/gst/tax-rates", {
+          hsn_sac_code: hsn,
+          classification: "TAXABLE",
+          gst_rate: gstRate,
+          cess_rate: "0",
+          valid_from: new Date().toISOString().slice(0, 10),
+          valid_to: null,
+        });
+      }
       return product;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
       setName("");
       setHsn("");
       setSkuCode("");
+      setCategoryId("");
+      setBrandId("");
+      setGstRate("");
       setShowForm(false);
     },
   });
@@ -117,6 +173,10 @@ export function CataloguePage() {
               <input id="product-hsn" className={ui.input} value={hsn} onChange={(e) => setHsn(e.target.value)} />
             </div>
             <div className={ui.field}>
+              <label htmlFor="product-gst">GST rate for this HSN (%, optional)</label>
+              <input id="product-gst" className={ui.input} value={gstRate} onChange={(e) => setGstRate(e.target.value)} placeholder="e.g. 18" />
+            </div>
+            <div className={ui.field}>
               <label htmlFor="product-unit">Unit</label>
               <select id="product-unit" className={ui.select} value={unitId} onChange={(e) => setUnitId(e.target.value)}>
                 <option value="">Select a unit…</option>
@@ -130,6 +190,50 @@ export function CataloguePage() {
             <div className={ui.field}>
               <label htmlFor="product-sku">SKU (optional)</label>
               <input id="product-sku" className={ui.input} value={skuCode} onChange={(e) => setSkuCode(e.target.value)} />
+            </div>
+            <div className={ui.field}>
+              <label htmlFor="product-category">Category (optional)</label>
+              <select id="product-category" className={ui.select} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                <option value="">No category</option>
+                {categories.data?.map((c) => (
+                  <option key={c.ID} value={c.ID}>
+                    {c.Name}
+                  </option>
+                ))}
+              </select>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input
+                  className={ui.input}
+                  placeholder="New category name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className={ui.btnSecondary}
+                  disabled={!newCategoryName || createCategory.isPending}
+                  onClick={() => createCategory.mutate()}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+            <div className={ui.field}>
+              <label htmlFor="product-brand">Brand (optional)</label>
+              <select id="product-brand" className={ui.select} value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+                <option value="">No brand</option>
+                {brands.data?.map((b) => (
+                  <option key={b.ID} value={b.ID}>
+                    {b.Name}
+                  </option>
+                ))}
+              </select>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input className={ui.input} placeholder="New brand name" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} />
+                <button type="button" className={ui.btnSecondary} disabled={!newBrandName || createBrand.isPending} onClick={() => createBrand.mutate()}>
+                  Add
+                </button>
+              </div>
             </div>
           </div>
           <div className={ui.formActions} style={{ marginTop: 12 }}>
@@ -174,6 +278,8 @@ export function CataloguePage() {
                 <tr>
                   <th scope="col">Name</th>
                   <th scope="col">HSN/SAC</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Brand</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,6 +287,8 @@ export function CataloguePage() {
                   <tr key={p.ID}>
                     <td>{p.Name}</td>
                     <td>{p.HSNSACCode}</td>
+                    <td>{p.CategoryID ? (categoryNameById.get(p.CategoryID) ?? "—") : "—"}</td>
+                    <td>{p.BrandID ? (brandNameById.get(p.BrandID) ?? "—") : "—"}</td>
                   </tr>
                 ))}
               </tbody>
