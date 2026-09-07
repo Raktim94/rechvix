@@ -43,9 +43,55 @@ type LegalEntity struct {
 	// neither.
 	GSTIN        string
 	GSTStateCode string
-	Status       Status
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Invoice branding fields (migrations/0034) — the actual source
+	// internal/modules/sales/printing has been able to render since
+	// Stage 5b (logo, address, bank details) but had nowhere to read
+	// from until this migration; see sales/app/print.go's
+	// BuildInvoiceData. All nullable/empty by default, same as
+	// GSTIN/GSTStateCode above.
+	Phone                     string
+	Email                     string
+	Website                   string
+	Address                   string
+	BankName                  string
+	BankAccountNumber         string
+	BankIFSC                  string
+	UPIID                     string
+	AuthorizedSignatoryName   string
+	DefaultTermsAndConditions string
+	// LogoPNG is always a PNG regardless of what format was uploaded —
+	// httpapi's decodeAndReencodeLogo decodes-then-reencodes any upload
+	// before it ever reaches this field, both as validation (a JPEG/GIF
+	// that fails to decode never gets this far) and so the print layer
+	// only ever needs to handle one image format.
+	LogoPNG   []byte
+	Status    Status
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// InvoiceBrandingUpdate is LegalEntityRepository.UpdateInvoiceBranding's
+// parameter — a struct rather than 10+ positional args, same reasoning
+// as any other multi-field update in this codebase. Every text field is
+// a full replace (empty string clears it, same NULLIF($n, ”) convention
+// UpdateGSTDetails already uses) — logo is the one field that needs an
+// explicit "leave unchanged" state distinct from "clear it", since a nil
+// []byte can't itself distinguish those two, hence RemoveLogo.
+type InvoiceBrandingUpdate struct {
+	Phone                     string
+	Email                     string
+	Website                   string
+	Address                   string
+	BankName                  string
+	BankAccountNumber         string
+	BankIFSC                  string
+	UPIID                     string
+	AuthorizedSignatoryName   string
+	DefaultTermsAndConditions string
+	// LogoPNG non-nil replaces the stored logo. nil + RemoveLogo=false
+	// leaves the existing logo untouched. nil + RemoveLogo=true clears it.
+	LogoPNG    []byte
+	RemoveLogo bool
 }
 
 type Branch struct {
@@ -93,6 +139,10 @@ type LegalEntityRepository interface {
 	// has a NOT NULL foreign key to gst_state_codes), and until this was
 	// added there was no way to set it after the fact at all.
 	UpdateGSTDetails(ctx context.Context, orgID, id uuid.UUID, gstin, gstStateCode string) (*LegalEntity, error)
+	// UpdateInvoiceBranding is the equivalent fix/set path for
+	// everything a printed invoice can show beyond GSTIN — see
+	// InvoiceBrandingUpdate's doc comment.
+	UpdateInvoiceBranding(ctx context.Context, orgID, id uuid.UUID, u InvoiceBrandingUpdate) (*LegalEntity, error)
 }
 
 type BranchRepository interface {

@@ -46,10 +46,17 @@ type SellerInfo struct {
 	AddressLines []string
 	Phone        string
 	Email        string
+	Website      string
 	LogoPNG      []byte // optional; nil renders no logo, not a broken image
 	BankName     string
 	BankAccount  string
 	BankIFSC     string
+	// UPIID is rendered as plain text next to the bank block ("UPI:
+	// name@bank") — a scannable payment QR is a real, separate follow-up
+	// (needs a QR-encoding library this package doesn't depend on yet),
+	// not attempted here; text is still strictly more useful than the
+	// blank line every invoice showed before this field existed.
+	UPIID string
 }
 
 // PartyInfo is a customer/supplier-side block (billing or shipping).
@@ -116,6 +123,11 @@ type InvoiceData struct {
 	PreviousBalance    *money.Money
 	Notes              string
 	TermsAndConditions string
+	// AuthorizedSignatoryName is printed under the "For Authorized
+	// Signatory" line when set (organisation.LegalEntity's own field) —
+	// blank renders exactly as before this field existed, just the
+	// unsigned line.
+	AuthorizedSignatoryName string
 	// IRN/QR are e-Invoice fields (Stage 8) — nil today. Rendered only
 	// when present, never a fabricated QR code (brief §19: "Never
 	// generate a fake government QR code").

@@ -70,7 +70,7 @@ func RenderPDF(tpl Template, data InvoiceData) ([]byte, error) {
 	drawParties(pdf, data, lo)
 	drawItemTable(pdf, data, lo)
 	drawTotals(pdf, data, lo)
-	if lo.showBankBlock && data.Seller.BankAccount != "" {
+	if lo.showBankBlock && (data.Seller.BankAccount != "" || data.Seller.UPIID != "") {
 		drawBankBlock(pdf, data)
 	}
 	if lo.showTerms && data.TermsAndConditions != "" {
@@ -78,7 +78,7 @@ func RenderPDF(tpl Template, data InvoiceData) ([]byte, error) {
 		setFont(pdf, lo, "", 8)
 		pdf.MultiCell(0, 4, "Terms & Conditions: "+data.TermsAndConditions, "", "L", false)
 	}
-	drawSignatureBlock(pdf, lo)
+	drawSignatureBlock(pdf, lo, data.AuthorizedSignatoryName)
 
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
@@ -94,12 +94,30 @@ func setFont(pdf *fpdf.Fpdf, lo layout, style string, size float64) {
 	pdf.SetFont("Helvetica", style, size)
 }
 
+// drawLogo places the seller's logo in the top-left corner using absolute
+// positioning (flow=false) — it doesn't move the cursor, so the centered
+// legal-name/address block below draws exactly as if the logo weren't
+// there. Skipped on thermal layouts: a 58/80mm roll has no room for a
+// corner image next to centered header text at any usable size.
+func drawLogo(pdf *fpdf.Fpdf, data InvoiceData, lo layout) {
+	if lo.narrow || len(data.Seller.LogoPNG) == 0 {
+		return
+	}
+	opts := fpdf.ImageOptions{ImageType: "PNG", ReadDpi: true}
+	pdf.RegisterImageOptionsReader("seller-logo", opts, bytes.NewReader(data.Seller.LogoPNG))
+	pdf.ImageOptions("seller-logo", 8, 8, 18, 0, false, opts, 0, "")
+}
+
 func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, title string) {
+	drawLogo(pdf, data, lo)
 	setFont(pdf, lo, "B", 14)
 	pdf.CellFormat(0, 7, data.Seller.LegalName, "", 1, "C", false, 0, "")
 	setFont(pdf, lo, "", 9)
 	for _, line := range data.Seller.AddressLines {
 		pdf.CellFormat(0, 5, line, "", 1, "C", false, 0, "")
+	}
+	if contact := sellerContactLine(data.Seller); contact != "" {
+		pdf.CellFormat(0, 5, contact, "", 1, "C", false, 0, "")
 	}
 	if data.Seller.GSTIN != "" {
 		pdf.CellFormat(0, 5, "GSTIN: "+data.Seller.GSTIN, "", 1, "C", false, 0, "")
@@ -123,6 +141,23 @@ func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, title string) {
 		pdf.CellFormat(0, 5, line, "", 1, "L", false, 0, "")
 	}
 	pdf.Ln(1)
+}
+
+// sellerContactLine joins whichever of phone/email/website are actually
+// set into one "Phone: ... | Email: ... | Web: ..." line — blank pieces
+// are simply omitted rather than rendering "Phone:  | Email: ...".
+func sellerContactLine(s SellerInfo) string {
+	var parts []string
+	if s.Phone != "" {
+		parts = append(parts, "Phone: "+s.Phone)
+	}
+	if s.Email != "" {
+		parts = append(parts, "Email: "+s.Email)
+	}
+	if s.Website != "" {
+		parts = append(parts, "Web: "+s.Website)
+	}
+	return strings.Join(parts, "  |  ")
 }
 
 func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout) {
@@ -221,14 +256,24 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout) {
 }
 
 func drawBankBlock(pdf *fpdf.Fpdf, data InvoiceData) {
-	pdf.SetFont("Helvetica", "B", 8)
-	pdf.CellFormat(0, 5, "Bank Details:", "", 1, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "", 8)
-	pdf.CellFormat(0, 4.5, strings.TrimSpace(fmt.Sprintf("%s, A/c: %s, IFSC: %s", data.Seller.BankName, data.Seller.BankAccount, data.Seller.BankIFSC)), "", 1, "L", false, 0, "")
+	if data.Seller.BankAccount != "" {
+		pdf.SetFont("Helvetica", "B", 8)
+		pdf.CellFormat(0, 5, "Bank Details:", "", 1, "L", false, 0, "")
+		pdf.SetFont("Helvetica", "", 8)
+		pdf.CellFormat(0, 4.5, strings.TrimSpace(fmt.Sprintf("%s, A/c: %s, IFSC: %s", data.Seller.BankName, data.Seller.BankAccount, data.Seller.BankIFSC)), "", 1, "L", false, 0, "")
+	}
+	if data.Seller.UPIID != "" {
+		pdf.SetFont("Helvetica", "B", 8)
+		pdf.CellFormat(0, 5, "UPI: "+data.Seller.UPIID, "", 1, "L", false, 0, "")
+	}
 }
 
-func drawSignatureBlock(pdf *fpdf.Fpdf, lo layout) {
+func drawSignatureBlock(pdf *fpdf.Fpdf, lo layout, signatoryName string) {
 	pdf.Ln(8)
 	setFont(pdf, lo, "", 9)
 	pdf.CellFormat(0, 5, "For Authorized Signatory", "", 1, "R", false, 0, "")
+	if signatoryName != "" {
+		pdf.Ln(6)
+		pdf.CellFormat(0, 5, signatoryName, "", 1, "R", false, 0, "")
+	}
 }

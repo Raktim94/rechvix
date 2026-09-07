@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -150,8 +151,30 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		}
 	}
 
+	// A document's own TermsAndConditions (set at billing time) always
+	// wins; the legal entity's DefaultTermsAndConditions (Settings →
+	// invoice branding, migrations/0034) is only the fallback for a
+	// document that never set one — never overwrites an explicit
+	// per-invoice value.
+	terms := doc.TermsAndConditions
+	if terms == "" {
+		terms = legalEntity.DefaultTermsAndConditions
+	}
+
 	return &printing.InvoiceData{
-		Seller:            printing.SellerInfo{LegalName: legalEntity.LegalName, GSTIN: legalEntity.GSTIN},
+		Seller: printing.SellerInfo{
+			LegalName:    legalEntity.LegalName,
+			GSTIN:        legalEntity.GSTIN,
+			AddressLines: splitNonEmptyLines(legalEntity.Address),
+			Phone:        legalEntity.Phone,
+			Email:        legalEntity.Email,
+			Website:      legalEntity.Website,
+			LogoPNG:      legalEntity.LogoPNG,
+			BankName:     legalEntity.BankName,
+			BankAccount:  legalEntity.BankAccountNumber,
+			BankIFSC:     legalEntity.BankIFSC,
+			UPIID:        legalEntity.UPIID,
+		},
 		BillTo:            printing.PartyInfo{Name: customer.LegalName, GSTIN: customerGSTIN, AddressLines: billAddr},
 		ShipTo:            printing.PartyInfo{Name: customer.LegalName, AddressLines: shipAddr},
 		DocumentTypeLabel: printing.DocumentTypeLabel(doc.DocumentType),
@@ -171,9 +194,25 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		GrandTotal:        taxDoc.GrandTotal.StringFixed(money.RoundHalfUp),
 		// PreviousBalance intentionally left nil — see printing.InvoiceData's
 		// doc comment: no customer ledger exists until Stage 6.
-		Notes:              doc.Notes,
-		TermsAndConditions: doc.TermsAndConditions,
+		Notes:                   doc.Notes,
+		TermsAndConditions:      terms,
+		AuthorizedSignatoryName: legalEntity.AuthorizedSignatoryName,
 	}, nil
+}
+
+// splitNonEmptyLines turns LegalEntity.Address's free-text, newline
+// separated storage into printing.SellerInfo.AddressLines — blank lines
+// (a trailing newline, Windows \r\n, accidental double blank line) are
+// dropped rather than rendered as an empty row on the printed header.
+func splitNonEmptyLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 // addFixed adds two already-StringFixed decimal strings ("" treated as

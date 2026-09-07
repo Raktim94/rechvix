@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/png"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +24,7 @@ import (
 	gstindiapg "rechvix/internal/modules/gstindia/pg"
 	identityapp "rechvix/internal/modules/identity/app"
 	inventoryapp "rechvix/internal/modules/inventory/app"
+	orgdomain "rechvix/internal/modules/organisation/domain"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricingpg "rechvix/internal/modules/pricing/pg"
 	salesapp "rechvix/internal/modules/sales/app"
@@ -453,5 +456,135 @@ func TestSales_Print_A4Invoice_RendersNonEmptyPDF(t *testing.T) {
 		if !bytes.HasPrefix(pdfBytes, []byte("%PDF")) {
 			t.Fatalf("RenderPDF(%s) output does not start with the PDF magic bytes", tpl)
 		}
+	}
+}
+
+// tinyPNG is a minimal valid 1x1 PNG, built via the standard image/png
+// encoder rather than a hand-typed byte literal — real, decodable bytes
+// (exercising decodeAndReencodeLogo's own re-encode path at the unit
+// level would need httpapi's decoder; here it's exercised end-to-end via
+// UpdateLegalEntityInvoiceBranding, so what matters is that these bytes
+// ARE a valid PNG, not that they look like a real logo).
+func tinyPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encoding tinyPNG: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestSales_Print_UsesLegalEntityInvoiceBranding is migrations/0034's own
+// regression test: BuildInvoiceData used to hardcode
+// printing.SellerInfo{LegalName, GSTIN} and nothing else, silently
+// dropping every other field the print templates already knew how to
+// render. This proves the full path — Settings' UpdateInvoiceBranding
+// write, through to what an actual finalized invoice's InvoiceData
+// carries — actually wires up, not just that the SQL compiles.
+func TestSales_Print_UsesLegalEntityInvoiceBranding(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, _, _ := newTestSalesServices(t)
+	orgSvc := newTestOrgService(t)
+	fx := setupSalesFixture(t, ctx)
+
+	logo := tinyPNG(t)
+	branding := orgdomain.InvoiceBrandingUpdate{
+		Phone: "+91 98765 43210", Email: "billing@example.com", Website: "https://example.com",
+		Address:  "Shop 4, Market Road\nPune, MH 411001",
+		BankName: "Example Bank", BankAccountNumber: "000123456789", BankIFSC: "EXAM0001234",
+		UPIID:                     "shop@examplebank",
+		AuthorizedSignatoryName:   "Priya Sharma",
+		DefaultTermsAndConditions: "Goods once sold will not be taken back.",
+		LogoPNG:                   logo,
+	}
+	if _, err := orgSvc.UpdateLegalEntityInvoiceBranding(ctx, fx.Principal, fx.LegalEntityID, branding); err != nil {
+		t.Fatalf("UpdateLegalEntityInvoiceBranding: %v", err)
+	}
+
+	// A second, unrelated update (no LogoPNG, RemoveLogo=false) must NOT
+	// wipe the logo just set above — this is the specific "leave
+	// unchanged" branch of pg.go's three-way CASE that a naive
+	// NULLIF($n,'')-style update would get wrong.
+	if _, err := orgSvc.UpdateLegalEntityInvoiceBranding(ctx, fx.Principal, fx.LegalEntityID, orgdomain.InvoiceBrandingUpdate{
+		Phone: branding.Phone, Email: branding.Email, Website: branding.Website, Address: branding.Address,
+		BankName: branding.BankName, BankAccountNumber: branding.BankAccountNumber, BankIFSC: branding.BankIFSC,
+		UPIID: branding.UPIID, AuthorizedSignatoryName: "Priya Sharma (updated)",
+		DefaultTermsAndConditions: branding.DefaultTermsAndConditions,
+	}); err != nil {
+		t.Fatalf("UpdateLegalEntityInvoiceBranding (no-op logo update): %v", err)
+	}
+
+	doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocTaxInvoice, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	if _, err := salesSvc.AddLine(ctx, fx.Principal, salesapp.AddLineParams{
+		DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, "100"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	// Deliberately not setting the document's own TermsAndConditions —
+	// CreateDocumentParams has no such field (see setupSalesFixture's
+	// sibling test), so this document's own terms are always "", which is
+	// exactly the case that should fall back to the legal entity's
+	// DefaultTermsAndConditions.
+	if _, err := salesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID); err != nil {
+		t.Fatalf("FinalizeDocument: %v", err)
+	}
+
+	data, err := salesSvc.BuildInvoiceData(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("BuildInvoiceData: %v", err)
+	}
+	if data.Seller.Phone != branding.Phone {
+		t.Errorf("Seller.Phone = %q, want %q", data.Seller.Phone, branding.Phone)
+	}
+	if data.Seller.Email != branding.Email {
+		t.Errorf("Seller.Email = %q, want %q", data.Seller.Email, branding.Email)
+	}
+	if data.Seller.Website != branding.Website {
+		t.Errorf("Seller.Website = %q, want %q", data.Seller.Website, branding.Website)
+	}
+	wantAddrLines := []string{"Shop 4, Market Road", "Pune, MH 411001"}
+	if len(data.Seller.AddressLines) != len(wantAddrLines) || data.Seller.AddressLines[0] != wantAddrLines[0] || data.Seller.AddressLines[1] != wantAddrLines[1] {
+		t.Errorf("Seller.AddressLines = %v, want %v", data.Seller.AddressLines, wantAddrLines)
+	}
+	if data.Seller.BankName != branding.BankName || data.Seller.BankAccount != branding.BankAccountNumber || data.Seller.BankIFSC != branding.BankIFSC {
+		t.Errorf("Seller bank fields = %+v, want name=%q account=%q ifsc=%q", data.Seller, branding.BankName, branding.BankAccountNumber, branding.BankIFSC)
+	}
+	if data.Seller.UPIID != branding.UPIID {
+		t.Errorf("Seller.UPIID = %q, want %q", data.Seller.UPIID, branding.UPIID)
+	}
+	if !bytes.Equal(data.Seller.LogoPNG, logo) {
+		t.Errorf("Seller.LogoPNG (%d bytes) does not match the logo set via UpdateLegalEntityInvoiceBranding (%d bytes) — the 'leave unchanged' update path may have wiped or altered it", len(data.Seller.LogoPNG), len(logo))
+	}
+	if data.TermsAndConditions != branding.DefaultTermsAndConditions {
+		t.Errorf("TermsAndConditions = %q, want the legal entity's default %q (document set none of its own)", data.TermsAndConditions, branding.DefaultTermsAndConditions)
+	}
+	if data.AuthorizedSignatoryName != "Priya Sharma (updated)" {
+		t.Errorf("AuthorizedSignatoryName = %q, want %q", data.AuthorizedSignatoryName, "Priya Sharma (updated)")
+	}
+
+	pdfBytes, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, *data)
+	if err != nil {
+		t.Fatalf("RenderPDF: %v", err)
+	}
+	if !bytes.HasPrefix(pdfBytes, []byte("%PDF")) {
+		t.Fatalf("RenderPDF output does not start with the PDF magic bytes")
+	}
+
+	// RemoveLogo=true must actually clear it — the third leg of the
+	// three-way CASE, otherwise untestable by the two updates above.
+	updated, err := orgSvc.UpdateLegalEntityInvoiceBranding(ctx, fx.Principal, fx.LegalEntityID, orgdomain.InvoiceBrandingUpdate{RemoveLogo: true})
+	if err != nil {
+		t.Fatalf("UpdateLegalEntityInvoiceBranding (remove logo): %v", err)
+	}
+	if updated.LogoPNG != nil {
+		t.Errorf("LogoPNG after RemoveLogo=true = %d bytes, want nil", len(updated.LogoPNG))
 	}
 }

@@ -99,45 +99,97 @@ func (r *LegalEntityRepo) Create(ctx context.Context, le *domain.LegalEntity) er
 	return nil
 }
 
-func (r *LegalEntityRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.LegalEntity, error) {
-	const q = `
-		SELECT id, organisation_id, legal_name, country_code, base_currency_code, COALESCE(gstin, ''), COALESCE(gst_state_code, ''), status, created_at, updated_at
-		FROM legal_entities WHERE organisation_id = $1 AND id = $2`
-	row := r.pool.Q(ctx).QueryRow(ctx, q, orgID, id)
+// legalEntityColumns is every column legalEntityScanner reads, in order —
+// shared by every SELECT/RETURNING in this file so the two never drift
+// apart (a real risk once a query grows to 20 columns).
+const legalEntityColumns = `id, organisation_id, legal_name, country_code, base_currency_code,
+	COALESCE(gstin, ''), COALESCE(gst_state_code, ''),
+	COALESCE(phone, ''), COALESCE(email, ''), COALESCE(website, ''), COALESCE(address, ''),
+	COALESCE(bank_name, ''), COALESCE(bank_account_number, ''), COALESCE(bank_ifsc, ''), COALESCE(upi_id, ''),
+	COALESCE(authorized_signatory_name, ''), COALESCE(default_terms_and_conditions, ''), logo_png,
+	status, created_at, updated_at`
+
+// rowScanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows (Query,
+// per-row in a Next() loop) — one scan function serves every call site
+// below instead of four hand-copied 20-field Scan calls.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanLegalEntity(row rowScanner) (*domain.LegalEntity, error) {
 	var le domain.LegalEntity
 	var status string
-	if err := row.Scan(&le.ID, &le.OrganisationID, &le.LegalName, &le.CountryCode, &le.BaseCurrencyCode, &le.GSTIN, &le.GSTStateCode, &status, &le.CreatedAt, &le.UpdatedAt); err != nil {
+	if err := row.Scan(&le.ID, &le.OrganisationID, &le.LegalName, &le.CountryCode, &le.BaseCurrencyCode,
+		&le.GSTIN, &le.GSTStateCode,
+		&le.Phone, &le.Email, &le.Website, &le.Address,
+		&le.BankName, &le.BankAccountNumber, &le.BankIFSC, &le.UPIID,
+		&le.AuthorizedSignatoryName, &le.DefaultTermsAndConditions, &le.LogoPNG,
+		&status, &le.CreatedAt, &le.UpdatedAt); err != nil {
+		return nil, err
+	}
+	le.Status = domain.Status(status)
+	return &le, nil
+}
+
+func (r *LegalEntityRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.LegalEntity, error) {
+	q := `SELECT ` + legalEntityColumns + ` FROM legal_entities WHERE organisation_id = $1 AND id = $2`
+	le, err := scanLegalEntity(r.pool.Q(ctx).QueryRow(ctx, q, orgID, id))
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("organisation: querying legal_entity: %w", err)
 	}
-	le.Status = domain.Status(status)
-	return &le, nil
+	return le, nil
 }
 
 func (r *LegalEntityRepo) UpdateGSTDetails(ctx context.Context, orgID, id uuid.UUID, gstin, gstStateCode string) (*domain.LegalEntity, error) {
-	const q = `
+	q := `
 		UPDATE legal_entities SET gstin = NULLIF($3, ''), gst_state_code = NULLIF($4, ''), updated_at = now()
 		WHERE organisation_id = $1 AND id = $2
-		RETURNING id, organisation_id, legal_name, country_code, base_currency_code, COALESCE(gstin, ''), COALESCE(gst_state_code, ''), status, created_at, updated_at`
-	row := r.pool.Q(ctx).QueryRow(ctx, q, orgID, id, gstin, gstStateCode)
-	var le domain.LegalEntity
-	var status string
-	if err := row.Scan(&le.ID, &le.OrganisationID, &le.LegalName, &le.CountryCode, &le.BaseCurrencyCode, &le.GSTIN, &le.GSTStateCode, &status, &le.CreatedAt, &le.UpdatedAt); err != nil {
+		RETURNING ` + legalEntityColumns
+	le, err := scanLegalEntity(r.pool.Q(ctx).QueryRow(ctx, q, orgID, id, gstin, gstStateCode))
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("organisation: updating legal_entity GST details: %w", err)
 	}
-	le.Status = domain.Status(status)
-	return &le, nil
+	return le, nil
+}
+
+// UpdateInvoiceBranding is the equivalent fix/set path for everything a
+// printed invoice can show beyond GSTIN — see domain.InvoiceBrandingUpdate.
+// logo_png's CASE handles the three-way "replace / clear / leave
+// unchanged" semantics that a plain NULLIF can't: $13 (the new logo, or
+// NULL if none was sent) wins if present, $14 (remove_logo) clears it
+// next, otherwise the existing value is kept as-is — never silently
+// wiped by an update that wasn't touching the logo at all.
+func (r *LegalEntityRepo) UpdateInvoiceBranding(ctx context.Context, orgID, id uuid.UUID, u domain.InvoiceBrandingUpdate) (*domain.LegalEntity, error) {
+	q := `
+		UPDATE legal_entities SET
+			phone = NULLIF($3, ''), email = NULLIF($4, ''), website = NULLIF($5, ''), address = NULLIF($6, ''),
+			bank_name = NULLIF($7, ''), bank_account_number = NULLIF($8, ''), bank_ifsc = NULLIF($9, ''),
+			upi_id = NULLIF($10, ''), authorized_signatory_name = NULLIF($11, ''),
+			default_terms_and_conditions = NULLIF($12, ''),
+			logo_png = CASE WHEN $13::bytea IS NOT NULL THEN $13::bytea WHEN $14 THEN NULL ELSE logo_png END,
+			updated_at = now()
+		WHERE organisation_id = $1 AND id = $2
+		RETURNING ` + legalEntityColumns
+	le, err := scanLegalEntity(r.pool.Q(ctx).QueryRow(ctx, q, orgID, id,
+		u.Phone, u.Email, u.Website, u.Address, u.BankName, u.BankAccountNumber, u.BankIFSC, u.UPIID,
+		u.AuthorizedSignatoryName, u.DefaultTermsAndConditions, u.LogoPNG, u.RemoveLogo))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("organisation: updating legal_entity invoice branding: %w", err)
+	}
+	return le, nil
 }
 
 func (r *LegalEntityRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]*domain.LegalEntity, error) {
-	const q = `
-		SELECT id, organisation_id, legal_name, country_code, base_currency_code, COALESCE(gstin, ''), COALESCE(gst_state_code, ''), status, created_at, updated_at
-		FROM legal_entities WHERE organisation_id = $1 ORDER BY created_at`
+	q := `SELECT ` + legalEntityColumns + ` FROM legal_entities WHERE organisation_id = $1 ORDER BY created_at`
 	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("organisation: listing legal_entities: %w", err)
@@ -146,13 +198,11 @@ func (r *LegalEntityRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUI
 
 	var out []*domain.LegalEntity
 	for rows.Next() {
-		var le domain.LegalEntity
-		var status string
-		if err := rows.Scan(&le.ID, &le.OrganisationID, &le.LegalName, &le.CountryCode, &le.BaseCurrencyCode, &le.GSTIN, &le.GSTStateCode, &status, &le.CreatedAt, &le.UpdatedAt); err != nil {
+		le, err := scanLegalEntity(rows)
+		if err != nil {
 			return nil, fmt.Errorf("organisation: scanning legal_entity row: %w", err)
 		}
-		le.Status = domain.Status(status)
-		out = append(out, &le)
+		out = append(out, le)
 	}
 	return out, rows.Err()
 }

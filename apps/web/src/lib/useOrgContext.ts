@@ -8,6 +8,23 @@ export interface LegalEntity {
   LegalName: string;
   GSTIN: string;
   GSTStateCode: string;
+  // Invoice branding (migrations/0034) — see
+  // internal/modules/organisation/domain.LegalEntity's own comment.
+  Phone: string;
+  Email: string;
+  Website: string;
+  Address: string;
+  BankName: string;
+  BankAccountNumber: string;
+  BankIFSC: string;
+  UPIID: string;
+  AuthorizedSignatoryName: string;
+  DefaultTermsAndConditions: string;
+  /** Go's encoding/json marshals a []byte field as a base64 string — this
+   * is that string, empty/absent when no logo is set, ready to drop
+   * straight into `data:image/png;base64,${LogoPNG}`. */
+  LogoPNG: string | null;
+  UpdatedAt: string;
 }
 export interface Branch {
   ID: string;

@@ -2,8 +2,15 @@
 package httpapi
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
+	_ "image/gif"  // registers GIF decoding with image.Decode, for decodeAndReencodeLogo
+	_ "image/jpeg" // registers JPEG decoding with image.Decode, for decodeAndReencodeLogo
+	"image/png"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -33,6 +40,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/legal-entities", h.listLegalEntities)
 	r.Post("/legal-entities", h.createLegalEntity)
 	r.Put("/legal-entities/{id}/gst", h.updateLegalEntityGST)
+	r.Put("/legal-entities/{id}/invoice-branding", h.updateInvoiceBranding)
 	r.Get("/branches", h.listBranches)
 	r.Post("/branches", h.createBranch)
 	r.Get("/branches/{id}/warehouses", h.listWarehouses)
@@ -163,6 +171,97 @@ func (h *Handlers) updateLegalEntityGST(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, le)
+}
+
+type updateInvoiceBrandingRequest struct {
+	Phone                     string `json:"phone"`
+	Email                     string `json:"email"`
+	Website                   string `json:"website"`
+	Address                   string `json:"address"`
+	BankName                  string `json:"bank_name"`
+	BankAccountNumber         string `json:"bank_account_number"`
+	BankIFSC                  string `json:"bank_ifsc"`
+	UPIID                     string `json:"upi_id"`
+	AuthorizedSignatoryName   string `json:"authorized_signatory_name"`
+	DefaultTermsAndConditions string `json:"default_terms_and_conditions"`
+	// LogoPNGBase64 is a raw base64-encoded image (any of PNG/JPEG/GIF —
+	// decodeAndReencodeLogo below normalizes it), omitted entirely to
+	// leave the stored logo unchanged. RemoveLogo clears it; ignored if
+	// LogoPNGBase64 is also set (a request that sends a new logo is
+	// setting one, not asking to remove one).
+	LogoPNGBase64 string `json:"logo_png_base64,omitempty"`
+	RemoveLogo    bool   `json:"remove_logo,omitempty"`
+}
+
+func (h *Handlers) updateInvoiceBranding(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[updateInvoiceBrandingRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	var logoPNG []byte
+	if req.LogoPNGBase64 != "" {
+		logoPNG, err = decodeAndReencodeLogo(req.LogoPNGBase64)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_LOGO", err.Error()))
+			return
+		}
+	}
+	le, err := h.svc.UpdateLegalEntityInvoiceBranding(r.Context(), principal(r), id, domain.InvoiceBrandingUpdate{
+		Phone: req.Phone, Email: req.Email, Website: req.Website, Address: req.Address,
+		BankName: req.BankName, BankAccountNumber: req.BankAccountNumber, BankIFSC: req.BankIFSC,
+		UPIID: req.UPIID, AuthorizedSignatoryName: req.AuthorizedSignatoryName,
+		DefaultTermsAndConditions: req.DefaultTermsAndConditions,
+		LogoPNG:                   logoPNG,
+		RemoveLogo:                req.RemoveLogo,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, le)
+}
+
+const (
+	maxLogoBase64Bytes = 2_800_000 // ~2MB decoded, base64 runs ~4/3 larger
+	maxLogoDimensionPx = 1000
+)
+
+// decodeAndReencodeLogo turns a client-supplied base64 image into a safe,
+// stored PNG — never trusting the uploaded bytes directly (brief's own
+// "don't blindly trust uploaded images" rule, same reasoning as the OCR
+// pipeline elsewhere in this project). Decoding via the standard image
+// package IS the validation: a file that isn't a real, well-formed
+// PNG/JPEG/GIF fails right here rather than being stored and only
+// discovered broken the first time someone tries to print an invoice.
+// Re-encoding to PNG afterward means the print layer (and every other
+// consumer of LegalEntity.LogoPNG) only ever has one format to handle.
+func decodeAndReencodeLogo(b64 string) ([]byte, error) {
+	if len(b64) > maxLogoBase64Bytes {
+		return nil, errors.New("logo image is too large — please use a file under 2MB")
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil, errors.New("logo image is not valid base64 data")
+	}
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, errors.New("logo image could not be read — please use a PNG, JPEG, or GIF file")
+	}
+	bounds := img.Bounds()
+	if bounds.Dx() > maxLogoDimensionPx || bounds.Dy() > maxLogoDimensionPx {
+		return nil, fmt.Errorf("logo image is too large — please use one under %dx%d pixels", maxLogoDimensionPx, maxLogoDimensionPx)
+	}
+	var out bytes.Buffer
+	if err := png.Encode(&out, img); err != nil {
+		return nil, errors.New("could not process this logo image")
+	}
+	return out.Bytes(), nil
 }
 
 func (h *Handlers) listBranches(w http.ResponseWriter, r *http.Request) {

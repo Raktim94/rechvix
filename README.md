@@ -193,7 +193,7 @@ restore verification) is still in progress.
 | **Accounting** | Full double-entry: chart of accounts, journals, fiscal periods, receipts/payments/reconciliations, auto-posted from finalized documents, customer/supplier ledgers derived fresh from journal lines (never a mutable balance column), ageing, fiscal-year locking. |
 | **GST & e-Way Bill** | CGST/SGST/UTGST vs. IGST, cess, HSN-based tax rates with validity windows, e-Invoice (IRN/QR) against the NIC sandbox, and a free-first e-Way Bill workflow — a no-paid-API "prepare → open the government portal → enter the result" path, or an automatic path through a paid government-approved connection. |
 | **Reports** | Sales/purchase/inventory/accounting/tax reports, GSTR-1-oriented preparation (explicitly labeled as prep, not a filing submission), CSV/XLSX/JSON/PDF export. |
-| **Settings** | Business, legal entity, branch, warehouse, and GST registration details. |
+| **Settings** | Business, legal entity, branch, warehouse, and GST registration details, plus invoice branding — logo, address/phone/email/website, bank details, UPI ID, authorized signatory, and default terms & conditions, all rendered on every printed invoice/quotation/receipt. |
 | **Integrations** *(placeholder)* | Scoped API keys and HMAC-signed webhooks exist in the backend today; a dedicated UI for managing them is Stage 11+ scope. |
 
 **Coming next** — Stage 11 (security/performance hardening): a full IDOR/

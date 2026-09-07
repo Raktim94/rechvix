@@ -1,0 +1,11 @@
+ALTER TABLE legal_entities DROP COLUMN logo_png;
+ALTER TABLE legal_entities DROP COLUMN default_terms_and_conditions;
+ALTER TABLE legal_entities DROP COLUMN authorized_signatory_name;
+ALTER TABLE legal_entities DROP COLUMN upi_id;
+ALTER TABLE legal_entities DROP COLUMN bank_ifsc;
+ALTER TABLE legal_entities DROP COLUMN bank_account_number;
+ALTER TABLE legal_entities DROP COLUMN bank_name;
+ALTER TABLE legal_entities DROP COLUMN address;
+ALTER TABLE legal_entities DROP COLUMN website;
+ALTER TABLE legal_entities DROP COLUMN email;
+ALTER TABLE legal_entities DROP COLUMN phone;

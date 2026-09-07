@@ -7,7 +7,7 @@ import { z } from "zod";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
-import { useOrgContext } from "../../lib/useOrgContext";
+import { useOrgContext, type LegalEntity } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 
 /** Mirrors app.TeamMember (internal/modules/identity/app/service.go) as
@@ -235,6 +235,230 @@ function GSTDetailsForm({ legalEntityId, currentGSTIN, currentStateCode }: { leg
   );
 }
 
+const MAX_LOGO_BYTES = 2_000_000;
+
+interface InvoiceBrandingFields {
+  phone: string;
+  email: string;
+  website: string;
+  address: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankIfsc: string;
+  upiId: string;
+  authorizedSignatoryName: string;
+  defaultTermsAndConditions: string;
+}
+
+function invoiceBrandingFieldsFrom(le: LegalEntity): InvoiceBrandingFields {
+  return {
+    phone: le.Phone,
+    email: le.Email,
+    website: le.Website,
+    address: le.Address,
+    bankName: le.BankName,
+    bankAccountNumber: le.BankAccountNumber,
+    bankIfsc: le.BankIFSC,
+    upiId: le.UPIID,
+    authorizedSignatoryName: le.AuthorizedSignatoryName,
+    defaultTermsAndConditions: le.DefaultTermsAndConditions,
+  };
+}
+
+/** Everything a printed invoice/quotation/receipt can show beyond GSTIN —
+ * logo, contact details, bank account, UPI ID, signatory, and a default
+ * terms-and-conditions text. The print templates
+ * (internal/modules/sales/printing) have supported rendering all of this
+ * since Stage 5b; this is the first screen that lets anyone actually set
+ * it (migrations/0034). */
+function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
+  const queryClient = useQueryClient();
+  const [fields, setFields] = useState<InvoiceBrandingFields>(() => invoiceBrandingFieldsFrom(legalEntity));
+  const [logoFile, setLogoFile] = useState<{ base64: string; previewUrl: string } | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  const currentLogoUrl = legalEntity.LogoPNG ? `data:image/png;base64,${legalEntity.LogoPNG}` : null;
+  const previewUrl = logoFile ? logoFile.previewUrl : removeLogo ? null : currentLogoUrl;
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.put(`/legal-entities/${legalEntity.ID}/invoice-branding`, {
+        phone: fields.phone,
+        email: fields.email,
+        website: fields.website,
+        address: fields.address,
+        bank_name: fields.bankName,
+        bank_account_number: fields.bankAccountNumber,
+        bank_ifsc: fields.bankIfsc,
+        upi_id: fields.upiId,
+        authorized_signatory_name: fields.authorizedSignatoryName,
+        default_terms_and_conditions: fields.defaultTermsAndConditions,
+        ...(logoFile ? { logo_png_base64: logoFile.base64 } : {}),
+        ...(removeLogo && !logoFile ? { remove_logo: true } : {}),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["legal-entities"] });
+      setLogoFile(null);
+      setRemoveLogo(false);
+    },
+  });
+
+  const setField = (key: keyof InvoiceBrandingFields) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setFields((f) => ({ ...f, [key]: e.target.value }));
+
+  const onLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setLogoError(null);
+    const file = e.target.files?.[0];
+    e.target.value = ""; // clear so re-selecting the same file still fires onChange
+    if (!file) return;
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError("Logo image is too large — please use a file under 2MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setLogoFile({ base64: dataUrl.slice(dataUrl.indexOf(",") + 1), previewUrl: dataUrl });
+      setRemoveLogo(false);
+    };
+    reader.onerror = () => setLogoError("Could not read this file.");
+    reader.readAsDataURL(file);
+  };
+
+  const dirty = JSON.stringify(fields) !== JSON.stringify(invoiceBrandingFieldsFrom(legalEntity)) || !!logoFile || removeLogo;
+
+  return (
+    <div className={layout.panel}>
+      <h2>Invoice branding</h2>
+      <p className={layout.subtitle} style={{ marginBottom: 16 }}>
+        Shown on every printed invoice, quotation, and receipt.
+      </p>
+
+      <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 20 }}>
+        <div
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: 8,
+            border: "1px dashed var(--color-border-strong)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+            flexShrink: 0,
+            background: "var(--color-surface-alt)",
+          }}
+        >
+          {previewUrl ? (
+            <img src={previewUrl} alt="Business logo" style={{ maxWidth: "100%", maxHeight: "100%" }} />
+          ) : (
+            <span className={ui.muted} style={{ fontSize: 11 }}>
+              No logo
+            </span>
+          )}
+        </div>
+        <div>
+          <label className={ui.btnSecondary} style={{ cursor: "pointer" }}>
+            {previewUrl ? "Change logo" : "Upload logo"}
+            <input type="file" accept="image/png,image/jpeg,image/gif" onChange={onLogoChange} style={{ display: "none" }} />
+          </label>
+          {previewUrl ? (
+            <button
+              type="button"
+              className={ui.btnSecondary}
+              style={{ marginLeft: 8 }}
+              onClick={() => {
+                setLogoFile(null);
+                setRemoveLogo(true);
+              }}
+            >
+              Remove
+            </button>
+          ) : null}
+          <p className={ui.muted} style={{ marginTop: 6 }}>
+            PNG, JPEG, or GIF. Max 2MB, 1000×1000px.
+          </p>
+          {logoError ? (
+            <p role="alert" style={{ color: "var(--color-negative)", marginTop: 4 }}>
+              {logoError}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className={ui.formGrid}>
+        <div className={ui.field}>
+          <label htmlFor="ib-phone">Phone</label>
+          <input id="ib-phone" className={ui.input} value={fields.phone} onChange={setField("phone")} />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-email">Email</label>
+          <input id="ib-email" type="email" className={ui.input} value={fields.email} onChange={setField("email")} />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-website">Website</label>
+          <input id="ib-website" className={ui.input} value={fields.website} onChange={setField("website")} />
+        </div>
+        <div className={ui.field} style={{ gridColumn: "1 / -1" }}>
+          <label htmlFor="ib-address">Business address</label>
+          <textarea
+            id="ib-address"
+            className={ui.input}
+            rows={2}
+            value={fields.address}
+            onChange={setField("address")}
+            placeholder="Shown under your business name on every printed document"
+          />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-bank-name">Bank name</label>
+          <input id="ib-bank-name" className={ui.input} value={fields.bankName} onChange={setField("bankName")} />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-bank-account">Account number</label>
+          <input id="ib-bank-account" className={ui.input} value={fields.bankAccountNumber} onChange={setField("bankAccountNumber")} />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-bank-ifsc">IFSC</label>
+          <input id="ib-bank-ifsc" className={ui.input} value={fields.bankIfsc} onChange={setField("bankIfsc")} />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-upi">UPI ID</label>
+          <input id="ib-upi" className={ui.input} placeholder="yourshop@bank" value={fields.upiId} onChange={setField("upiId")} />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-signatory">Authorized signatory name</label>
+          <input id="ib-signatory" className={ui.input} value={fields.authorizedSignatoryName} onChange={setField("authorizedSignatoryName")} />
+        </div>
+        <div className={ui.field} style={{ gridColumn: "1 / -1" }}>
+          <label htmlFor="ib-terms">Default terms &amp; conditions</label>
+          <textarea
+            id="ib-terms"
+            className={ui.input}
+            rows={2}
+            value={fields.defaultTermsAndConditions}
+            onChange={setField("defaultTermsAndConditions")}
+            placeholder="Printed on every invoice unless a specific one overrides it"
+          />
+        </div>
+      </div>
+
+      <div className={ui.formActions} style={{ marginTop: 16 }}>
+        <button type="button" className={ui.btnPrimary} disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? "Saving…" : "Save invoice branding"}
+        </button>
+      </div>
+      {save.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+          {save.error instanceof ApiError ? save.error.message : "Could not save invoice branding."}
+        </p>
+      ) : null}
+      {save.isSuccess && !dirty ? <p style={{ color: "var(--color-positive)", marginTop: 8 }}>Saved.</p> : null}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const org = useOrgContext();
 
@@ -284,6 +508,14 @@ export function SettingsPage() {
           </>
         )}
       </div>
+
+      {org.legalEntity ? (
+        // Same remount-on-save-success key technique as GSTDetailsForm
+        // above — UpdatedAt changes on every successful save, so a fresh
+        // save invalidates the local draft state instead of needing an
+        // effect to resync ~10 fields plus the logo preview.
+        <InvoiceBrandingForm key={`${org.legalEntity.ID}-${org.legalEntity.UpdatedAt}`} legalEntity={org.legalEntity} />
+      ) : null}
 
       <div className={layout.panel}>
         <h2>GST &amp; e-Way Bill</h2>

@@ -365,6 +365,38 @@ func (s *Service) UpdateLegalEntityGST(ctx context.Context, principal permission
 	return le, nil
 }
 
+// UpdateLegalEntityInvoiceBranding sets everything a printed invoice can
+// show beyond GSTIN — logo, address, phone/email/website, bank details,
+// UPI ID, authorized signatory, and a default terms-and-conditions text.
+// Same "settings.manage" permission as UpdateLegalEntityGST (this is
+// business/legal-entity configuration, not a per-document field).
+func (s *Service) UpdateLegalEntityInvoiceBranding(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID, u domain.InvoiceBrandingUpdate) (*domain.LegalEntity, error) {
+	if err := s.permissions.Require(ctx, principal, "settings.manage", permissions.Scope{}); err != nil {
+		return nil, err
+	}
+	var le *domain.LegalEntity
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		le, err = s.legalEntities.UpdateInvoiceBranding(ctx, principal.OrganisationID, legalEntityID, u)
+		if err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID,
+			ActorUserID:    &principal.UserID,
+			ActorType:      audit.ActorUser,
+			Action:         "legal_entity.invoice_branding_updated",
+			EntityType:     "legal_entity",
+			EntityID:       &legalEntityID,
+			At:             s.now(),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return le, nil
+}
+
 type CreateBranchParams struct {
 	LegalEntityID uuid.UUID
 	Code          string
