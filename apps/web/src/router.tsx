@@ -5,7 +5,6 @@ import { LoginPage } from "./pages/LoginPage";
 import { BootstrapPage } from "./pages/BootstrapPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { readSessionHint } from "./auth/session";
 import {
   AccountingPage,
@@ -15,6 +14,7 @@ import {
   ContactsPage,
   DashboardPage,
   GstPage,
+  IntegrationsPage,
   InventoryPage,
   PricingPage,
   PurchasesPage,
@@ -34,13 +34,13 @@ import {
  * under one shared layout route with a shared `beforeLoad`. Root cause of
  * why a shared-layout attempt kept failing (confirmed via a literal
  * `<Link to="/sales">` test, isolated from the nav-list array): the
- * `placeholderRoute(path: string, title: string)` factory's plain
- * `string` parameter widened each route's literal path type before
- * `createRoute` ever saw it — TanStack Router's type system needs the
- * literal ("/sales"), not `string`, to add a path to the router's
- * registered union. Fixed properly below with
- * `placeholderRoute<TPath extends string>(path: TPath, ...)`, which
- * preserves the literal through the call. Kept this flat structure
+ * `realRoute(path: string, component)` factory's plain `string`
+ * parameter widened each route's literal path type before `createRoute`
+ * ever saw it — TanStack Router's type system needs the literal
+ * ("/sales"), not `string`, to add a path to the router's registered
+ * union. Fixed properly below with `realRoute<TPath extends string>(path:
+ * TPath, ...)`, which preserves the literal through the call. Kept this
+ * flat structure
  * (one `beforeLoad: requireAuth` per route) rather than reintroducing a
  * shared layout parent now that the real fix is known, since it already
  * works and re-nesting isn't worth the risk under this pass's time
@@ -121,15 +121,6 @@ const dashboardRoute = createRoute({
   component: withShell(DashboardPage),
 });
 
-function placeholderRoute<TPath extends string>(path: TPath, title: string) {
-  return createRoute({
-    getParentRoute: () => rootRoute,
-    path,
-    beforeLoad: requireAuth,
-    component: withShell(() => <PlaceholderPage title={title} />),
-  });
-}
-
 function realRoute<TPath extends string>(path: TPath, component: React.ComponentType) {
   return createRoute({
     getParentRoute: () => rootRoute,
@@ -181,7 +172,7 @@ const contactDetailRoute = createRoute({
 const accountingRoute = realRoute("/accounting", AccountingPage);
 const gstRoute = realRoute("/gst", GstPage);
 const reportsRoute = realRoute("/reports", ReportsPage);
-const integrationsRoute = placeholderRoute("/integrations", "Integrations");
+const integrationsRoute = realRoute("/integrations", IntegrationsPage);
 const settingsRoute = realRoute("/settings", SettingsPage);
 
 const notFoundRoute = createRoute({

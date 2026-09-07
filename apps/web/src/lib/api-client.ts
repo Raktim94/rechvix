@@ -94,6 +94,7 @@ export const api = {
     request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }),
   put: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: "PUT", body: data !== undefined ? JSON.stringify(data) : undefined }),
+  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
   /** GETs a `{[key]: T[]}`-shaped list endpoint and coalesces the array —
    * Go's `map[string]any{key: list}` marshals a nil slice as JSON `null`,
    * not `[]`, whenever a listing is genuinely empty, so every list
