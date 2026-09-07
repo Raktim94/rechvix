@@ -7,10 +7,13 @@ import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 
+type PurchaseStatus = "DRAFT" | "FINALIZED" | "CANCELLED";
+type StatusFilter = "ALL" | PurchaseStatus;
+
 interface PurchaseDocument {
   ID: string;
   DocumentNumber: string;
-  Status: "DRAFT" | "FINALIZED" | "CANCELLED";
+  Status: PurchaseStatus;
   DocumentType: string;
   DocumentDate: string;
   SupplierPartyID: string;
@@ -43,6 +46,10 @@ export function PurchasesPage() {
   const [productResults, setProductResults] = useState<Product[]>([]);
   const [qty, setQty] = useState("1");
   const [price, setPrice] = useState("0");
+  const [listQuery, setListQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const documents = useQuery({
     queryKey: ["purchase-documents"],
@@ -58,6 +65,18 @@ export function PurchasesPage() {
     queryFn: () => api.getListField<Party>("/contacts/parties", "parties"),
   });
   const supplierNameById = new Map(suppliers.data?.map((p) => [p.ID, p.LegalName]));
+
+  const lq = listQuery.trim().toLowerCase();
+  const filteredDocuments = (documents.data ?? []).filter((d) => {
+    if (statusFilter !== "ALL" && d.Status !== statusFilter) return false;
+    if (fromDate && d.DocumentDate.slice(0, 10) < fromDate) return false;
+    if (toDate && d.DocumentDate.slice(0, 10) > toDate) return false;
+    if (lq) {
+      const supplierName = (supplierNameById.get(d.SupplierPartyID) ?? "").toLowerCase();
+      if (!d.DocumentNumber.toLowerCase().includes(lq) && !supplierName.includes(lq)) return false;
+    }
+    return true;
+  });
 
   const activeDoc = useQuery({
     queryKey: ["purchase-document", activeDocId],
@@ -292,14 +311,38 @@ export function PurchasesPage() {
         </button>
       </div>
       <div className={layout.panel}>
+        <div className={ui.toolbar} style={{ marginBottom: 12 }}>
+          <input
+            className={ui.input}
+            placeholder="Search by number or supplier…"
+            aria-label="Search purchases"
+            value={listQuery}
+            onChange={(e) => setListQuery(e.target.value)}
+            style={{ maxWidth: 280 }}
+          />
+          <select className={ui.select} aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
+            <option value="ALL">All statuses</option>
+            <option value="DRAFT">Draft</option>
+            <option value="FINALIZED">Finalized</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            From
+            <input type="date" className={ui.input} aria-label="From date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </label>
+          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            To
+            <input type="date" className={ui.input} aria-label="To date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+        </div>
         {documents.isError ? (
           <p className={layout.errorState} role="alert">
             Couldn't load purchases.
           </p>
         ) : documents.isPending ? (
           <div className={layout.skeleton} style={{ height: 200 }} aria-hidden="true" />
-        ) : documents.data.length === 0 ? (
-          <p className={layout.emptyState}>No purchases yet.</p>
+        ) : filteredDocuments.length === 0 ? (
+          <p className={layout.emptyState}>{documents.data.length === 0 ? "No purchases yet." : "No purchases match these filters."}</p>
         ) : (
           <div className={ui.tableScroll}>
             <table className={ui.table}>
@@ -313,7 +356,7 @@ export function PurchasesPage() {
                 </tr>
               </thead>
               <tbody>
-                {documents.data.map((d) => (
+                {filteredDocuments.map((d) => (
                   <tr key={d.ID}>
                     <td>
                       {/* A real <button> (SalesListPage's own row pattern

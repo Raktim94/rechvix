@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import ui from "../../components/ui.module.css";
 import { api } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
+import type { Party } from "../../lib/partyTypes";
 import layout from "../DashboardPage.module.css";
-import { DOCUMENT_TYPE_LABELS, type SalesDocument } from "./types";
+import { DOCUMENT_TYPE_LABELS, type DocumentStatus, type SalesDocument } from "./types";
 
 function statusTone(status: SalesDocument["Status"]) {
   if (status === "FINALIZED") return "positive";
@@ -12,10 +14,40 @@ function statusTone(status: SalesDocument["Status"]) {
   return "warning";
 }
 
+type StatusFilter = "ALL" | DocumentStatus;
+
 export function SalesListPage() {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
   const documents = useQuery({
     queryKey: ["sales-documents"],
     queryFn: () => api.getListField<SalesDocument>("/sales/documents", "documents"),
+  });
+  // Only used to resolve CustomerPartyID -> a display name and to let the
+  // search box match by customer name, not just document number — the
+  // sales document list endpoint has no server-side search/filter beyond
+  // document_type (see internal/modules/sales/httpapi's listDocuments),
+  // so this is client-side, same scale assumption as ContactsPage's own
+  // unpaginated party list.
+  const customers = useQuery({
+    queryKey: ["parties"],
+    queryFn: () => api.getListField<Party>("/contacts/parties", "parties"),
+  });
+  const customerNameById = new Map(customers.data?.map((p) => [p.ID, p.LegalName]));
+
+  const q = query.trim().toLowerCase();
+  const filtered = (documents.data ?? []).filter((d) => {
+    if (status !== "ALL" && d.Status !== status) return false;
+    if (from && d.IssueDate.slice(0, 10) < from) return false;
+    if (to && d.IssueDate.slice(0, 10) > to) return false;
+    if (q) {
+      const customerName = (customerNameById.get(d.CustomerPartyID) ?? "").toLowerCase();
+      if (!d.DocumentNumber.toLowerCase().includes(q) && !customerName.includes(q)) return false;
+    }
+    return true;
   });
 
   return (
@@ -31,20 +63,48 @@ export function SalesListPage() {
       </div>
 
       <div className={layout.panel}>
+        <div className={ui.toolbar} style={{ marginBottom: 12 }}>
+          <input
+            className={ui.input}
+            placeholder="Search by number or customer…"
+            aria-label="Search sales"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ maxWidth: 280 }}
+          />
+          <select className={ui.select} aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+            <option value="ALL">All statuses</option>
+            <option value="DRAFT">Draft</option>
+            <option value="FINALIZED">Finalized</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            From
+            <input type="date" className={ui.input} aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            To
+            <input type="date" className={ui.input} aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </label>
+        </div>
+
         {documents.isError ? (
           <p className={layout.errorState} role="alert">
             Couldn't load sales documents.
           </p>
         ) : documents.isPending ? (
           <div className={layout.skeleton} style={{ height: 240 }} aria-hidden="true" />
-        ) : documents.data.length === 0 ? (
-          <p className={layout.emptyState}>No sales yet — start your first sale above.</p>
+        ) : filtered.length === 0 ? (
+          <p className={layout.emptyState}>
+            {documents.data.length === 0 ? "No sales yet — start your first sale above." : "No sales match these filters."}
+          </p>
         ) : (
           <div className={ui.tableScroll}>
             <table className={ui.table}>
               <thead>
                 <tr>
                   <th scope="col">Number</th>
+                  <th scope="col">Customer</th>
                   <th scope="col">Type</th>
                   <th scope="col">Status</th>
                   <th scope="col">Date</th>
@@ -52,7 +112,7 @@ export function SalesListPage() {
                 </tr>
               </thead>
               <tbody>
-                {documents.data.map((d) => (
+                {filtered.map((d) => (
                   <tr key={d.ID}>
                     <td>
                       <Link
@@ -64,6 +124,7 @@ export function SalesListPage() {
                         {d.DocumentNumber || "(draft)"}
                       </Link>
                     </td>
+                    <td>{customerNameById.get(d.CustomerPartyID) ?? "—"}</td>
                     <td>{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
                     <td>
                       <span className={ui.badge} data-tone={statusTone(d.Status)}>
