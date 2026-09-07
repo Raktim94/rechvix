@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import layout from "../DashboardPage.module.css";
@@ -253,6 +254,13 @@ export function CataloguePage() {
           ) : null}
         </div>
       ) : null}
+
+      <ImportPanel
+        title="Bulk import products"
+        path="/catalogue/products/import"
+        columns={["name", "hsn_sac_code (optional)", "base_uom_code"]}
+        onImported={() => void queryClient.invalidateQueries({ queryKey: ["products"] })}
+      />
 
       <div className={layout.panel}>
         <input

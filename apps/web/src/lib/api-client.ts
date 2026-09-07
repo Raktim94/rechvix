@@ -95,6 +95,18 @@ export const api = {
   put: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: "PUT", body: data !== undefined ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /** Uploads a raw CSV/XLSX file as the request body (internal/platform/
+   * importer's ParseCSV/ParseXLSX read straight from r.Body — no
+   * multipart wrapper, no base64) for a bulk-import endpoint. The
+   * explicit Content-Type header below overrides `request`'s normal
+   * "any body means application/json" default, since `init.headers` is
+   * spread after it. */
+  uploadFile: <T>(path: string, file: File, format: "csv" | "xlsx", dryRun: boolean) =>
+    request<T>(`${path}?format=${format}&dry_run=${dryRun}`, {
+      method: "POST",
+      headers: { "Content-Type": format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      body: file,
+    }),
   /** GETs a `{[key]: T[]}`-shaped list endpoint and coalesces the array —
    * Go's `map[string]any{key: list}` marshals a nil slice as JSON `null`,
    * not `[]`, whenever a listing is genuinely empty, so every list

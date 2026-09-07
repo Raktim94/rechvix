@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import type { Party, PartyType } from "../../lib/partyTypes";
@@ -110,6 +111,13 @@ export function ContactsPage() {
           ) : null}
         </div>
       ) : null}
+
+      <ImportPanel
+        title="Bulk import contacts"
+        path="/contacts/parties/import"
+        columns={["party_type (CUSTOMER/SUPPLIER/BOTH)", "legal_name", "phone", "email", "currency_code"]}
+        onImported={() => void queryClient.invalidateQueries({ queryKey: ["parties"] })}
+      />
 
       <div className={layout.panel}>
         <div className={ui.toolbar} style={{ marginBottom: 12 }}>
