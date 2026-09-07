@@ -41,6 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!menuOpen && !createOpen && !searchOpen) return;
@@ -65,6 +66,32 @@ export function AppShell({ children }: { children: ReactNode }) {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [menuOpen, createOpen, searchOpen]);
+
+  // Ctrl+K / Cmd+K jumps to global search from anywhere in the app — the
+  // brief's own expectation (§18's keyboard-shortcuts section) and a
+  // near-universal convention by now. Always active (not gated on any
+  // popup being open, unlike the Escape handler above), and skipped
+  // while the user is already typing in a text field/textarea/select so
+  // it doesn't steal a literal "k" keystroke — except the search input
+  // itself, since Ctrl+K there is exactly "select all and refocus," a
+  // harmless no-op.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
+      const target = e.target as HTMLElement | null;
+      const isTypingElsewhere =
+        target instanceof HTMLElement &&
+        target !== searchInputRef.current &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable);
+      if (isTypingElsewhere) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+      setSearchOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Global search — customers and products in one combined dropdown
   // (brief §24's "search everything" bar). Sales-document-number search
@@ -125,6 +152,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className={styles.search} role="search" ref={searchRef} style={{ position: "relative" }}>
           <span aria-hidden="true">⌕</span>
           <input
+            ref={searchInputRef}
             type="search"
             placeholder="Search customers, products…"
             aria-label="Global search"
@@ -135,6 +163,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             }}
             onFocus={() => setSearchOpen(true)}
           />
+          {!searchQuery ? (
+            <kbd className={styles.searchHint} aria-hidden="true">
+              Ctrl+K
+            </kbd>
+          ) : null}
           {searchOpen && searchQuery.trim().length >= 2 && searchResults.length > 0 ? (
             <ul
               className={styles.userDropdown}

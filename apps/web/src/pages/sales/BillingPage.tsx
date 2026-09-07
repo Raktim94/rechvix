@@ -55,6 +55,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<BillingLookupResult[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const customerSearchRef = useRef<HTMLInputElement>(null);
   const [priceListId, setPriceListId] = useState<string>("");
 
   const priceLists = useQuery({
@@ -196,12 +197,38 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const lines = doc.data?.lines ?? [];
   const grandTotal = doc.data?.document.GrandTotalAmount;
 
+  // Counter shortcuts (brief §18): F2 product search, F3 customer search,
+  // Ctrl+Enter finalize — the three real actions this screen actually
+  // has, rather than mapping the brief's full F1-F9 list onto controls
+  // that don't exist here. Each ref-focus is a safe no-op when that
+  // field isn't currently mounted (e.g. F2 before a document/customer
+  // exists yet), so no extra guard condition is needed beyond that.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === "F3") {
+        e.preventDefault();
+        customerSearchRef.current?.focus();
+      } else if (e.ctrlKey && e.key === "Enter") {
+        e.preventDefault();
+        if (lines.length > 0 && !finalize.isPending) finalize.mutate();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [lines.length, finalize]);
+
   return (
     <div className={layout.page}>
       <div className={layout.heading}>
         <div>
           <h1>{resumeDocumentId ? "Continue sale" : "New sale"}</h1>
           <p className={layout.subtitle}>Scan a barcode or search by product name — stock and price show instantly.</p>
+          <p className={ui.muted} style={{ marginTop: 2 }}>
+            <kbd>F2</kbd> search product · <kbd>F3</kbd> search customer · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> finalize
+          </p>
         </div>
       </div>
 
@@ -264,6 +291,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
               <div className={styles.customerSearchWrap}>
                 <input
                   id="customer-search"
+                  ref={customerSearchRef}
                   className={ui.input}
                   placeholder="Search customer by name or phone…"
                   value={customerQuery}
