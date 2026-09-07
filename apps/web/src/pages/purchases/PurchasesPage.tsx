@@ -49,6 +49,16 @@ export function PurchasesPage() {
     queryFn: () => api.getListField<PurchaseDocument>("/purchases/documents", "documents"),
   });
 
+  // Only used to resolve SupplierPartyID -> a display name in the list
+  // below — the purchase document itself doesn't carry the supplier's
+  // name, only its id. Fine at the scale this screen targets (see
+  // ContactsPage's own unpaginated party list for the same assumption).
+  const suppliers = useQuery({
+    queryKey: ["parties"],
+    queryFn: () => api.getListField<Party>("/contacts/parties", "parties"),
+  });
+  const supplierNameById = new Map(suppliers.data?.map((p) => [p.ID, p.LegalName]));
+
   const activeDoc = useQuery({
     queryKey: ["purchase-document", activeDocId],
     queryFn: () => api.get<{ document: PurchaseDocument; lines: PurchaseLine[] }>(`/purchases/documents/${activeDocId}`),
@@ -296,6 +306,7 @@ export function PurchasesPage() {
               <thead>
                 <tr>
                   <th scope="col">Number</th>
+                  <th scope="col">Supplier</th>
                   <th scope="col">Type</th>
                   <th scope="col">Status</th>
                   <th scope="col">Date</th>
@@ -303,8 +314,18 @@ export function PurchasesPage() {
               </thead>
               <tbody>
                 {documents.data.map((d) => (
-                  <tr key={d.ID} onClick={() => setActiveDocId(d.ID)} style={{ cursor: "pointer" }}>
-                    <td>{d.DocumentNumber || "(draft)"}</td>
+                  <tr key={d.ID}>
+                    <td>
+                      {/* A real <button> (SalesListPage's own row pattern
+                          uses <Link> — this screen has no URL route per
+                          document yet, so button is the equivalent
+                          focusable/keyboard-operable control) instead of
+                          the previous unfocusable `<tr onClick>`. */}
+                      <button type="button" className={ui.linkRowButton} onClick={() => setActiveDocId(d.ID)}>
+                        {d.DocumentNumber || "(draft)"}
+                      </button>
+                    </td>
+                    <td>{supplierNameById.get(d.SupplierPartyID) ?? "—"}</td>
                     <td>{d.DocumentType}</td>
                     <td>
                       <span className={ui.badge} data-tone={d.Status === "FINALIZED" ? "positive" : "warning"}>

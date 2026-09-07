@@ -1,13 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import type { Party, PartyType } from "../../lib/partyTypes";
 import layout from "../DashboardPage.module.css";
 
+type TypeFilter = "ALL" | PartyType;
+
 export function ContactsPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
   const [showForm, setShowForm] = useState(false);
   const [legalName, setLegalName] = useState("");
   const [phone, setPhone] = useState("");
@@ -19,6 +23,10 @@ export function ContactsPage() {
     queryKey: ["parties", query],
     queryFn: () => api.getListField<Party>(`/contacts/parties${query ? `?q=${encodeURIComponent(query)}` : ""}`, "parties"),
   });
+  // A "BOTH" party counts as a match for either the Customers or
+  // Suppliers filter — it genuinely is both, filtering it out of one
+  // would hide it from someone specifically looking for it.
+  const filteredParties = (parties.data ?? []).filter((p) => typeFilter === "ALL" || p.PartyType === typeFilter || p.PartyType === "BOTH");
 
   const createParty = useMutation({
     mutationFn: () =>
@@ -104,22 +112,34 @@ export function ContactsPage() {
       ) : null}
 
       <div className={layout.panel}>
-        <input
-          className={ui.input}
-          placeholder="Search by name or phone…"
-          aria-label="Search contacts"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          style={{ marginBottom: 12, maxWidth: 360 }}
-        />
+        <div className={ui.toolbar} style={{ marginBottom: 12 }}>
+          <input
+            className={ui.input}
+            placeholder="Search by name or phone…"
+            aria-label="Search contacts"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ maxWidth: 360 }}
+          />
+          <select
+            className={ui.select}
+            aria-label="Filter by type"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+          >
+            <option value="ALL">All contacts</option>
+            <option value="CUSTOMER">Customers</option>
+            <option value="SUPPLIER">Suppliers</option>
+          </select>
+        </div>
         {parties.isError ? (
           <p className={layout.errorState} role="alert">
             Couldn't load contacts.
           </p>
         ) : parties.isPending ? (
           <div className={layout.skeleton} style={{ height: 200 }} aria-hidden="true" />
-        ) : parties.data.length === 0 ? (
-          <p className={layout.emptyState}>No contacts yet.</p>
+        ) : filteredParties.length === 0 ? (
+          <p className={layout.emptyState}>{parties.data.length === 0 ? "No contacts yet." : "No contacts match this filter."}</p>
         ) : (
           <div className={ui.tableScroll}>
             <table className={ui.table}>
@@ -132,9 +152,13 @@ export function ContactsPage() {
                 </tr>
               </thead>
               <tbody>
-                {parties.data.map((p) => (
+                {filteredParties.map((p) => (
                   <tr key={p.ID}>
-                    <td>{p.LegalName}</td>
+                    <td>
+                      <Link to="/contacts/$id" params={{ id: p.ID }} className={ui.linkRow}>
+                        {p.LegalName}
+                      </Link>
+                    </td>
                     <td>{p.PartyType}</td>
                     <td>{p.Phone}</td>
                     <td>{p.Email}</td>

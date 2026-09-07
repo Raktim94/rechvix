@@ -11,6 +11,7 @@ import {
   AccountingPage,
   BillingPage,
   CataloguePage,
+  ContactDetailPage,
   ContactsPage,
   DashboardPage,
   GstPage,
@@ -168,6 +169,15 @@ const inventoryRoute = realRoute("/inventory", InventoryPage);
 const catalogueRoute = realRoute("/catalogue", CataloguePage);
 const pricingRoute = realRoute("/pricing", PricingPage);
 const contactsRoute = realRoute("/contacts", ContactsPage);
+const contactDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contacts/$id",
+  beforeLoad: requireAuth,
+  component: withShell(() => {
+    const { id } = contactDetailRoute.useParams();
+    return <ContactDetailPage id={id} />;
+  }),
+});
 const accountingRoute = realRoute("/accounting", AccountingPage);
 const gstRoute = realRoute("/gst", GstPage);
 const reportsRoute = realRoute("/reports", ReportsPage);
@@ -194,6 +204,7 @@ const routeTree = rootRoute.addChildren([
   catalogueRoute,
   pricingRoute,
   contactsRoute,
+  contactDetailRoute,
   accountingRoute,
   gstRoute,
   reportsRoute,

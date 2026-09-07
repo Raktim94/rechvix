@@ -179,6 +179,28 @@
   display: block;
 }
 
+/* Same look as .linkRow, for a table cell whose "row link" has no route
+   to point a real <Link> at (still-local component state) — a real
+   <button> reset to look identical, so it's still reachable by Tab and
+   activatable with Enter/Space, not a bare `<tr onClick>`. */
+.linkRowButton {
+  color: inherit;
+  text-decoration: none;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.linkRowButton:hover,
+.linkRow:hover {
+  text-decoration: underline;
+}
+
 .muted {
   color: var(--color-text-muted);
 }
