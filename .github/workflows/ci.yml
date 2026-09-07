@@ -112,11 +112,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # docker-compose.yml deliberately requires POSTGRES_PASSWORD /
+      # BILLING_APP_PASSWORD / AEAD_ENCRYPTION_KEY via Compose's `:?`
+      # interpolation (no insecure default) — the right choice for a real
+      # deployment, but it means `docker compose config -q` can't even
+      # parse the file without SOME value present. These are throwaway,
+      # CI-only placeholders that exist for exactly this one validation
+      # step (never used to actually start a container here) — not real
+      # secrets, and never written to deploy/compose/.env, which stays
+      # gitignored for actual operators.
       - name: deploy/compose — default profile
         working-directory: deploy/compose
+        env:
+          POSTGRES_PASSWORD: ci-placeholder-not-a-real-secret
+          BILLING_APP_PASSWORD: ci-placeholder-not-a-real-secret
+          AEAD_ENCRYPTION_KEY: ci-placeholder-not-a-real-secret
         run: docker compose config -q
       - name: deploy/compose — all profiles (redis, minio, reverse-proxy)
         working-directory: deploy/compose
+        env:
+          POSTGRES_PASSWORD: ci-placeholder-not-a-real-secret
+          BILLING_APP_PASSWORD: ci-placeholder-not-a-real-secret
+          AEAD_ENCRYPTION_KEY: ci-placeholder-not-a-real-secret
         run: docker compose --profile redis --profile minio --profile reverse-proxy config -q
       - name: casaos
         working-directory: casaos
