@@ -258,7 +258,7 @@ export function CataloguePage() {
       <ImportPanel
         title="Bulk import products"
         path="/catalogue/products/import"
-        columns={["name", "hsn_sac_code (optional)", "base_uom_code"]}
+        columns={["name", "hsn_sac_code (optional)", "base_uom_code", "sku_code (optional — generated from name if blank)"]}
         onImported={() => void queryClient.invalidateQueries({ queryKey: ["products"] })}
       />
 

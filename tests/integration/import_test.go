@@ -4,11 +4,13 @@ package integration
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	catalogueapp "rechvix/internal/modules/catalogue/app"
+	cataloguedomain "rechvix/internal/modules/catalogue/domain"
 	cataloguepg "rechvix/internal/modules/catalogue/pg"
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactsdomain "rechvix/internal/modules/contacts/domain"
@@ -93,15 +95,131 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListProducts: %v", err)
 	}
-	found := false
+	var imported *cataloguedomain.Product
 	for _, p := range list {
 		if p.Name == newName {
-			found = true
+			imported = p
 		}
 	}
-	if !found {
+	if imported == nil {
 		t.Fatalf("imported product %q not found after commit", newName)
 	}
+
+	// A product with zero variants is invisible everywhere else in the
+	// app (billing lookup, inventory, purchases all key off
+	// ProductVariantID, never ProductID) — this is the regression this
+	// test now guards against, found via a real end-to-end smoke test
+	// after wiring the first frontend UI onto this endpoint (docs/TODO.md
+	// Stage 14): imported products used to commit with zero variants.
+	variants, err := svc.ListVariantsByProduct(ctx, principal, imported.ID)
+	if err != nil {
+		t.Fatalf("ListVariantsByProduct: %v", err)
+	}
+	if len(variants) != 1 {
+		t.Fatalf("imported product has %d variants, want exactly 1", len(variants))
+	}
+	if variants[0].SKUCode == "" {
+		t.Fatal("imported product's auto-created variant has an empty SKU code")
+	}
+}
+
+// TestCatalogue_ImportProducts_GeneratesUniqueSKUsOnCollision proves the
+// auto-generated-SKU path (used whenever a row has no sku_code column,
+// or leaves it blank) resolves a collision instead of failing the whole
+// row — both against a SKU that already exists in the organisation and
+// against another row in the SAME import batch that would generate the
+// identical slug (two products named identically except for
+// case/punctuation, a realistic spreadsheet scenario).
+func TestCatalogue_ImportProducts_GeneratesUniqueSKUsOnCollision(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestCatalogueServiceForImport(t)
+	principal := bootstrapOwnerPrincipal(t, ctx)
+
+	if _, err := svc.CreateUnitOfMeasure(ctx, principal, catalogueapp.CreateUnitOfMeasureParams{Code: "PCS", Name: "Pieces"}); err != nil {
+		t.Fatalf("CreateUnitOfMeasure: %v", err)
+	}
+
+	unique := uuid.NewString()[:8]
+	baseName := "Widget Alpha " + unique // slugifies to e.g. WIDGET-ALPHA-<unique>
+
+	// Pre-existing product whose variant SKU already occupies the slug
+	// the FIRST import row below would otherwise generate.
+	preexisting, err := svc.CreateProduct(ctx, principal, catalogueapp.CreateProductParams{
+		Name: "Some Other Product " + unique, BaseUOMID: mustGetUnitID(t, ctx, svc, principal, "PCS"),
+	})
+	if err != nil {
+		t.Fatalf("CreateProduct (pre-existing): %v", err)
+	}
+	occupiedSKU := slugifyForTest(baseName)
+	if _, err := svc.CreateVariant(ctx, principal, catalogueapp.CreateVariantParams{ProductID: preexisting.ID, SKUCode: occupiedSKU}); err != nil {
+		t.Fatalf("CreateVariant (occupying the slug): %v", err)
+	}
+
+	rows := []importer.Row{
+		{Number: 1, Fields: map[string]string{"name": baseName, "base_uom_code": "PCS"}},        // collides with occupiedSKU
+		{Number: 2, Fields: map[string]string{"name": baseName + "!!", "base_uom_code": "PCS"}}, // different product name, SAME slug as row 1's fallback
+	}
+	report, err := svc.ImportProducts(ctx, principal, rows, false)
+	if err != nil {
+		t.Fatalf("ImportProducts: %v", err)
+	}
+	if report.Committed != 2 {
+		t.Fatalf("report = %+v, want Committed=2 (both rows resolve to distinct SKUs despite the collision)", report)
+	}
+
+	list, err := svc.ListProducts(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListProducts: %v", err)
+	}
+	skus := make(map[string]int)
+	for _, p := range list {
+		if p.Name != baseName && p.Name != baseName+"!!" {
+			continue
+		}
+		variants, err := svc.ListVariantsByProduct(ctx, principal, p.ID)
+		if err != nil {
+			t.Fatalf("ListVariantsByProduct(%s): %v", p.Name, err)
+		}
+		if len(variants) != 1 {
+			t.Fatalf("product %q has %d variants, want 1", p.Name, len(variants))
+		}
+		skus[variants[0].SKUCode]++
+	}
+	if len(skus) != 2 {
+		t.Fatalf("expected 2 distinct SKUs across the two imported products, got %v", skus)
+	}
+	for sku, count := range skus {
+		if count != 1 {
+			t.Fatalf("SKU %q used by %d variants, want exactly 1 (uniqueness violated)", sku, count)
+		}
+		if sku == occupiedSKU {
+			t.Fatalf("an imported product ended up with the pre-occupied SKU %q — collision not actually avoided", occupiedSKU)
+		}
+	}
+}
+
+// slugifyForTest mirrors catalogue/app.slugifySKU exactly (unexported,
+// so this test can't call it directly) — used only to compute what SKU
+// a given name WOULD generate, so the test can deliberately occupy it
+// first.
+func slugifyForTest(name string) string {
+	var out []byte
+	lastWasDash := false
+	for _, r := range strings.ToUpper(name) {
+		switch {
+		case r >= 'A' && r <= 'Z' || r >= '0' && r <= '9':
+			out = append(out, byte(r))
+			lastWasDash = false
+		case !lastWasDash:
+			out = append(out, '-')
+			lastWasDash = true
+		}
+	}
+	s := strings.Trim(string(out), "-")
+	if len(s) > 24 {
+		s = s[:24]
+	}
+	return s
 }
 
 func TestContacts_ImportParties_ValidatesDedupesAndCommits(t *testing.T) {
