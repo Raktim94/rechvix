@@ -1,3 +1,8 @@
+# syntax=docker/dockerfile:1.7
+# The pragma above is required for the RUN --mount=type=bind,from=...
+# used below (pgtools extraction) — without it, buildx falls back to an
+# older Dockerfile frontend that doesn't understand that flag.
+#
 # billing-server — the HTTP API composition root (apps/server), now with
 # apps/web's built SPA served alongside it (internal/platform/http's
 # MountSPA — a chi NotFound fallback, not a Go embed, so the two build
@@ -59,8 +64,33 @@ COPY --from=build /out/server /app/server
 COPY --from=webbuild --chown=billing:billing /web/dist /app/web
 COPY --from=pgtools /usr/lib/postgresql/18/bin/pg_dump /usr/local/bin/pg_dump
 COPY --from=pgtools /usr/lib/postgresql/18/bin/pg_restore /usr/local/bin/pg_restore
-COPY --from=pgtools /lib/x86_64-linux-gnu/ /lib/x86_64-linux-gnu/
-COPY --from=pgtools /lib64/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+
+# The two binaries above are the same subpath on every architecture, but
+# their runtime .so dependencies live under an architecture-specific
+# triplet directory (/lib/x86_64-linux-gnu on amd64, /lib/aarch64-linux-gnu
+# on arm64) with a differently-named dynamic linker to match — a plain
+# COPY can't branch on that, so this is a RUN with a shell case statement
+# instead, reading pgtools' filesystem via a build-time bind mount rather
+# than a real COPY layer. TARGETARCH is a buildx-provided ARG, always
+# correct for the platform actually being built (this project's own
+# .github/workflows/docker-publish.yml builds linux/amd64 AND
+# linux/arm64) — this is exactly the gap that shipped once already: the
+# first version of this file hardcoded the amd64 triplet, which built and
+# ran fine locally (amd64-only) and passed this repo's own single-arch CI
+# job, but broke the real multi-arch publish workflow on its arm64 leg,
+# caught by that workflow actually running, not by local testing (this
+# development environment could only ever build/run amd64).
+ARG TARGETARCH
+RUN --mount=type=bind,from=pgtools,target=/pgtools \
+    set -eu; \
+    case "$TARGETARCH" in \
+      amd64) triplet=x86_64-linux-gnu; loader=/lib64/ld-linux-x86-64.so.2 ;; \
+      arm64) triplet=aarch64-linux-gnu; loader=/lib/ld-linux-aarch64.so.1 ;; \
+      *) echo "pgtools: unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p "/lib/$triplet" "$(dirname "$loader")"; \
+    cp -a "/pgtools/lib/$triplet/." "/lib/$triplet/"; \
+    cp -a "/pgtools$loader" "$loader"
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD wget -q -O- --no-check-certificate http://localhost:8080/health/live || exit 1
