@@ -49,7 +49,7 @@ export function CataloguePage() {
   });
   const units = useQuery({
     queryKey: ["units"],
-    queryFn: () => api.getListField<Unit>("/catalogue/units", "units"),
+    queryFn: () => api.getListField<Unit>("/catalogue/units", "units_of_measure"),
   });
   const categories = useQuery({
     queryKey: ["categories"],
@@ -202,9 +202,10 @@ export function CataloguePage() {
                   </option>
                 ))}
               </select>
-              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <div style={{ display: "flex", gap: 6, marginTop: 6, minWidth: 0 }}>
                 <input
                   className={ui.input}
+                  style={{ flex: "1 1 auto", minWidth: 0 }}
                   placeholder="New category name"
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
@@ -212,6 +213,7 @@ export function CataloguePage() {
                 <button
                   type="button"
                   className={ui.btnSecondary}
+                  style={{ flex: "0 0 auto" }}
                   disabled={!newCategoryName || createCategory.isPending}
                   onClick={() => createCategory.mutate()}
                 >
@@ -229,9 +231,15 @@ export function CataloguePage() {
                   </option>
                 ))}
               </select>
-              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                <input className={ui.input} placeholder="New brand name" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} />
-                <button type="button" className={ui.btnSecondary} disabled={!newBrandName || createBrand.isPending} onClick={() => createBrand.mutate()}>
+              <div style={{ display: "flex", gap: 6, marginTop: 6, minWidth: 0 }}>
+                <input
+                  className={ui.input}
+                  style={{ flex: "1 1 auto", minWidth: 0 }}
+                  placeholder="New brand name"
+                  value={newBrandName}
+                  onChange={(e) => setNewBrandName(e.target.value)}
+                />
+                <button type="button" className={ui.btnSecondary} style={{ flex: "0 0 auto" }} disabled={!newBrandName || createBrand.isPending} onClick={() => createBrand.mutate()}>
                   Add
                 </button>
               </div>
