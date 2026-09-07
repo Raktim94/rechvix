@@ -15,9 +15,12 @@
 package httpapi
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -28,6 +31,7 @@ import (
 	"rechvix/internal/modules/ewaybill/app"
 	"rechvix/internal/modules/ewaybill/domain"
 	"rechvix/internal/modules/ewaybill/govportal"
+	"rechvix/internal/modules/ewaybill/portal"
 	"rechvix/internal/platform/database"
 	httpx "rechvix/internal/platform/http"
 	"rechvix/internal/platform/permissions"
@@ -51,6 +55,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/sales/documents/{id}/ewaybill/manual-result", h.manualResult)
 	r.Post("/sales/documents/{id}/ewaybill/import-result", h.importResult)
 	r.Get("/ewaybill/portal-url", h.portalURL)
+	r.Post("/ewaybill/portal-batch", h.prepareBatch)
 }
 
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -149,6 +154,86 @@ func (h *Handlers) prepare(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+file.FileName+`"`)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(file.Content)
+}
+
+type prepareBatchRequest struct {
+	SalesDocumentIDs []uuid.UUID `json:"sales_document_ids"`
+}
+
+// prepareBatch is the bulk-selection queue docs/architecture.md §9b
+// describes and Stage 8c's own pass left explicitly unbuilt ("no
+// endpoint to select multiple invoices"). Returns one ZIP containing
+// every batch file app.Service.PrepareFreePortalUploadBatch produced
+// (portal.MaxFileSizeBytes-bounded, so a large selection is several
+// numbered files, not one — the government portal's own upload limit,
+// same reasoning the single-document prepare endpoint's file already
+// respects) plus a MANIFEST.txt listing any document that couldn't be
+// included and why, so a skip is visible to the operator instead of
+// silently missing from the download.
+func (h *Handlers) prepareBatch(w http.ResponseWriter, r *http.Request) {
+	p := principal(r)
+	if err := h.permissions.Require(r.Context(), p, "ewaybill.generate", permissions.Scope{}); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	req, err := decodeJSON[prepareBatchRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	if len(req.SalesDocumentIDs) == 0 {
+		httpx.WriteError(w, r, httpx.NewBadRequest("EMPTY_SELECTION", "Select at least one invoice."))
+		return
+	}
+
+	var batches []portal.PreparedFile
+	var skipped []app.BatchSkip
+	err = h.pool.RunScoped(r.Context(), p.OrganisationID, func(ctx context.Context) error {
+		var err error
+		batches, skipped, err = h.svc.PrepareFreePortalUploadBatch(ctx, p.OrganisationID, req.SalesDocumentIDs)
+		return err
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	if len(batches) == 0 {
+		httpx.WriteError(w, r, httpx.NewBadRequest("NONE_ELIGIBLE", "None of the selected invoices could be prepared — see the reasons and try individually from each invoice's own page."))
+		return
+	}
+
+	var zipBuf bytes.Buffer
+	zw := zip.NewWriter(&zipBuf)
+	for _, f := range batches {
+		zf, err := zw.Create(f.FileName)
+		if err != nil {
+			httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "Could not build the batch archive.", Cause: err})
+			return
+		}
+		if _, err := zf.Write(f.Content); err != nil {
+			httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "Could not build the batch archive.", Cause: err})
+			return
+		}
+	}
+	manifest, err := zw.Create("MANIFEST.txt")
+	if err == nil {
+		fmt.Fprintf(manifest, "Prepared %d batch file(s) from %d invoice(s); %d skipped.\n\n", len(batches), len(req.SalesDocumentIDs), len(skipped))
+		if len(skipped) > 0 {
+			fmt.Fprintln(manifest, "Skipped:")
+			for _, s := range skipped {
+				fmt.Fprintf(manifest, "  %s: %s\n", s.SalesDocumentID, s.Reason)
+			}
+		}
+	}
+	if err := zw.Close(); err != nil {
+		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "Could not finalize the batch archive.", Cause: err})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="ewaybill-batch-`+time.Now().Format("20060102-150405")+`.zip"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(zipBuf.Bytes())
 }
 
 type updateTransportInfoRequest struct {

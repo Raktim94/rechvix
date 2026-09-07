@@ -18,6 +18,7 @@ import (
 	"rechvix/internal/modules/ewaybill/canonical"
 	"rechvix/internal/modules/ewaybill/domain"
 	"rechvix/internal/modules/ewaybill/eligibility"
+	"rechvix/internal/modules/ewaybill/portal"
 	portalv1 "rechvix/internal/modules/ewaybill/portal/v1"
 	"rechvix/internal/modules/gstindia"
 	gstindiapg "rechvix/internal/modules/gstindia/pg"
@@ -474,5 +475,67 @@ func TestEwaybillFreePortal_RLS_VehiclesBlockCrossOrgRead(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("org A's own vehicle list did not include the vehicle it just created")
+	}
+}
+
+// TestEwaybillFreePortal_PrepareBatch_SkipsIneligibleAndGroupsTheRest is
+// the bulk-selection queue's own test (docs/architecture.md §9b — Stage
+// 8c's own pass left this explicitly unbuilt: "the SplitBatch primitive
+// exists and is tested, but no endpoint to select multiple invoices").
+// Proves PrepareFreePortalUploadBatch does the two things a bulk action
+// over a mixed selection actually needs: an ineligible document doesn't
+// abort the whole batch (it's reported, not silently dropped), and the
+// eligible documents' prepared content really does end up inside the
+// returned batch file(s).
+func TestEwaybillFreePortal_PrepareBatch_SkipsIneligibleAndGroupsTheRest(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, contactsSvc, _, ewSvc := newTestFreePortalEwaybillService(t)
+	fx := setupSalesFixture(t, ctx)
+	addrID := addShippingAddress(t, ctx, contactsSvc, fx.Principal, fx.CustomerID, "Bangalore")
+
+	// Two docs above the seeded ₹50,000 threshold, brought to READY the
+	// same way evaluateAndSupplyDistance already does for the single-
+	// document tests above.
+	docA := createFinalizedInvoiceWithTransport(t, ctx, salesSvc, fx, "10", "6000", &addrID)
+	if req := evaluateAndSupplyDistance(t, ctx, ewSvc, fx.Principal.OrganisationID, docA.ID); req != eligibility.Ready {
+		t.Fatalf("docA requirement = %s, want READY", req)
+	}
+	docB := createFinalizedInvoiceWithTransport(t, ctx, salesSvc, fx, "10", "7000", &addrID)
+	if req := evaluateAndSupplyDistance(t, ctx, ewSvc, fx.Principal.OrganisationID, docB.ID); req != eligibility.Ready {
+		t.Fatalf("docB requirement = %s, want READY", req)
+	}
+
+	// One doc well under the threshold — never becomes eligible at all,
+	// so PrepareFreePortalUpload hits domain.ErrNotEligible for it.
+	docC := createFinalizedInvoiceWithTransport(t, ctx, salesSvc, fx, "1", "100", &addrID)
+
+	var batches []portal.PreparedFile
+	var skipped []ewaybillapp.BatchSkip
+	err := sharedPool.RunScoped(ctx, fx.Principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		batches, skipped, err = ewSvc.PrepareFreePortalUploadBatch(ctx, fx.Principal.OrganisationID, []uuid.UUID{docA.ID, docB.ID, docC.ID})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("PrepareFreePortalUploadBatch: %v", err)
+	}
+
+	if len(skipped) != 1 || skipped[0].SalesDocumentID != docC.ID {
+		t.Fatalf("skipped = %+v, want exactly docC (%s) skipped", skipped, docC.ID)
+	}
+	if len(batches) == 0 {
+		t.Fatal("batches is empty — the two eligible documents produced no output")
+	}
+
+	var totalItems int
+	for _, b := range batches {
+		var items []json.RawMessage
+		if err := json.Unmarshal(b.Content, &items); err != nil {
+			t.Fatalf("unmarshaling batch file %q: %v", b.FileName, err)
+		}
+		totalItems += len(items)
+	}
+	if totalItems != 2 {
+		t.Fatalf("total items across all batch files = %d, want 2 (docA and docB)", totalItems)
 	}
 }

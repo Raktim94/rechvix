@@ -23,6 +23,7 @@ import (
 	"rechvix/internal/modules/ewaybill/domain"
 	"rechvix/internal/modules/ewaybill/eligibility"
 	"rechvix/internal/modules/ewaybill/portal"
+	portalv1 "rechvix/internal/modules/ewaybill/portal/v1"
 	orgapp "rechvix/internal/modules/organisation/app"
 	salesapp "rechvix/internal/modules/sales/app"
 	taxationapp "rechvix/internal/modules/taxation/app"
@@ -359,6 +360,48 @@ func (s *Service) PrepareFreePortalUpload(ctx context.Context, orgID, salesDocum
 	s.recordAudit(ctx, orgID, "ewaybill.portal_upload_prepared", "ewaybill_record", rec.ID,
 		map[string]any{"sales_document_id": salesDocumentID, "file_name": file.FileName})
 	return file, rec, nil
+}
+
+// BatchSkip records one document PrepareFreePortalUploadBatch could not
+// prepare (not eligible, missing information, already generated, ...) —
+// surfaced to the caller instead of silently dropping it from the batch,
+// same "never silently skip" posture as brief §53's import reports.
+type BatchSkip struct {
+	SalesDocumentID uuid.UUID
+	Reason          string
+}
+
+// PrepareFreePortalUploadBatch is the bulk-selection flow
+// docs/architecture.md §9b describes but Stage 8c's own pass left
+// unbuilt ("the SplitBatch primitive exists and is tested, but no
+// endpoint to select multiple invoices — no apps/web to hang it on
+// yet"). Runs PrepareFreePortalUpload per document (this is why it must
+// run inside a caller-provided RunScoped block, same requirement that
+// method itself documents) — one ineligible or already-prepared document
+// in the selection is recorded as a BatchSkip and the rest continue,
+// never aborting the whole batch over one bad row. The successfully
+// prepared documents' JSON content is then grouped into
+// portal.MaxFileSizeBytes-bounded batch files via the existing,
+// already-tested SplitBatch — this function is genuinely just the
+// "loop + call the two already-built primitives" glue that was missing.
+func (s *Service) PrepareFreePortalUploadBatch(ctx context.Context, orgID uuid.UUID, salesDocumentIDs []uuid.UUID) (batches []portal.PreparedFile, skipped []BatchSkip, err error) {
+	var contents [][]byte
+	for _, docID := range salesDocumentIDs {
+		file, _, err := s.PrepareFreePortalUpload(ctx, orgID, docID)
+		if err != nil {
+			skipped = append(skipped, BatchSkip{SalesDocumentID: docID, Reason: err.Error()})
+			continue
+		}
+		contents = append(contents, file.Content)
+	}
+	if len(contents) == 0 {
+		return nil, skipped, nil
+	}
+	batches, err = portalv1.SplitBatch(contents, portalv1.MaxFileSizeBytes)
+	if err != nil {
+		return nil, skipped, fmt.Errorf("ewaybill: splitting batch: %w", err)
+	}
+	return batches, skipped, nil
 }
 
 // ManualResultParams is the universal fallback path (docs/architecture.md

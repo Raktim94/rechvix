@@ -2,9 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
-import { api, ApiError } from "../../lib/api-client";
+import { api, apiUrl, ApiError } from "../../lib/api-client";
 import type { Organisation } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
+import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, type SalesDocument } from "../sales/types";
 
 interface Vehicle {
   ID: string;
@@ -238,6 +239,133 @@ function TaxRatesSection() {
   );
 }
 
+/** Bulk-selection e-Way Bill prepare (docs/architecture.md §9b) — the
+ * SplitBatch/PrepareFreePortalUploadBatch primitives existed server-side
+ * since Stage 8c with no UI to select multiple invoices at once; each
+ * invoice's own page (EwayBillCard) already covers the single-document
+ * flow. Downloads one ZIP: numbered batch files ready to upload to the
+ * government portal, plus a MANIFEST.txt listing anything that couldn't
+ * be included and why (not eligible yet, missing distance, etc.) — a
+ * skip is surfaced, never silently dropped from the download. */
+function BulkEwayBillPanel() {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const documents = useQuery({
+    queryKey: ["sales-documents"],
+    queryFn: () => api.getListField<SalesDocument>("/sales/documents", "documents"),
+  });
+  const eligible = (documents.data ?? []).filter((d) => d.Status === "FINALIZED" && EWB_ELIGIBLE_TYPES.has(d.DocumentType));
+
+  function toggle(id: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function prepareSelected() {
+    setError(null);
+    setDone(false);
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl("/ewaybill/portal-batch"), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sales_document_ids: Array.from(selected) }),
+      });
+      if (!res.ok) {
+        const body: unknown = await res.json().catch(() => null);
+        const message =
+          body && typeof body === "object" && "error" in body && typeof (body as { error?: { message?: string } }).error?.message === "string"
+            ? (body as { error: { message: string } }).error.message
+            : `Could not prepare this batch (${res.status}).`;
+        throw new ApiError(res.status, "BATCH_FAILED", message);
+      }
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "ewaybill-batch.zip";
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setDone(true);
+      setSelected(new Set());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not prepare this batch.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={layout.panel}>
+      <h2>Bulk e-Way Bill prepare</h2>
+      <p className={layout.subtitle} style={{ marginBottom: 12 }}>
+        Select multiple invoices and download one ZIP of government-portal upload files, instead of preparing each
+        one individually from its own invoice page.
+      </p>
+      {documents.isPending ? (
+        <div className={layout.skeleton} style={{ height: 120 }} aria-hidden="true" />
+      ) : eligible.length === 0 ? (
+        <p className={layout.emptyState}>No finalized invoices are eligible for an e-Way Bill yet.</p>
+      ) : (
+        <>
+          <div className={ui.tableScroll} style={{ maxHeight: 280, overflowY: "auto" }}>
+            <table className={ui.table}>
+              <thead>
+                <tr>
+                  <th scope="col" />
+                  <th scope="col">Number</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {eligible.map((d) => (
+                  <tr key={d.ID}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${d.DocumentNumber}`}
+                        checked={selected.has(d.ID)}
+                        onChange={() => toggle(d.ID)}
+                      />
+                    </td>
+                    <td>{d.DocumentNumber}</td>
+                    <td>{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
+                    <td>{new Date(d.IssueDate).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className={ui.formActions} style={{ marginTop: 12 }}>
+            <button type="button" className={ui.btnPrimary} disabled={selected.size === 0 || busy} onClick={() => void prepareSelected()}>
+              {busy ? "Preparing…" : `Prepare ${selected.size || ""} selected`.trim()}
+            </button>
+          </div>
+        </>
+      )}
+      {error ? (
+        <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+          {error}
+        </p>
+      ) : null}
+      {done ? <p style={{ color: "var(--color-positive)", marginTop: 8 }}>Batch downloaded — check MANIFEST.txt inside for anything skipped.</p> : null}
+    </div>
+  );
+}
+
 export function GstPage() {
   return (
     <div className={layout.page}>
@@ -249,6 +377,7 @@ export function GstPage() {
       </div>
 
       <EWayBillModeSection />
+      <BulkEwayBillPanel />
       <VehiclesSection />
       <TransportersSection />
       <TaxRatesSection />
