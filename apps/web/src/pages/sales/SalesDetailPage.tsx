@@ -4,14 +4,37 @@ import { EwayBillCard } from "../../components/EwayBillCard";
 import ui from "../../components/ui.module.css";
 import { api } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
+import type { Party } from "../../lib/partyTypes";
 import layout from "../DashboardPage.module.css";
 import styles from "./SalesDetailPage.module.css";
 import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
+
+/** A WhatsApp "click to chat" deep link (`wa.me`) — no WhatsApp Business
+ * API credential needed, works for any customer with a saved phone
+ * number. Assumes an Indian 10-digit mobile number when the customer's
+ * on-file number carries no country code, since that's what every
+ * contact created via ContactsPage/BillingPage looks like today. WhatsApp
+ * has no URL-scheme way to pre-attach the invoice PDF to the draft
+ * message, so the message points the customer at what to expect and
+ * leaves attaching the already-downloadable PDF (the button right next to
+ * this one) to the person sending it. */
+function whatsAppShareUrl(phone: string, message: string): string | null {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return null;
+  const withCountryCode = digits.length === 10 ? `91${digits}` : digits;
+  return `https://wa.me/${withCountryCode}?text=${encodeURIComponent(message)}`;
+}
 
 export function SalesDetailPage({ id }: { id: string }) {
   const doc = useQuery({
     queryKey: ["sales-document", id],
     queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[] }>(`/sales/documents/${id}`),
+  });
+
+  const customer = useQuery({
+    queryKey: ["party", doc.data?.document.CustomerPartyID],
+    queryFn: () => api.get<Party>(`/contacts/parties/${doc.data?.document.CustomerPartyID}`),
+    enabled: !!doc.data?.document.CustomerPartyID,
   });
 
   if (doc.isPending) {
@@ -50,15 +73,44 @@ export function SalesDetailPage({ id }: { id: string }) {
             Continue billing
           </Link>
         ) : (
-          <a href={`/api/v1/sales/documents/${document.ID}/print`} target="_blank" rel="noopener noreferrer" className={ui.btnSecondary}>
-            Print / Download PDF
-          </a>
+          <div className={styles.headerActions}>
+            <a href={`/api/v1/sales/documents/${document.ID}/print`} target="_blank" rel="noopener noreferrer" className={ui.btnSecondary}>
+              Print / Download PDF
+            </a>
+            {(() => {
+              const shareUrl = customer.data?.Phone
+                ? whatsAppShareUrl(
+                    customer.data.Phone,
+                    `Hi ${customer.data.LegalName}, your ${DOCUMENT_TYPE_LABELS[document.DocumentType].toLowerCase()} ${document.DocumentNumber} for ${document.GrandTotalAmount ? formatMoney(document.GrandTotalAmount) : "—"} is ready. Thank you for your business!`,
+                  )
+                : null;
+              return (
+                <a
+                  href={shareUrl ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={ui.btnSecondary}
+                  aria-disabled={!shareUrl}
+                  style={shareUrl ? undefined : { opacity: 0.5, cursor: "not-allowed" }}
+                  title={shareUrl ? undefined : "Add a phone number for this customer to share via WhatsApp"}
+                  onClick={(e) => {
+                    if (!shareUrl) e.preventDefault();
+                  }}
+                >
+                  Share via WhatsApp
+                </a>
+              );
+            })()}
+          </div>
         )}
       </div>
 
       <div className={styles.grid}>
         <div className={layout.panel}>
           <div className={styles.metaRow}>
+            <span>
+              Customer: <strong>{customer.data?.LegalName ?? "—"}</strong>
+            </span>
             <span>
               Status: <strong>{document.Status}</strong>
             </span>

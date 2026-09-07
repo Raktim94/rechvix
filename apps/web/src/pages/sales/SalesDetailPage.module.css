@@ -5,6 +5,12 @@
   align-items: start;
 }
 
+.headerActions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 @media (max-width: 1023px) {
   .grid {
     grid-template-columns: 1fr;

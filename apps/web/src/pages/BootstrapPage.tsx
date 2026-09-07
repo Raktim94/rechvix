@@ -187,7 +187,12 @@ export function BootstrapPage() {
           </button>
         </form>
       </div>
-      <p className={styles.brandFooter}>Built by NodeDR Infotech Private Limited</p>
+      <p className={styles.brandFooter}>
+        Built by{" "}
+        <a href="https://www.nodedr.com/" target="_blank" rel="noopener noreferrer">
+          NodeDR Infotech Private Limited
+        </a>
+      </p>
     </div>
   );
 }

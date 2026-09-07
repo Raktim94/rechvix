@@ -1,4 +1,5 @@
-import { useReportTable } from "../lib/useReportTable";
+import { apiUrl } from "../lib/api-client";
+import { useReportTable, withFormat } from "../lib/useReportTable";
 import layout from "../pages/DashboardPage.module.css";
 import ui from "./ui.module.css";
 
@@ -24,27 +25,41 @@ export function ReportTable({ path, emptyLabel }: { path: string; emptyLabel?: s
     return <p className={layout.emptyState}>{emptyLabel ?? "Nothing to show yet."}</p>;
   }
   return (
-    <div className={ui.tableScroll}>
-      <table className={ui.table}>
-        <thead>
-          <tr>
-            {headers.map((h, i) => (
-              <th key={i} scope="col">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              {row.map((cell, j) => (
-                <td key={j} className={j > 0 ? "num" : undefined}>
-                  {cell}
-                </td>
+    <div>
+      <div className={ui.exportRow}>
+        <span className={ui.exportLabel}>Export:</span>
+        <a className={ui.btnSecondary} href={apiUrl(withFormat(path, "csv"))}>
+          CSV
+        </a>
+        <a className={ui.btnSecondary} href={apiUrl(withFormat(path, "xlsx"))}>
+          Excel
+        </a>
+        <a className={ui.btnSecondary} href={apiUrl(withFormat(path, "pdf"))}>
+          PDF
+        </a>
+      </div>
+      <div className={ui.tableScroll}>
+        <table className={ui.table}>
+          <thead>
+            <tr>
+              {headers.map((h, i) => (
+                <th key={i} scope="col">{h}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i}>
+                {row.map((cell, j) => (
+                  <td key={j} className={j > 0 ? "num" : undefined}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

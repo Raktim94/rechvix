@@ -8,6 +8,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -142,19 +143,20 @@ func errBadDate(param, value string) error {
 // report handler's export logic converges.
 func writeTable(w http.ResponseWriter, r *http.Request, t export.Table) {
 	format := r.URL.Query().Get("format")
+	name := reportFilename(t.Title)
 	var err error
 	switch format {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv")
-		w.Header().Set("Content-Disposition", `attachment; filename="report.csv"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.csv"`)
 		err = export.WriteCSV(w, t)
 	case "xlsx":
 		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-		w.Header().Set("Content-Disposition", `attachment; filename="report.xlsx"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.xlsx"`)
 		err = export.WriteXLSX(w, t)
 	case "pdf":
 		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="report.pdf"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.pdf"`)
 		err = export.WriteTablePDF(w, t)
 	default:
 		w.Header().Set("Content-Type", "application/json")
@@ -163,4 +165,30 @@ func writeTable(w http.ResponseWriter, r *http.Request, t export.Table) {
 	if err != nil {
 		httpx.WriteError(w, r, httpx.NewBadRequest("EXPORT_FAILED", "Could not render the report in the requested format."))
 	}
+}
+
+// reportFilename turns a report's human title (e.g. "GSTR-1 Summary") plus
+// today's date into a safe download filename ("gstr-1-summary-2026-09-07")
+// — the previous hardcoded "report.csv" collided across every report and
+// every export, forcing the user to rename each download by hand to tell
+// them apart.
+func reportFilename(title string) string {
+	slug := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + ('a' - 'A')
+		default:
+			return '-'
+		}
+	}, title)
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		slug = "report"
+	}
+	return slug + "-" + time.Now().Format("2006-01-02")
 }

@@ -80,6 +80,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/** Builds a full same-origin URL for a report/export download link
+ * (`<a href>`, not `fetch`) — the session cookie rides along on a normal
+ * browser navigation the same way it does on every `fetch` above, no
+ * separate auth handling needed. */
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, data?: unknown) =>

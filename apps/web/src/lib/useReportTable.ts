@@ -22,3 +22,15 @@ export function useReportTable(path: string) {
     queryFn: () => api.get<ReportTableData>(path),
   });
 }
+
+/** Every /reports/* endpoint accepts the same `format=csv|xlsx|pdf|json`
+ * query param (see internal/modules/reporting/httpapi/handlers.go's
+ * writeTable) — this swaps just that param on an existing report path
+ * (which may already carry from/to/group_by/etc.) without disturbing the
+ * rest of the query string, for building an export download link. */
+export function withFormat(path: string, format: "csv" | "xlsx" | "pdf"): string {
+  const [base, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  params.set("format", format);
+  return `${base}?${params.toString()}`;
+}

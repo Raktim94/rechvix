@@ -114,7 +114,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </li>
           ))}
         </ul>
-        <p className={styles.navFooter}>NodeDR Infotech Private Limited</p>
+        <p className={styles.navFooter}>
+          <a href="https://www.nodedr.com/" target="_blank" rel="noopener noreferrer">
+            NodeDR Infotech Private Limited
+          </a>
+        </p>
       </nav>
 
       <header className={styles.topbar}>

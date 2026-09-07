@@ -258,7 +258,15 @@ export function GstPage() {
         <ReportTable path="/reports/tax/hsn-summary?format=json" />
       </div>
       <div className={layout.panel}>
+        <h2>Tax-rate summary</h2>
+        <ReportTable path="/reports/tax/rate-summary?format=json" />
+      </div>
+      <div className={layout.panel}>
         <h2>GSTR-1 summary</h2>
+        <p className={layout.subtitle} style={{ marginBottom: 12 }}>
+          Prepared from your finalized sales for the current data — not a filing submission. Export and hand this to
+          your CA, or use it to fill the government GSTR-1 form yourself.
+        </p>
         <ReportTable path="/reports/tax/gstr1?format=json" />
       </div>
     </div>
