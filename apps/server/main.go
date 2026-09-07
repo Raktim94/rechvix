@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -68,6 +69,7 @@ import (
 	salesapp "rechvix/internal/modules/sales/app"
 	saleshttp "rechvix/internal/modules/sales/httpapi"
 	salespg "rechvix/internal/modules/sales/pg"
+	"rechvix/internal/modules/sales/printing"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
 	webhooksapp "rechvix/internal/modules/webhooks/app"
@@ -398,7 +400,37 @@ func run() error {
 		// Share-link redemption is deliberately UNAUTHENTICATED (brief
 		// §21 — the whole point is a recipient with no session/API key);
 		// it does NOT go in the RequireAuthOrAPIKey group below.
-		notificationshttp.NewHandlers(notificationsSvc).MountPublic(r)
+		//
+		// WithDocumentRenderer is the layering-safe wiring
+		// docs/adr/0003-accounting-integration-point.md's point 6
+		// describes, same pattern as identity's WithPostBootstrapHook
+		// just above — notifications can't import sales directly, but
+		// this composition root already has both. "sales_document" is
+		// the only documentType internal/modules/notifications.
+		// CreateShareLink is ever called with today (every share-link
+		// call site in apps/web points at a sales document); anything
+		// else falls through to the explicit error rather than silently
+		// rendering nothing.
+		notificationshttp.NewHandlers(notificationsSvc).
+			WithDocumentRenderer(func(ctx context.Context, orgID, createdBy uuid.UUID, documentType string, documentID uuid.UUID) ([]byte, string, string, error) {
+				if documentType != "sales_document" {
+					return nil, "", "", fmt.Errorf("main: rendering share-linked document type %q is not supported", documentType)
+				}
+				data, err := salesSvc.BuildInvoiceDataForShareLink(ctx, orgID, createdBy, documentID)
+				if err != nil {
+					return nil, "", "", err
+				}
+				pdf, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, *data)
+				if err != nil {
+					return nil, "", "", err
+				}
+				filename := data.DocumentNumber
+				if filename == "" {
+					filename = "document"
+				}
+				return pdf, "application/pdf", filename + ".pdf", nil
+			}).
+			MountPublic(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(identityhttp.RequireAuthOrAPIKey(identitySvc, cfg.Session.CookieName))

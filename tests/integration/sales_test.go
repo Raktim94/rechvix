@@ -588,3 +588,58 @@ func TestSales_Print_UsesLegalEntityInvoiceBranding(t *testing.T) {
 		t.Errorf("LogoPNG after RemoveLogo=true = %d bytes, want nil", len(updated.LogoPNG))
 	}
 }
+
+// TestSales_BuildInvoiceDataForShareLink_ImpersonatesCreatorScopedToOrg
+// proves the share-link document-rendering path (wired as
+// notificationshttp.DocumentRenderer in apps/server/main.go, called from
+// the unauthenticated GET /share/{token}/pdf route) does what its own
+// doc comment claims: it renders successfully when given the real
+// creator's identity and the correct organisation (the only combination
+// notifications.RedeemShareLink's real callers ever produce), and it
+// fails closed — not open — when given a mismatched organisation, the
+// one thing standing between "share links work" and "any anonymous
+// visitor can read any document by id."
+func TestSales_BuildInvoiceDataForShareLink_ImpersonatesCreatorScopedToOrg(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, _, _ := newTestSalesServices(t)
+	fxA := setupSalesFixture(t, ctx)
+	fxB := setupSalesFixture(t, ctx)
+
+	doc, err := salesSvc.CreateDocument(ctx, fxA.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fxA.LegalEntityID, BranchID: fxA.BranchID, WarehouseID: fxA.WarehouseID, CustomerPartyID: fxA.CustomerID,
+		DocumentType: salesdomain.DocTaxInvoice, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	if _, err := salesSvc.AddLine(ctx, fxA.Principal, salesapp.AddLineParams{
+		DocumentID: doc.ID, ProductVariantID: fxA.VariantID, UnitID: fxA.PCS,
+		Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, "500"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	if _, err := salesSvc.FinalizeDocument(ctx, fxA.Principal, doc.ID); err != nil {
+		t.Fatalf("FinalizeDocument: %v", err)
+	}
+
+	// The real path: orgID and createdBy both come from the SAME
+	// redeemed share_links row, exactly like httpapi.redeemPDF calls it.
+	data, err := salesSvc.BuildInvoiceDataForShareLink(ctx, fxA.Principal.OrganisationID, fxA.Principal.UserID, doc.ID)
+	if err != nil {
+		t.Fatalf("BuildInvoiceDataForShareLink (correct org): %v", err)
+	}
+	pdfBytes, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, *data)
+	if err != nil {
+		t.Fatalf("RenderPDF: %v", err)
+	}
+	if !bytes.HasPrefix(pdfBytes, []byte("%PDF")) {
+		t.Fatalf("RenderPDF output does not start with the PDF magic bytes")
+	}
+
+	// A mismatched organisation (org B's creator/org paired with org A's
+	// document id) must fail, not silently render org A's invoice to
+	// someone whose share link was for a different business entirely.
+	if _, err := salesSvc.BuildInvoiceDataForShareLink(ctx, fxB.Principal.OrganisationID, fxB.Principal.UserID, doc.ID); err == nil {
+		t.Fatal("BuildInvoiceDataForShareLink succeeded across organisations — should have failed closed")
+	}
+}

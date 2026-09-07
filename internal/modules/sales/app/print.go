@@ -26,6 +26,23 @@ import (
 // domain.ErrDocumentNotDraft's sibling check inverted — a DRAFT has no
 // TaxDocumentID, so the nil check below is what actually enforces this,
 // deliberately, rather than adding a redundant status check.
+// BuildInvoiceDataForShareLink resolves documentID for an anonymous
+// share-link recipient (internal/modules/notifications' redeemPDF flow,
+// wired via httpapi.DocumentRenderer in apps/server/main.go) —
+// authorized by IMPERSONATING createdBy, the real user who created the
+// share link and so already passed notifications.share's own permission
+// check at creation time, not by skipping authorization. The document
+// actually returned is still hard-scoped to exactly documentID (never
+// anything else createdBy could otherwise read), so this widens nothing
+// beyond "let this one already-shared document be seen by whoever holds
+// the unguessable link" — the whole point of a share link existing. If
+// createdBy's own access is later revoked, BuildInvoiceData's own
+// s.view check correctly starts failing here too (fails closed, never
+// open).
+func (s *Service) BuildInvoiceDataForShareLink(ctx context.Context, orgID, createdBy, documentID uuid.UUID) (*printing.InvoiceData, error) {
+	return s.BuildInvoiceData(ctx, permissions.Principal{UserID: createdBy, OrganisationID: orgID}, documentID)
+}
+
 func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*printing.InvoiceData, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err

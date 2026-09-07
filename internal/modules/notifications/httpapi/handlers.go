@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -14,14 +15,42 @@ import (
 	"rechvix/internal/platform/permissions"
 )
 
-type Handlers struct{ svc *app.Service }
+// DocumentRenderer resolves a redeemed share link's (organisation,
+// creator, document type, document id) to a printable document's raw
+// bytes — wired from the composition root (apps/server/main.go, via
+// WithDocumentRenderer), same WithX-returns-a-copy convention as
+// identity's WithPostBootstrapHook and sales/httpapi's WithEWayBill.
+// notifications can't import sales directly (docs/adr/0003's layering
+// rule — a lower module doesn't import a higher one), so the actual
+// rendering call lives in main.go, which already constructs both.
+//
+// createdBy is passed through, not dropped: the real authorization for
+// this anonymous read is "impersonate the link's own creator, who
+// already passed a real permission check when they created it" (see
+// notifications/app.Service.RedeemShareLink's doc comment) — not a
+// bypass, and it fails closed if that user's own access has since been
+// revoked. This function itself performs no authorization of its own;
+// the caller (redeemPDF below) only ever invokes it with values from an
+// already-validated, unexpired, unrevoked share_links row.
+type DocumentRenderer func(ctx context.Context, orgID, createdBy uuid.UUID, documentType string, documentID uuid.UUID) (data []byte, contentType, filename string, err error)
+
+type Handlers struct {
+	svc      *app.Service
+	renderer DocumentRenderer
+}
 
 func NewHandlers(svc *app.Service) *Handlers { return &Handlers{svc: svc} }
+
+func (h *Handlers) WithDocumentRenderer(fn DocumentRenderer) *Handlers {
+	cp := *h
+	cp.renderer = fn
+	return &cp
+}
 
 // Mount registers the authenticated document-sharing routes into the
 // same authenticated group every other module mounts into
 // (apps/server/main.go). MountPublic registers the UNAUTHENTICATED
-// redeem endpoint separately — a share link's whole point is that the
+// redeem endpoints separately — a share link's whole point is that the
 // recipient has no session or API key (brief §21).
 func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/share-links", h.create)
@@ -31,6 +60,7 @@ func (h *Handlers) Mount(r chi.Router) {
 
 func (h *Handlers) MountPublic(r chi.Router) {
 	r.Get("/share/{token}", h.redeem)
+	r.Get("/share/{token}/pdf", h.redeemPDF)
 }
 
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -99,12 +129,41 @@ func (h *Handlers) revoke(w http.ResponseWriter, r *http.Request) {
 // principal.
 func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
-	docType, docID, err := h.svc.RedeemShareLink(r.Context(), token)
+	link, err := h.svc.RedeemShareLink(r.Context(), token)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"document_type": docType, "document_id": docID})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"document_type": link.DocumentType, "document_id": link.DocumentID})
+}
+
+// redeemPDF is the URL a WhatsApp/email share message actually points
+// at — unlike redeem above, it streams the real document (today: sales
+// invoices/quotations/etc. via the A4 template) inline, so the recipient
+// sees it directly in their browser with no app/JS of their own needed.
+// Falls back to a plain 404-shaped error (not a 500) when no renderer is
+// wired (e.g. a document type this pass doesn't support yet) or the
+// document itself can't be resolved, rather than exposing which case it
+// was — same "don't leak detail" posture as an invalid token.
+func (h *Handlers) redeemPDF(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	link, err := h.svc.RedeemShareLink(r.Context(), token)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	if h.renderer == nil {
+		httpx.WriteError(w, r, httpx.NewNotFound("NOT_AVAILABLE", "This link can't be opened yet."))
+		return
+	}
+	data, contentType, filename, err := h.renderer(r.Context(), link.OrganisationID, link.CreatedBy, link.DocumentType, link.DocumentID)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewNotFound("NOT_AVAILABLE", "This link can't be opened right now."))
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `inline; filename="`+filename+`"`)
+	w.Write(data)
 }
 
 type sendRequest struct {

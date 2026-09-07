@@ -103,19 +103,28 @@ func (s *Service) CreateShareLink(ctx context.Context, principal permissions.Pri
 	return raw, nil
 }
 
-// RedeemShareLink resolves a raw bearer token to the (document_type,
-// document_id) it grants access to, or ErrLinkInvalid for anything wrong
-// — same "no detail about why" shape as ValidateSession/ValidateAPIKey.
-// Called unscoped (see migrations/0027).
-func (s *Service) RedeemShareLink(ctx context.Context, rawToken string) (documentType string, documentID uuid.UUID, err error) {
+// RedeemShareLink resolves a raw bearer token to the full ShareLink row
+// it grants access to, or ErrLinkInvalid for anything wrong — same "no
+// detail about why" shape as ValidateSession/ValidateAPIKey. Called
+// unscoped (see migrations/0027).
+//
+// Returns the whole row (not just document_type/document_id) because
+// httpapi's document-rendering path (WithDocumentRenderer) needs
+// OrganisationID and CreatedBy too — CreatedBy is how an anonymous
+// recipient's read gets authorized at all (see that doc comment): the
+// share link's own creator already passed notifications.share's
+// permission check at CreateShareLink time, so re-using their identity
+// to resolve the ONE document this link was made for isn't a new
+// authorization bypass, it's exactly what creating the link authorized.
+func (s *Service) RedeemShareLink(ctx context.Context, rawToken string) (*domain.ShareLink, error) {
 	link, err := s.shareLinks.GetByTokenHash(ctx, crypto.HashToken(rawToken))
 	if err != nil {
-		return "", uuid.Nil, domain.ErrLinkInvalid
+		return nil, domain.ErrLinkInvalid
 	}
 	if link.RevokedAt != nil || s.now().After(link.ExpiresAt) {
-		return "", uuid.Nil, domain.ErrLinkInvalid
+		return nil, domain.ErrLinkInvalid
 	}
-	return link.DocumentType, link.DocumentID, nil
+	return link, nil
 }
 
 func (s *Service) RevokeShareLink(ctx context.Context, principal permissions.Principal, id uuid.UUID) error {

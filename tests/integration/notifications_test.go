@@ -56,17 +56,20 @@ func TestNotifications_ShareLink_CreateRedeemRevoke(t *testing.T) {
 	// Redemption is UNAUTHENTICATED by design (brief §21) — no Principal
 	// passed here at all, matching notifications/httpapi's public redeem
 	// route.
-	gotType, gotID, err := svc.RedeemShareLink(ctx, token)
+	got, err := svc.RedeemShareLink(ctx, token)
 	if err != nil {
 		t.Fatalf("RedeemShareLink: %v", err)
 	}
-	if gotType != "sales_document" || gotID != docID {
-		t.Fatalf("RedeemShareLink = (%s, %s), want (sales_document, %s)", gotType, gotID, docID)
+	if got.DocumentType != "sales_document" || got.DocumentID != docID {
+		t.Fatalf("RedeemShareLink = (%s, %s), want (sales_document, %s)", got.DocumentType, got.DocumentID, docID)
+	}
+	if got.OrganisationID != principal.OrganisationID || got.CreatedBy != principal.UserID {
+		t.Fatalf("RedeemShareLink OrganisationID/CreatedBy = (%s, %s), want (%s, %s) — httpapi.DocumentRenderer's authorization depends on these", got.OrganisationID, got.CreatedBy, principal.OrganisationID, principal.UserID)
 	}
 
 	// An unguessable token: a garbage token must fail closed, not panic
 	// or leak whether ANY link exists.
-	if _, _, err := svc.RedeemShareLink(ctx, "not-a-real-token"); err == nil {
+	if _, err := svc.RedeemShareLink(ctx, "not-a-real-token"); err == nil {
 		t.Fatal("expected RedeemShareLink to reject a garbage token")
 	}
 
@@ -84,7 +87,7 @@ func TestNotifications_ShareLink_CreateRedeemRevoke(t *testing.T) {
 	if err := svc.RevokeShareLink(ctx, principal, linkID); err != nil {
 		t.Fatalf("RevokeShareLink: %v", err)
 	}
-	if _, _, err := svc.RedeemShareLink(ctx, token); err == nil {
+	if _, err := svc.RedeemShareLink(ctx, token); err == nil {
 		t.Fatal("expected RedeemShareLink to reject a revoked link")
 	}
 }
