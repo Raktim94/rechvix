@@ -110,6 +110,11 @@ services:
       HTTP_PORT: "8080"
       DATABASE_DSN: "postgres://billing_app:${BILLING_APP_PASSWORD}@rechvix-postgres:5432/billing?sslmode=disable"
       DATABASE_AUTO_MIGRATE: "false"
+      # billing_migrator (RLS-bypassing), NOT billing_app — see
+      # deploy/compose/docker-compose.yml's identical line for why
+      # backup/restore needs this and reuses the same password already
+      # required for the migrate service above.
+      BACKUP_DATABASE_DSN: "postgres://billing_migrator:${POSTGRES_PASSWORD}@rechvix-postgres:5432/billing?sslmode=disable"
       SESSION_COOKIE_SECURE: "false"
       AEAD_ENCRYPTION_KEY: "${AEAD_ENCRYPTION_KEY}"
       ENABLE_BOOTSTRAP: "true"

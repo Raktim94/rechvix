@@ -25,6 +25,8 @@ import (
 	accountingapp "rechvix/internal/modules/accounting/app"
 	accountinghttp "rechvix/internal/modules/accounting/httpapi"
 	accountingpg "rechvix/internal/modules/accounting/pg"
+	backupapp "rechvix/internal/modules/backup/app"
+	backuphttp "rechvix/internal/modules/backup/httpapi"
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	cataloguehttp "rechvix/internal/modules/catalogue/httpapi"
 	cataloguepg "rechvix/internal/modules/catalogue/pg"
@@ -178,6 +180,22 @@ func run() error {
 
 	auditRecorder := audit.NewPGRecorder(pool)
 	permissionsChecker := permissions.NewChecker(permissions.NewPGStore(pool), pool)
+
+	// BACKUP_DATABASE_DSN is deliberately separate from DATABASE_DSN — a
+	// full backup/restore needs a role that bypasses RLS (the same
+	// billing_migrator role migrations already run as; a table owner
+	// bypasses RLS by default, migrations/0001's "DEPLOYMENT REQUIREMENT"
+	// comment), while DATABASE_DSN's billing_app role is deliberately
+	// RLS-restricted. Left unset by default (backup.Service.Enabled()
+	// reports false, httpapi returns a clear NOT_CONFIGURED error) rather
+	// than falling back to DATABASE_DSN, since that fallback would
+	// silently produce an incomplete backup instead of a loud one.
+	backupDSN := os.Getenv("BACKUP_DATABASE_DSN")
+	if backupDSN == "" {
+		logger.Info("BACKUP_DATABASE_DSN not set — backup/restore is disabled on this deployment. " +
+			"Set it to an RLS-bypassing connection string (e.g. the billing_migrator role's DSN) to enable it.")
+	}
+	backupSvc := backupapp.NewService(pool, backupDSN, aead, permissionsChecker, auditRecorder)
 
 	orgSvc := orgapp.NewService(
 		pool,
@@ -446,6 +464,7 @@ func run() error {
 			accountinghttp.NewHandlers(accountingSvc).Mount(r)
 			reportinghttp.NewHandlers(reportingSvc).Mount(r)
 			webhookshttp.NewHandlers(webhooksSvc).Mount(r)
+			backuphttp.NewHandlers(backupSvc).Mount(r)
 			notificationshttp.NewHandlers(notificationsSvc).Mount(r)
 			logisticshttp.NewHandlers(logisticsSvc).Mount(r)
 			ewaybillhttp.NewHandlers(ewaybillSvc, pool, permissionsChecker, govPortalSvc).Mount(r)

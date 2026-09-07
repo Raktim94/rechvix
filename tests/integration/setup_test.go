@@ -44,6 +44,17 @@ import (
 // names claim.
 var sharedPool *database.Pool
 
+// sharedMigratorDSN is the billing_migrator-role DSN — a table owner,
+// which bypasses RLS by default (migrations/0001's "DEPLOYMENT
+// REQUIREMENT" comment). sharedPool above deliberately does NOT use
+// this (see its own doc comment: connecting the whole suite as the
+// owning role would make every RLS test pass for the wrong reason).
+// backup_test.go is the one place that legitimately needs it — the
+// same role internal/modules/backup's real BACKUP_DATABASE_DSN points
+// at in production, since a full backup/restore must see every row of
+// every table unfiltered.
+var sharedMigratorDSN string
+
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
@@ -52,6 +63,7 @@ func TestMain(m *testing.M) {
 		panic(err.Error())
 	}
 	defer cleanup()
+	sharedMigratorDSN = migratorDSN
 
 	if err := database.Migrate(migratorDSN, migrations.FS); err != nil {
 		panic("applying migrations: " + err.Error())

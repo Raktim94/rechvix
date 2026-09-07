@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { to: "/gst", label: "GST / Tax" },
   { to: "/reports", label: "Reports" },
   { to: "/integrations", label: "Integrations" },
+  { to: "/backup", label: "Backup" },
   { to: "/settings", label: "Settings" },
 ] as const;
 

@@ -8,6 +8,7 @@ import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { readSessionHint } from "./auth/session";
 import {
   AccountingPage,
+  BackupPage,
   BillingPage,
   CataloguePage,
   ContactDetailPage,
@@ -174,6 +175,7 @@ const gstRoute = realRoute("/gst", GstPage);
 const reportsRoute = realRoute("/reports", ReportsPage);
 const integrationsRoute = realRoute("/integrations", IntegrationsPage);
 const settingsRoute = realRoute("/settings", SettingsPage);
+const backupRoute = realRoute("/backup", BackupPage);
 
 const notFoundRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -200,6 +202,7 @@ const routeTree = rootRoute.addChildren([
   gstRoute,
   reportsRoute,
   integrationsRoute,
+  backupRoute,
   settingsRoute,
   notFoundRoute,
 ]);

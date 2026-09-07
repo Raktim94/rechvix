@@ -16,6 +16,7 @@ export const CataloguePage = lazy(() => import("./pages/catalogue/CataloguePage"
 export const AccountingPage = lazy(() => import("./pages/accounting/AccountingPage").then((m) => ({ default: m.AccountingPage })));
 export const GstPage = lazy(() => import("./pages/gst/GstPage").then((m) => ({ default: m.GstPage })));
 export const IntegrationsPage = lazy(() => import("./pages/integrations/IntegrationsPage").then((m) => ({ default: m.IntegrationsPage })));
+export const BackupPage = lazy(() => import("./pages/backup/BackupPage").then((m) => ({ default: m.BackupPage })));
 export const PricingPage = lazy(() => import("./pages/pricing/PricingPage").then((m) => ({ default: m.PricingPage })));
 export const ReportsPage = lazy(() => import("./pages/reports/ReportsPage").then((m) => ({ default: m.ReportsPage })));
 export const SettingsPage = lazy(() => import("./pages/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));

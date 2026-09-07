@@ -195,6 +195,7 @@ restore verification) is still in progress.
 | **Reports** | Sales/purchase/inventory/accounting/tax reports, GSTR-1-oriented preparation (explicitly labeled as prep, not a filing submission), CSV/XLSX/JSON/PDF export. |
 | **Settings** | Business, legal entity, branch, warehouse, and GST registration details, plus invoice branding — logo, address/phone/email/website, bank details, UPI ID, authorized signatory, and default terms & conditions, all rendered on every printed invoice/quotation/receipt. |
 | **Integrations** | Scoped, revocable API keys (shown once) and HMAC-signed webhooks — create, list, and revoke/deactivate both, right from the app. |
+| **Backup & Restore** | Download one complete, encrypted `.nodedrbackup` file with every organisation's data; restore one back (with a typed confirmation phrase — this replaces the live database, no undo). Enabled automatically on the standard docker-compose install, no extra secret to set. |
 
 **Coming next** — Stage 11 (security/performance hardening): a full IDOR/
 CSRF/session-fixation/webhook-replay review, load testing at 100k+ products,

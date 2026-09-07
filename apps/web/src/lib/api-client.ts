@@ -107,6 +107,10 @@ export const api = {
       headers: { "Content-Type": format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
       body: file,
     }),
+  /** Same raw-body-upload idea as uploadFile, for an endpoint that
+   * doesn't care about format/dry_run query params (e.g. backup
+   * restore/inspect, which just reads whatever bytes are in the body). */
+  uploadRaw: <T>(path: string, file: File | Blob) => request<T>(path, { method: "POST", body: file }),
   /** GETs a `{[key]: T[]}`-shaped list endpoint and coalesces the array —
    * Go's `map[string]any{key: list}` marshals a nil slice as JSON `null`,
    * not `[]`, whenever a listing is genuinely empty, so every list

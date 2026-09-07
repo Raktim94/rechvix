@@ -71,6 +71,19 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      # internal/platform/pgtools (Stage 16, backup/restore) shells out to
+      # the real pg_dump/pg_restore binaries — TestBackup_ExportInspectRestore_RoundTrips
+      # needs them on this runner's own PATH (the Testcontainers Postgres
+      # below is a separate concern: that's what the dump/restore connect
+      # TO, not what runs the CLI). ubuntu-latest ships an older
+      # postgresql-client by default; install 18 explicitly to match the
+      # Postgres version this project actually targets everywhere else.
+      - name: Install postgresql-client 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
       # Testcontainers pulls postgres:18 itself and talks to the runner's
       # Docker daemon directly — no docker-compose here, matching how
       # `go test -tags=integration ./...` already works locally per the

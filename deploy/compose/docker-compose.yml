@@ -78,6 +78,15 @@ services:
       # owning role — app/worker must NOT also attempt them (billing_app
       # has no schema-modification privileges, by design, and shouldn't).
       DATABASE_AUTO_MIGRATE: "false"
+      # billing_migrator, NOT billing_app — the OPPOSITE choice from
+      # DATABASE_DSN just above, and deliberately so: a full backup/
+      # restore needs a role that bypasses RLS to see every organisation's
+      # data unfiltered (a table owner bypasses RLS by default), which is
+      # exactly the property billing_app must NOT have. Reuses
+      # POSTGRES_PASSWORD (already required above for the migrate
+      # service) rather than asking an operator to generate and track a
+      # third secret for the same role.
+      BACKUP_DATABASE_DSN: "postgres://billing_migrator:${POSTGRES_PASSWORD:?set a real password in .env}@postgres:5432/billing?sslmode=disable"
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
       AEAD_ENCRYPTION_KEY: "${AEAD_ENCRYPTION_KEY:?generate one: openssl rand -base64 32}"
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-}"

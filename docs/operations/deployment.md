@@ -99,14 +99,37 @@ None of these start with a plain `docker compose up -d`:
 
 ### Backups
 
-**Not yet built as of this version** — full backup/restore automation and
-a scheduled restore-verification job are Stage 11 scope (brief §42),
-tracked in `docs/TODO.md`, not this stage. In the meantime, standard
-Postgres practice applies: the `postgres-data` named volume holds
-everything; a `docker exec rechvix-postgres-1 pg_dump -U
-billing_migrator billing > backup.sql` (run as the migrator/owner role,
-which can see everything) works as a manual backup today. Don't rely on
-this as your only backup strategy until Stage 11 ships something tested.
+Settings → Backup (in the app itself) downloads one complete, encrypted
+`.nodedrbackup` file with every organisation's data on this instance —
+click "Download backup," keep the file somewhere safe. Restoring one
+(same screen) requires typing a literal confirmation phrase first and
+**replaces everything currently in the database** — there is no undo.
+
+This works automatically on the standard `docker compose` install:
+`BACKUP_DATABASE_DSN` in `docker-compose.yml` is already set from the
+same `POSTGRES_PASSWORD` the `migrate` service uses (the `billing_migrator`
+role — a table owner, which bypasses Row-Level Security by default, and
+so is the only role that can see every organisation's data unfiltered;
+the app's normal `billing_app` connection deliberately cannot, by
+design). No extra secret to generate. A deployment that doesn't set
+`BACKUP_DATABASE_DSN` simply has the feature disabled — Settings →
+Backup says so plainly rather than failing confusingly.
+
+Under the hood this shells out to the real `pg_dump`/`pg_restore`
+(`internal/platform/pgtools`, copied into the runtime image from the
+official `postgres:18` image at build time — see
+`deploy/docker/server.Dockerfile`), not a from-scratch reimplementation,
+and encrypts the archive with the same `AEAD_ENCRYPTION_KEY` every other
+encrypted-at-rest value in this app uses. Losing that key makes existing
+backups undecryptable, same caveat as the MFA-secret note above.
+
+There is still no automated **scheduled** backup or restore-verification
+job (brief §42's fuller ask) — this is a real, honest, manually-triggered
+export/import, not a cron job. Scripting a periodic call to
+`POST /api/v1/backup/export` (e.g. from `cron` + `curl`, authenticated
+the same way any other API client would be) is a reasonable way to add
+scheduling yourself today; a built-in scheduler is a real gap, not
+silently assumed done.
 
 ## CasaOS / ZimaOS
 
