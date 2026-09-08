@@ -17,9 +17,14 @@ import (
 
 	accountingapp "rechvix/internal/modules/accounting/app"
 	accountingdomain "rechvix/internal/modules/accounting/domain"
+	catalogueapp "rechvix/internal/modules/catalogue/app"
+	contactsapp "rechvix/internal/modules/contacts/app"
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	inventorydomain "rechvix/internal/modules/inventory/domain"
+	orgapp "rechvix/internal/modules/organisation/app"
 	"rechvix/internal/modules/purchases/domain"
+	taxationapp "rechvix/internal/modules/taxation/app"
+	taxdomain "rechvix/internal/modules/taxation/domain"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/database"
 	"rechvix/internal/platform/money"
@@ -31,6 +36,16 @@ type Service struct {
 	documents domain.DocumentRepository
 	lines     domain.DocumentLineRepository
 	inventory *inventoryapp.Service
+	// catalogue/taxation/contacts/organisation are required, same as
+	// sales/app.Service's identical set — AddLine unconditionally
+	// snapshots a line's HSN/SAC from catalogue, and FinalizeDocument
+	// unconditionally attempts an inward tax calculation (skipping only
+	// when the specific supplier has no GST registration on file, not
+	// when the dependency itself is absent).
+	catalogue    *catalogueapp.Service
+	taxation     *taxationapp.Service
+	contacts     *contactsapp.Service
+	organisation *orgapp.Service
 	// accounting is optional — see sales/app.Service's identical field
 	// comment for why (pre-Stage-6 callers/tests keep working with nil).
 	accounting  *accountingapp.Service
@@ -44,11 +59,16 @@ func NewService(
 	documents domain.DocumentRepository,
 	lines domain.DocumentLineRepository,
 	inventory *inventoryapp.Service,
+	catalogueSvc *catalogueapp.Service,
+	taxationSvc *taxationapp.Service,
+	contactsSvc *contactsapp.Service,
+	organisationSvc *orgapp.Service,
 	accountingSvc *accountingapp.Service,
 	checker *permissions.Checker,
 	recorder audit.Recorder,
 ) *Service {
 	return &Service{pool: pool, documents: documents, lines: lines, inventory: inventory,
+		catalogue: catalogueSvc, taxation: taxationSvc, contacts: contactsSvc, organisation: organisationSvc,
 		accounting: accountingSvc, permissions: checker, audit: recorder, now: time.Now}
 }
 
@@ -191,6 +211,10 @@ func (s *Service) AddLine(ctx context.Context, principal permissions.Principal, 
 	if err := s.manage(ctx, principal); err != nil {
 		return nil, err
 	}
+	_, product, err := s.catalogue.GetVariantWithProduct(ctx, principal, p.ProductVariantID)
+	if err != nil {
+		return nil, fmt.Errorf("purchases: resolving product for line: %w", err)
+	}
 	id, err := uuid.NewV7()
 	if err != nil {
 		return nil, fmt.Errorf("purchases: generating purchase_document_line id: %w", err)
@@ -220,7 +244,8 @@ func (s *Service) AddLine(ctx context.Context, principal permissions.Principal, 
 		line = &domain.DocumentLine{
 			ID: id, OrganisationID: principal.OrganisationID, PurchaseDocumentID: p.DocumentID,
 			LineNumber: len(existing) + 1, ProductVariantID: p.ProductVariantID, UnitID: p.UnitID,
-			Quantity: p.Quantity, UnitPrice: unitPrice, LineTotal: lineTotal, BatchCode: p.BatchCode, CreatedAt: now,
+			Quantity: p.Quantity, UnitPrice: unitPrice, LineTotal: lineTotal, BatchCode: p.BatchCode,
+			HSNSACCode: product.HSNSACCode, CreatedAt: now,
 		}
 		if err := s.lines.Create(ctx, line); err != nil {
 			return err
@@ -266,6 +291,61 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 			return domain.ErrEmptyDocument
 		}
 
+		// Inward tax calculation (GSTR-3B follow-up to GSTR-1, migrations/
+		// 0038): only for document types that book a payable
+		// (AccountingAffecting), and only when the supplier has a GST
+		// registration on file — a genuinely unregistered small supplier
+		// is common and legitimate, and there is no state code to
+		// calculate against in that case (unlike sales, where the
+		// "known" side is always our own legal entity's state, here the
+		// unknown side is the supplier's, not ours). Skipping is the
+		// honest behavior, not a guess at zero.
+		var taxDoc *taxdomain.TaxDocument
+		if domain.AccountingAffecting(doc.DocumentType) {
+			branch, err := s.organisation.GetBranchForOtherModule(ctx, principal.OrganisationID, doc.BranchID)
+			if err != nil {
+				return fmt.Errorf("purchases: resolving branch for tax calculation: %w", err)
+			}
+			legalEntity, err := s.organisation.GetLegalEntityForOtherModule(ctx, principal.OrganisationID, branch.LegalEntityID)
+			if err != nil {
+				return fmt.Errorf("purchases: resolving legal entity for tax calculation: %w", err)
+			}
+			regs, err := s.contacts.ListTaxRegistrationsForOtherModule(ctx, principal.OrganisationID, doc.SupplierPartyID)
+			if err != nil {
+				return fmt.Errorf("purchases: resolving supplier tax registration: %w", err)
+			}
+			supplierStateCode := ""
+			for _, r := range regs {
+				if r.IsPrimary {
+					supplierStateCode = r.StateCode
+					break
+				}
+			}
+			if supplierStateCode == "" && len(regs) > 0 {
+				supplierStateCode = regs[0].StateCode
+			}
+			if supplierStateCode != "" {
+				taxLines := make([]taxdomain.TaxableLine, 0, len(lines))
+				for _, l := range lines {
+					taxLines = append(taxLines, taxdomain.TaxableLine{
+						LineRef: fmt.Sprintf("%d", l.LineNumber), HSNSACCode: l.HSNSACCode,
+						Amount: l.LineTotal, PricingMode: taxdomain.PricingExclusive,
+					})
+				}
+				taxDoc, _, _, err = s.taxation.CalculateAndSnapshotTx(ctx, taxationapp.SnapshotRequest{
+					ReferenceType: "purchase_document", ReferenceID: &doc.ID,
+					Input: taxdomain.TaxCalculationInput{
+						OrganisationID: principal.OrganisationID, Lines: taxLines,
+						SupplierStateCode: supplierStateCode, SupplyPlace: taxdomain.PlaceOfSupply{StateCode: legalEntity.GSTStateCode},
+						DocumentDate: doc.DocumentDate, SupplyType: taxdomain.SupplyB2B, CurrencyCode: doc.CurrencyCode,
+					},
+				})
+				if err != nil {
+					return fmt.Errorf("purchases: calculating input tax: %w", err)
+				}
+			}
+		}
+
 		if domain.StockAffecting(doc.DocumentType, doc.ReferenceDocumentID) {
 			movementType := inventorydomain.MovementPurchaseReceipt
 			if doc.DocumentType == domain.DocPurchaseReturn {
@@ -293,16 +373,37 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 		}
 
 		if s.accounting != nil && domain.AccountingAffecting(doc.DocumentType) {
-			total := decimal.Zero
-			for _, l := range lines {
-				total = total.Add(l.LineTotal.Decimal())
-			}
-			if total.IsPositive() {
-				supplierID := doc.SupplierPartyID
-				docLines := []accountingapp.JournalLineRequest{
-					{AccountCode: accountingdomain.CodePurchases, Debit: total, Description: "Purchase " + doc.DocumentNumber},
-					{AccountCode: accountingdomain.CodeAccountsPayable, PartyID: &supplierID, Credit: total, Description: "Purchase " + doc.DocumentNumber},
+			supplierID := doc.SupplierPartyID
+			var docLines []accountingapp.JournalLineRequest
+			var grandTotal decimal.Decimal
+			if taxDoc != nil {
+				// Supplier has a GST registration on file — split the
+				// taxable value and input tax onto their own accounts
+				// (CodeGSTInputTaxCredit, "1400") rather than lumping the
+				// whole grand total onto Purchases, mirroring
+				// sales.FinalizeDocument's identical Sales/
+				// GSTOutputTaxPayable split for the outward side.
+				grandTotal = taxDoc.GrandTotal.Decimal()
+				docLines = []accountingapp.JournalLineRequest{
+					{AccountCode: accountingdomain.CodePurchases, Debit: taxDoc.TotalTaxableAmount.Decimal(), Description: "Purchase " + doc.DocumentNumber},
 				}
+				if taxDoc.TotalTaxAmount.Decimal().IsPositive() {
+					docLines = append(docLines, accountingapp.JournalLineRequest{AccountCode: accountingdomain.CodeGSTInputTaxCredit, Debit: taxDoc.TotalTaxAmount.Decimal(), Description: "Purchase " + doc.DocumentNumber})
+				}
+				docLines = append(docLines, accountingapp.JournalLineRequest{AccountCode: accountingdomain.CodeAccountsPayable, PartyID: &supplierID, Credit: grandTotal, Description: "Purchase " + doc.DocumentNumber})
+			} else {
+				// No GST registration on file for this supplier — same
+				// lump-sum-onto-Purchases behavior this method has always
+				// had, since there is no tax breakdown to split.
+				for _, l := range lines {
+					grandTotal = grandTotal.Add(l.LineTotal.Decimal())
+				}
+				docLines = []accountingapp.JournalLineRequest{
+					{AccountCode: accountingdomain.CodePurchases, Debit: grandTotal, Description: "Purchase " + doc.DocumentNumber},
+					{AccountCode: accountingdomain.CodeAccountsPayable, PartyID: &supplierID, Credit: grandTotal, Description: "Purchase " + doc.DocumentNumber},
+				}
+			}
+			if grandTotal.IsPositive() {
 				if domain.ReducesPayable(doc.DocumentType) {
 					for i := range docLines {
 						docLines[i].Debit, docLines[i].Credit = docLines[i].Credit, docLines[i].Debit
@@ -315,6 +416,13 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 					return fmt.Errorf("posting purchase journal: %w", err)
 				}
 			}
+		}
+
+		if taxDoc != nil {
+			if err := s.documents.UpdateTaxDocument(ctx, documentID, taxDoc.ID); err != nil {
+				return err
+			}
+			doc.TaxDocumentID = &taxDoc.ID
 		}
 
 		if err := s.documents.UpdateStatus(ctx, documentID, domain.StatusFinalized, &now); err != nil {

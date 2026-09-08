@@ -96,10 +96,17 @@ type Document struct {
 	DocumentDate          time.Time
 	CurrencyCode          string
 	Notes                 string
-	CreatedBy             uuid.UUID
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	FinalizedAt           *time.Time
+	// TaxDocumentID points at the taxation module's tax_documents row
+	// (reference_type='purchase_document') once FinalizeDocument computes
+	// one — nil for a document whose type doesn't book a tax liability/
+	// ITC (PURCHASE_ORDER) or whose supplier has no GST registration on
+	// file (migrations/0038's own comment: a denormalized quick-access
+	// pointer, not the authoritative store).
+	TaxDocumentID *uuid.UUID
+	CreatedBy     uuid.UUID
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	FinalizedAt   *time.Time
 }
 
 type DocumentLine struct {
@@ -117,7 +124,12 @@ type DocumentLine struct {
 	UnitPrice money.Money
 	LineTotal money.Money
 	BatchCode string
-	CreatedAt time.Time
+	// HSNSACCode is snapshotted from the product at add-line time
+	// (migrations/0038), same rationale as sales_document_lines'
+	// identical field: a finalized document's tax calculation must not
+	// silently change if the catalogue's HSN/SAC is edited later.
+	HSNSACCode string
+	CreatedAt  time.Time
 }
 
 type DocumentRepository interface {
@@ -125,6 +137,12 @@ type DocumentRepository interface {
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Document, error)
 	ListByOrganisation(ctx context.Context, orgID uuid.UUID, documentType *DocumentType) ([]*Document, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status DocumentStatus, finalizedAt *time.Time) error
+	// UpdateTaxDocument stamps the tax snapshot pointer onto a document
+	// being finalized, in the same transaction as UpdateStatus — mirrors
+	// sales.DocumentRepository.UpdateFinalizedTotals, minus the grand
+	// total half (purchase_documents has no such denormalized column;
+	// PurchasesPage.tsx already sums LineTotal client-side for display).
+	UpdateTaxDocument(ctx context.Context, id, taxDocumentID uuid.UUID) error
 	// NextNumber atomically allocates and returns the next sequence value
 	// for (orgID, docType) via an UPDATE ... RETURNING on
 	// purchase_document_counters, so two concurrent document creations

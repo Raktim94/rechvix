@@ -12,26 +12,48 @@ import (
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactsdomain "rechvix/internal/modules/contacts/domain"
 	contactspg "rechvix/internal/modules/contacts/pg"
+	"rechvix/internal/modules/gstindia"
+	gstindiapg "rechvix/internal/modules/gstindia/pg"
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchasesdomain "rechvix/internal/modules/purchases/domain"
 	purchasespg "rechvix/internal/modules/purchases/pg"
+	taxationapp "rechvix/internal/modules/taxation/app"
+	taxationpg "rechvix/internal/modules/taxation/pg"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/permissions"
 )
 
 // accountingSvc is nil here deliberately — see sales_test.go's identical
 // note on newTestSalesServices; Stage 6's own tests wire a real one.
+// catalogue/taxation/contacts/organisation are real, though — unlike
+// accounting, purchases.Service requires them unconditionally (AddLine
+// always resolves a product's HSN via catalogue).
 func newTestPurchasesService(t *testing.T, inventorySvc *inventoryapp.Service) *purchasesapp.Service {
 	t.Helper()
+	checker := permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool)
+	recorder := audit.NewPGRecorder(sharedPool)
+	contactsSvc := contactsapp.NewService(
+		sharedPool, contactspg.NewPartyRepo(sharedPool), contactspg.NewAddressRepo(sharedPool), contactspg.NewTaxRegistrationRepo(sharedPool),
+		checker, recorder,
+	)
+	gstRateRepo := gstindiapg.NewTaxRateRepo(sharedPool)
+	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(sharedPool))
+	taxationSvc := taxationapp.NewService(
+		sharedPool, gstEngine, taxationpg.NewTaxDocumentRepo(sharedPool), taxationpg.NewTaxLineRepo(sharedPool), taxationpg.NewTaxComponentRepo(sharedPool),
+	)
 	return purchasesapp.NewService(
 		sharedPool,
 		purchasespg.NewDocumentRepo(sharedPool),
 		purchasespg.NewDocumentLineRepo(sharedPool),
 		inventorySvc,
+		newTestCatalogueService(t),
+		taxationSvc,
+		contactsSvc,
+		newTestOrgService(t),
 		nil,
-		permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool),
-		audit.NewPGRecorder(sharedPool),
+		checker,
+		recorder,
 	)
 }
 

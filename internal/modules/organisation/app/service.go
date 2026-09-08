@@ -275,6 +275,19 @@ func (s *Service) GetLegalEntityForOtherModule(ctx context.Context, orgID, id uu
 	return s.legalEntities.GetByID(ctx, orgID, id)
 }
 
+// GetBranchForOtherModule is GetLegalEntityForOtherModule's identical
+// pattern for Branch — purchases.Service.FinalizeDocument needs to
+// resolve a purchase document's own legal entity (for its GST state
+// code, the "place of supply" side of an inward tax calculation) but a
+// purchase_documents row only carries branch_id, not legal_entity_id
+// directly; this is the one hop in between. Same no-permission-check,
+// no-own-transaction, nested-transaction-safe rationale as
+// GetLegalEntityForOtherModule's own doc comment above — read it for
+// the full reasoning, not repeated here.
+func (s *Service) GetBranchForOtherModule(ctx context.Context, orgID, id uuid.UUID) (*domain.Branch, error) {
+	return s.branches.GetByID(ctx, orgID, id)
+}
+
 type CreateLegalEntityParams struct {
 	LegalName        string
 	CountryCode      string

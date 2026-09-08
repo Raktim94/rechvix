@@ -50,7 +50,7 @@ func (r *DocumentRepo) Create(ctx context.Context, d *domain.Document) error {
 
 const documentCols = `id, organisation_id, branch_id, warehouse_id, supplier_party_id, document_type, document_number,
 	reference_document_id, status, COALESCE(supplier_invoice_number, ''), supplier_invoice_date, document_date,
-	currency_code, COALESCE(notes, ''), created_by, created_at, updated_at, finalized_at`
+	currency_code, COALESCE(notes, ''), tax_document_id, created_by, created_at, updated_at, finalized_at`
 
 func (r *DocumentRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Document, error) {
 	q := fmt.Sprintf(`SELECT %s FROM purchase_documents WHERE organisation_id = $1 AND id = $2`, documentCols)
@@ -91,6 +91,18 @@ func (r *DocumentRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status do
 	tag, err := r.pool.Q(ctx).Exec(ctx, q, id, string(status), finalizedAt)
 	if err != nil {
 		return fmt.Errorf("purchases: updating purchase_document status: %w", err)
+	}
+	if tag == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *DocumentRepo) UpdateTaxDocument(ctx context.Context, id, taxDocumentID uuid.UUID) error {
+	const q = `UPDATE purchase_documents SET tax_document_id = $2, updated_at = now() WHERE id = $1`
+	tag, err := r.pool.Q(ctx).Exec(ctx, q, id, taxDocumentID)
+	if err != nil {
+		return fmt.Errorf("purchases: updating purchase_document tax_document_id: %w", err)
 	}
 	if tag == 0 {
 		return domain.ErrNotFound
@@ -146,7 +158,7 @@ func scanDocumentRow(row scannable) (*domain.Document, error) {
 	var docType, status string
 	if err := row.Scan(&d.ID, &d.OrganisationID, &d.BranchID, &d.WarehouseID, &d.SupplierPartyID, &docType, &d.DocumentNumber,
 		&d.ReferenceDocumentID, &status, &d.SupplierInvoiceNumber, &d.SupplierInvoiceDate, &d.DocumentDate,
-		&d.CurrencyCode, &d.Notes, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.FinalizedAt); err != nil {
+		&d.CurrencyCode, &d.Notes, &d.TaxDocumentID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.FinalizedAt); err != nil {
 		return nil, err
 	}
 	d.DocumentType = domain.DocumentType(docType)
@@ -171,10 +183,10 @@ func (r *DocumentLineRepo) Create(ctx context.Context, l *domain.DocumentLine) e
 	const q = `
 		INSERT INTO purchase_document_lines (
 			id, organisation_id, purchase_document_id, line_number, product_variant_id, unit_id,
-			quantity, unit_price_amount, line_total_amount, batch_code, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`
+			quantity, unit_price_amount, line_total_amount, batch_code, hsn_sac_code, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
 	_, err := r.pool.Q(ctx).Exec(ctx, q, l.ID, l.OrganisationID, l.PurchaseDocumentID, l.LineNumber, l.ProductVariantID, l.UnitID,
-		l.Quantity, l.UnitPrice.Decimal(), l.LineTotal.Decimal(), nullIfEmpty(l.BatchCode), l.CreatedAt)
+		l.Quantity, l.UnitPrice.Decimal(), l.LineTotal.Decimal(), nullIfEmpty(l.BatchCode), l.HSNSACCode, l.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("purchases: inserting purchase_document_line: %w", err)
 	}
@@ -184,7 +196,7 @@ func (r *DocumentLineRepo) Create(ctx context.Context, l *domain.DocumentLine) e
 func (r *DocumentLineRepo) ListByDocument(ctx context.Context, documentID uuid.UUID) ([]*domain.DocumentLine, error) {
 	const q = `
 		SELECT l.id, l.organisation_id, l.purchase_document_id, l.line_number, l.product_variant_id, l.unit_id,
-			l.quantity, l.unit_price_amount, l.line_total_amount, COALESCE(l.batch_code, ''), l.created_at, d.currency_code
+			l.quantity, l.unit_price_amount, l.line_total_amount, COALESCE(l.batch_code, ''), l.hsn_sac_code, l.created_at, d.currency_code
 		FROM purchase_document_lines l
 		JOIN purchase_documents d ON d.id = l.purchase_document_id
 		WHERE l.purchase_document_id = $1
@@ -210,7 +222,7 @@ func scanLine(row scannable) (*domain.DocumentLine, error) {
 	var unitPriceAmount, lineTotalAmount decimal.Decimal
 	var currencyCode string
 	if err := row.Scan(&l.ID, &l.OrganisationID, &l.PurchaseDocumentID, &l.LineNumber, &l.ProductVariantID, &l.UnitID,
-		&l.Quantity, &unitPriceAmount, &lineTotalAmount, &l.BatchCode, &l.CreatedAt, &currencyCode); err != nil {
+		&l.Quantity, &unitPriceAmount, &lineTotalAmount, &l.BatchCode, &l.HSNSACCode, &l.CreatedAt, &currencyCode); err != nil {
 		return nil, err
 	}
 	unitPrice, err := money.New(unitPriceAmount, currencyCode)

@@ -279,6 +279,20 @@ func (s *Service) GetAddressForOtherModule(ctx context.Context, orgID, id uuid.U
 	return s.addresses.GetByID(ctx, orgID, id)
 }
 
+// ListTaxRegistrationsForOtherModule is GetTaxRegistrationForOtherModule's
+// counterpart for the "which registration(s) does this party have"
+// question, needed where the caller only has a party id, not a specific
+// registration id — purchases.Service.FinalizeDocument resolving a
+// supplier's GST state code for an inward tax calculation is the first
+// caller (purchase_documents has no supplier_tax_registration_id column
+// the way sales_documents has customer_tax_registration_id, since a
+// purchase's line items are never billed on this app's own paperwork
+// the way a sale's are). Same no-permission-check, no-own-transaction
+// convention as every other *ForOtherModule method in this file.
+func (s *Service) ListTaxRegistrationsForOtherModule(ctx context.Context, orgID, partyID uuid.UUID) ([]*domain.TaxRegistration, error) {
+	return s.taxRegistrations.ListByParty(ctx, partyID)
+}
+
 // LookupByRegistrationNumber is the GSTIN search path (brief §24).
 func (s *Service) LookupByRegistrationNumber(ctx context.Context, principal permissions.Principal, registrationNumber string) (*domain.TaxRegistration, error) {
 	if err := s.view(ctx, principal); err != nil {

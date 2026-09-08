@@ -33,10 +33,10 @@ import (
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactshttp "rechvix/internal/modules/contacts/httpapi"
 	contactspg "rechvix/internal/modules/contacts/pg"
-	einvoicemock "rechvix/internal/modules/einvoice/v1/mock"
 	einvoiceapp "rechvix/internal/modules/einvoice/app"
 	einvoicehttp "rechvix/internal/modules/einvoice/httpapi"
 	einvoicepg "rechvix/internal/modules/einvoice/pg"
+	einvoicemock "rechvix/internal/modules/einvoice/v1/mock"
 	ewaybillapp "rechvix/internal/modules/ewaybill/app"
 	"rechvix/internal/modules/ewaybill/eligibility"
 	"rechvix/internal/modules/ewaybill/govportal"
@@ -277,16 +277,6 @@ func run() error {
 
 	reportingSvc := reportingapp.NewService(pool, reportingpg.NewRepo(pool), accountingSvc, permissionsChecker)
 
-	purchasesSvc := purchasesapp.NewService(
-		pool,
-		purchasespg.NewDocumentRepo(pool),
-		purchasespg.NewDocumentLineRepo(pool),
-		inventorySvc,
-		accountingSvc,
-		permissionsChecker,
-		auditRecorder,
-	)
-
 	gstRateRepo := gstindiapg.NewTaxRateRepo(pool)
 	gstindiaSvc := gstindiaapp.NewService(pool, gstRateRepo, gstindiapg.NewStateRepo(pool), permissionsChecker, auditRecorder)
 	// gstindia.Engine is the TaxEngine implementation taxationSvc drives —
@@ -304,6 +294,20 @@ func run() error {
 
 	numberingSvc := numbering.NewService(pool, numbering.NewPGRepository(pool))
 	outboxStore := outbox.NewPGStore(pool)
+
+	purchasesSvc := purchasesapp.NewService(
+		pool,
+		purchasespg.NewDocumentRepo(pool),
+		purchasespg.NewDocumentLineRepo(pool),
+		inventorySvc,
+		catalogueSvc,
+		taxationSvc,
+		contactsSvc,
+		orgSvc,
+		accountingSvc,
+		permissionsChecker,
+		auditRecorder,
+	)
 
 	salesSvc := salesapp.NewService(
 		pool,

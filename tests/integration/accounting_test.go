@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	accountingapp "rechvix/internal/modules/accounting/app"
 	accountingdomain "rechvix/internal/modules/accounting/domain"
@@ -83,7 +84,7 @@ func newTestAccountingServices(t *testing.T) (*salesapp.Service, *purchasesapp.S
 	)
 	purchasesSvc := purchasesapp.NewService(
 		sharedPool, purchasespg.NewDocumentRepo(sharedPool), purchasespg.NewDocumentLineRepo(sharedPool),
-		inventorySvc, accountingSvc, checker, recorder,
+		inventorySvc, catalogueSvc, taxationSvc, contactsSvc, orgSvc, accountingSvc, checker, recorder,
 	)
 	return salesSvc, purchasesSvc, accountingSvc, inventorySvc
 }
@@ -401,6 +402,97 @@ func TestAccounting_AutoPostOnPurchaseFinalize(t *testing.T) {
 	if !entries[0].RunningBalance.IsNegative() {
 		t.Fatalf("running balance = %s, want negative (a payable, from the customer-ledger sign convention)", entries[0].RunningBalance)
 	}
+}
+
+// TestPurchases_TaxCalculation_IntraState_SplitsInputTaxCreditFromPurchases
+// is migrations/0038's whole point: a PURCHASE_INVOICE from a supplier
+// with a GST registration on file must compute real input tax (CGST+
+// SGST here, since the fixture's legal entity and this supplier are
+// both state 27) and post it to its own GST Input Tax Credit account
+// (accountingdomain.CodeGSTInputTaxCredit) rather than lumping the
+// whole grand total onto Purchases — this is the split GSTR-3B's ITC
+// section will eventually read from.
+func TestPurchases_TaxCalculation_IntraState_SplitsInputTaxCreditFromPurchases(t *testing.T) {
+	ctx := context.Background()
+	_, purchasesSvc, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	contactsSvc := contactsapp.NewService(
+		sharedPool, contactspg.NewPartyRepo(sharedPool), contactspg.NewAddressRepo(sharedPool), contactspg.NewTaxRegistrationRepo(sharedPool),
+		permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool), audit.NewPGRecorder(sharedPool),
+	)
+	if _, err := contactsSvc.AddTaxRegistration(ctx, fx.Principal, contactsapp.AddTaxRegistrationParams{
+		PartyID: fx.SupplierID, CountryCode: "IN", RegistrationNumber: "27BBBBB0000B1Z1", StateCode: "27", IsPrimary: true,
+	}); err != nil {
+		t.Fatalf("AddTaxRegistration(supplier): %v", err)
+	}
+
+	doc, err := purchasesSvc.CreateDocument(ctx, fx.Principal, purchasesapp.CreateDocumentParams{
+		BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, SupplierPartyID: fx.SupplierID,
+		DocumentType: purchasesdomain.DocPurchaseInvoice, CurrencyCode: "INR", DocumentDate: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	if _, err := purchasesSvc.AddLine(ctx, fx.Principal, purchasesapp.AddLineParams{
+		DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "10"), UnitPrice: mustDecimal(t, "100"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	finalized, err := purchasesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("FinalizeDocument: %v", err)
+	}
+	if finalized.TaxDocumentID == nil {
+		t.Fatal("TaxDocumentID was not stamped on the finalized document")
+	}
+
+	// 10 * 100 = 1000 taxable, 18% GST intra-state -> 90 CGST + 90 SGST,
+	// grand total 1180 — the fixture's own established HSN/rate, same
+	// figures TestSales_TaxInvoice_FinalizePostsTaxSnapshotAndStock uses
+	// on the outward side.
+	supplierEntries, err := accountingSvc.GetPartyLedger(ctx, fx.Principal, fx.SupplierID, time.Now())
+	if err != nil {
+		t.Fatalf("GetPartyLedger(supplier): %v", err)
+	}
+	if len(supplierEntries) != 1 {
+		t.Fatalf("supplier ledger has %d entries, want exactly 1", len(supplierEntries))
+	}
+	if got := supplierEntries[0].Credit.StringFixed(money.RoundHalfUp); got != "1180.00" {
+		t.Fatalf("AP credit = %s, want 1180.00 (1000 taxable + 90 CGST + 90 SGST)", got)
+	}
+
+	if got := journalLineDebitForAccount(t, ctx, fx.Principal.OrganisationID, doc.ID, accountingdomain.CodeGSTInputTaxCredit); got != "180.00" {
+		t.Fatalf("GST Input Tax Credit debit = %s, want 180.00 (90 CGST + 90 SGST)", got)
+	}
+	if got := journalLineDebitForAccount(t, ctx, fx.Principal.OrganisationID, doc.ID, accountingdomain.CodePurchases); got != "1000.00" {
+		t.Fatalf("Purchases debit = %s, want 1000.00 (the taxable value only, tax split out onto its own account)", got)
+	}
+}
+
+// journalLineDebitForAccount sums the debit side of every journal_lines
+// row posted under source_type='purchase_document'/source_id=documentID
+// against the account with the given code — a plain raw-SQL read
+// (matching this file's own accountIDByCode/firstJournalLineID
+// convention) rather than pulling in the reporting module's own
+// AccountLedger just for one assertion.
+func journalLineDebitForAccount(t *testing.T, ctx context.Context, orgID, documentID uuid.UUID, accountCode string) string {
+	t.Helper()
+	var total decimal.Decimal
+	err := sharedPool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+		return sharedPool.Q(ctx).QueryRow(ctx, `
+			SELECT COALESCE(SUM(jl.debit_amount), 0)
+			FROM journal_lines jl
+			JOIN journals j ON j.id = jl.journal_id
+			JOIN accounts a ON a.id = jl.account_id
+			WHERE j.organisation_id = $1 AND j.source_type = 'purchase_document' AND j.source_id = $2 AND a.code = $3`,
+			orgID, documentID, accountCode).Scan(&total)
+	})
+	if err != nil {
+		t.Fatalf("summing journal_lines debit for account %s: %v", accountCode, err)
+	}
+	return total.StringFixed(2)
 }
 
 // TestPurchases_CancelDocument_ReversesStockAndLedgerExactly mirrors
