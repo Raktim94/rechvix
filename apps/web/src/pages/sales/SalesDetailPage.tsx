@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { EwayBillCard } from "../../components/EwayBillCard";
 import { WhatsAppIcon } from "../../components/icons";
 import { PaymentPanel } from "../../components/PaymentPanel";
@@ -11,10 +12,12 @@ import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
+import { CreateReturnModal } from "./CreateReturnModal";
 import styles from "./SalesDetailPage.module.css";
 import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, PAYABLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
 
 export function SalesDetailPage({ id }: { id: string }) {
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
   const doc = useQuery({
     queryKey: ["sales-document", id],
     queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[] }>(`/sales/documents/${id}`),
@@ -77,6 +80,11 @@ export function SalesDetailPage({ id }: { id: string }) {
         ) : (
           <div className={styles.headerActions}>
             <PrintTemplateMenu documentId={document.ID} />
+            {document.Status === "FINALIZED" && PAYABLE_TYPES.has(document.DocumentType) ? (
+              <button type="button" className={ui.btnSecondary} onClick={() => setReturnModalOpen(true)}>
+                Return / credit note
+              </button>
+            ) : null}
             {(() => {
               const canShare = !!customer.data?.Phone;
               return (
@@ -173,6 +181,8 @@ export function SalesDetailPage({ id }: { id: string }) {
       {document.Status === "FINALIZED" && PAYABLE_TYPES.has(document.DocumentType) ? (
         <PaymentPanel documentId={document.ID} partyId={document.CustomerPartyID} grandTotal={document.GrandTotalAmount} direction="RECEIVE" />
       ) : null}
+
+      <CreateReturnModal open={returnModalOpen} onOpenChange={setReturnModalOpen} document={document} lines={lines} />
     </div>
   );
 }

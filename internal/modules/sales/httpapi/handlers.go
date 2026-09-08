@@ -84,6 +84,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, httpx.NewConflict("ZERO_VALUE_DOCUMENT", "This document's total is ₹0.00. Check that every item has a price, then try again."))
 	case errors.Is(err, domain.ErrDuplicateNumber):
 		httpx.WriteError(w, r, httpx.NewConflict("DUPLICATE_NUMBER", "That document number is already in use."))
+	case errors.Is(err, domain.ErrReturnQuantityExceedsSource):
+		httpx.WriteError(w, r, httpx.NewBadRequest("RETURN_QUANTITY_EXCEEDS_SOURCE", "You can't return more of an item than was on the original document."))
 	case errors.Is(err, taxdomain.ErrRateNotConfigured):
 		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_RATE_NOT_CONFIGURED", "One or more items on this document don't have a GST rate set up for their HSN/SAC code yet. Add a tax rate for it under GST / Tax, then try again."))
 	case errors.Is(err, inventorydomain.ErrInsufficientStock):
@@ -261,6 +263,11 @@ func (h *Handlers) finalizeDocument(w http.ResponseWriter, r *http.Request) {
 
 type convertDocumentRequest struct {
 	TargetType string `json:"target_type"`
+	// LineQuantities is optional — see Service.ConvertDocument's own doc
+	// comment: omitted/empty copies every source line at full quantity
+	// (unchanged from before this field existed); keyed by source line
+	// id, it restricts and rescales the copy to a partial return.
+	LineQuantities map[uuid.UUID]string `json:"line_quantities"`
 }
 
 func (h *Handlers) convertDocument(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +281,19 @@ func (h *Handlers) convertDocument(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
 		return
 	}
-	target, err := h.svc.ConvertDocument(r.Context(), principal(r), id, domain.DocumentType(req.TargetType))
+	var lineQuantities map[uuid.UUID]decimal.Decimal
+	if len(req.LineQuantities) > 0 {
+		lineQuantities = make(map[uuid.UUID]decimal.Decimal, len(req.LineQuantities))
+		for lineID, qtyStr := range req.LineQuantities {
+			qty, err := decimal.NewFromString(qtyStr)
+			if err != nil {
+				httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_QUANTITY", "Every line_quantities value must be a decimal string."))
+				return
+			}
+			lineQuantities[lineID] = qty
+		}
+	}
+	target, err := h.svc.ConvertDocument(r.Context(), principal(r), id, domain.DocumentType(req.TargetType), lineQuantities)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

@@ -18,4 +18,8 @@ var (
 	// so the caller gets one clear, specific reason instead of a
 	// generic 500 surfaced from deep inside the accounting layer.
 	ErrZeroValueDocument = errors.New("sales: document grand total is zero")
+	// ErrReturnQuantityExceedsSource guards ConvertDocument's optional
+	// partial-quantity override: a return/credit note can never claim
+	// more of a line than the source document actually sold.
+	ErrReturnQuantityExceedsSource = errors.New("sales: return quantity exceeds the quantity on the source document line")
 )

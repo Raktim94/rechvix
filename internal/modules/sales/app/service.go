@@ -550,7 +550,18 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 // brief-mandated rule; a business that wants to convert from DRAFT can
 // finalize the quotation first, which costs nothing since a quotation
 // finalize doesn't affect stock.
-func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Principal, sourceDocumentID uuid.UUID, targetType domain.DocumentType) (*domain.Document, error) {
+// lineQuantities is an optional partial-quantity override, keyed by
+// SOURCE line ID: nil or empty copies every line at its full original
+// quantity (unchanged behavior — every existing caller of
+// ConvertDocument gets exactly what it got before this parameter
+// existed). Non-empty restricts the copy to only the line IDs present as
+// keys, each at the given quantity — the SALES_RETURN/CREDIT_NOTE case,
+// where a customer returning one defective item out of a five-line
+// invoice must not silently also return the other four. There is no
+// line-update/delete endpoint on ANY sales document (finalized or
+// draft) to fix this up after the fact, so the override has to apply at
+// copy time.
+func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Principal, sourceDocumentID uuid.UUID, targetType domain.DocumentType, lineQuantities map[uuid.UUID]decimal.Decimal) (*domain.Document, error) {
 	if err := s.create(ctx, principal); err != nil {
 		return nil, err
 	}
@@ -563,6 +574,17 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 	}
 	if source.Status != domain.StatusFinalized {
 		return nil, domain.ErrDocumentNotFinalized
+	}
+	if len(lineQuantities) > 0 {
+		for _, sl := range sourceLines {
+			qty, ok := lineQuantities[sl.ID]
+			if !ok {
+				continue
+			}
+			if qty.GreaterThan(sl.Quantity) {
+				return nil, domain.ErrReturnQuantityExceedsSource
+			}
+		}
 	}
 	refID := source.ID
 	target, err := s.CreateDocument(ctx, principal, CreateDocumentParams{
@@ -580,9 +602,17 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 		return nil, err
 	}
 	for _, sl := range sourceLines {
+		qty := sl.Quantity
+		if len(lineQuantities) > 0 {
+			override, ok := lineQuantities[sl.ID]
+			if !ok || !override.IsPositive() {
+				continue
+			}
+			qty = override
+		}
 		if _, err := s.AddLine(ctx, principal, AddLineParams{
 			DocumentID: target.ID, ProductVariantID: sl.ProductVariantID, UnitID: sl.UnitID,
-			Quantity: sl.Quantity, UnitPrice: sl.UnitPrice.Decimal(), LineDiscountAmount: sl.LineDiscountAmount.Decimal(),
+			Quantity: qty, UnitPrice: sl.UnitPrice.Decimal(), LineDiscountAmount: sl.LineDiscountAmount.Decimal(),
 			BatchCode: sl.BatchCode, SerialCode: sl.SerialCode,
 		}); err != nil {
 			return nil, fmt.Errorf("sales: copying line %d during conversion: %w", sl.LineNumber, err)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	contactsapp "rechvix/internal/modules/contacts/app"
@@ -461,6 +462,122 @@ func TestSales_BillingLookup_ScannedBarcodeResolvesExactVariant(t *testing.T) {
 	}
 	if len(noMatch) != 0 {
 		t.Fatalf("BillingLookup(no match) returned %d results, want 0", len(noMatch))
+	}
+}
+
+// TestSales_ConvertDocument_PartialQuantityReturn_RestocksAndReversesAR
+// is the regression test for the exact gap the audit found: neither
+// ConvertDocument nor its httpapi handler had ever been called from
+// anywhere before this pass. A customer bought 10 units, returns only 3
+// (SALES_RETURN, the "physical goods actually came back" type): the
+// resulting document must carry exactly quantity 3, inventory must go
+// back up by exactly 3 (not all 10), and the return quantity can never
+// exceed what was actually on the source invoice.
+func TestSales_ConvertDocument_PartialQuantityReturn_RestocksAndReversesAR(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, inventorySvc, _, _ := newTestSalesServices(t)
+	fx := setupSalesFixture(t, ctx)
+
+	invoiceDoc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocTaxInvoice, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+		PricingMode: taxdomain.PricingExclusive,
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	if _, err := salesSvc.AddLine(ctx, fx.Principal, salesapp.AddLineParams{
+		DocumentID: invoiceDoc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "10"), UnitPrice: mustDecimal(t, "100"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	invoice, err := salesSvc.FinalizeDocument(ctx, fx.Principal, invoiceDoc.ID)
+	if err != nil {
+		t.Fatalf("FinalizeDocument(invoice): %v", err)
+	}
+	_, invoiceLines, err := salesSvc.GetDocument(ctx, fx.Principal, invoice.ID)
+	if err != nil {
+		t.Fatalf("GetDocument: %v", err)
+	}
+	if len(invoiceLines) != 1 {
+		t.Fatalf("len(invoiceLines) = %d, want 1", len(invoiceLines))
+	}
+	sourceLineID := invoiceLines[0].ID
+
+	balAfterSale, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetBalance after sale: %v", err)
+	}
+
+	// Asking to return more than was ever sold must be rejected before
+	// any document is even created.
+	_, err = salesSvc.ConvertDocument(ctx, fx.Principal, invoice.ID, salesdomain.DocSalesReturn,
+		map[uuid.UUID]decimal.Decimal{sourceLineID: mustDecimal(t, "11")})
+	if !errors.Is(err, salesdomain.ErrReturnQuantityExceedsSource) {
+		t.Fatalf("ConvertDocument(qty=11 > sold=10) error = %v, want ErrReturnQuantityExceedsSource", err)
+	}
+
+	ret, err := salesSvc.ConvertDocument(ctx, fx.Principal, invoice.ID, salesdomain.DocSalesReturn,
+		map[uuid.UUID]decimal.Decimal{sourceLineID: mustDecimal(t, "3")})
+	if err != nil {
+		t.Fatalf("ConvertDocument(qty=3): %v", err)
+	}
+	if ret.ReferenceDocumentID == nil || *ret.ReferenceDocumentID != invoice.ID {
+		t.Fatalf("return's ReferenceDocumentID = %v, want %s", ret.ReferenceDocumentID, invoice.ID)
+	}
+	_, retLines, err := salesSvc.GetDocument(ctx, fx.Principal, ret.ID)
+	if err != nil {
+		t.Fatalf("GetDocument(return): %v", err)
+	}
+	if len(retLines) != 1 || !retLines[0].Quantity.Equal(mustDecimal(t, "3")) {
+		t.Fatalf("return lines = %+v, want exactly one line at quantity 3", retLines)
+	}
+
+	if _, err := salesSvc.FinalizeDocument(ctx, fx.Principal, ret.ID); err != nil {
+		t.Fatalf("FinalizeDocument(return): %v", err)
+	}
+
+	balAfterReturn, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetBalance after return: %v", err)
+	}
+	wantQty := balAfterSale.QuantityOnHand.Add(mustDecimal(t, "3"))
+	if !balAfterReturn.QuantityOnHand.Equal(wantQty) {
+		t.Fatalf("QuantityOnHand after returning 3 of 10 = %s, want %s (only the 3 returned units restocked)", balAfterReturn.QuantityOnHand, wantQty)
+	}
+
+	// A CREDIT_NOTE is purely a financial adjustment — StockAffecting is
+	// false for it, so finalizing one must NOT move inventory at all,
+	// unlike SALES_RETURN above.
+	credit, err := salesSvc.ConvertDocument(ctx, fx.Principal, invoice.ID, salesdomain.DocCreditNote,
+		map[uuid.UUID]decimal.Decimal{sourceLineID: mustDecimal(t, "2")})
+	if err != nil {
+		t.Fatalf("ConvertDocument(CREDIT_NOTE): %v", err)
+	}
+	if _, err := salesSvc.FinalizeDocument(ctx, fx.Principal, credit.ID); err != nil {
+		t.Fatalf("FinalizeDocument(credit note): %v", err)
+	}
+	balAfterCredit, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetBalance after credit note: %v", err)
+	}
+	if !balAfterCredit.QuantityOnHand.Equal(balAfterReturn.QuantityOnHand) {
+		t.Fatalf("QuantityOnHand changed after finalizing a CREDIT_NOTE (%s -> %s) — a credit note must not move stock", balAfterReturn.QuantityOnHand, balAfterCredit.QuantityOnHand)
+	}
+
+	// Omitting the override entirely must still behave exactly as before
+	// this parameter existed: a full copy of every line at full quantity.
+	fullCopy, err := salesSvc.ConvertDocument(ctx, fx.Principal, invoice.ID, salesdomain.DocSalesReturn, nil)
+	if err != nil {
+		t.Fatalf("ConvertDocument(nil override): %v", err)
+	}
+	_, fullCopyLines, err := salesSvc.GetDocument(ctx, fx.Principal, fullCopy.ID)
+	if err != nil {
+		t.Fatalf("GetDocument(fullCopy): %v", err)
+	}
+	if len(fullCopyLines) != 1 || !fullCopyLines[0].Quantity.Equal(mustDecimal(t, "10")) {
+		t.Fatalf("nil-override copy lines = %+v, want one line at the full original quantity 10", fullCopyLines)
 	}
 }
 
