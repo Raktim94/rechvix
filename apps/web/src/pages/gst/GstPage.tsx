@@ -435,6 +435,16 @@ export function GstPage() {
         </p>
         <ReportTable path="/reports/tax/gstr1?format=json" />
       </div>
+      <div className={layout.panel}>
+        <h2>GSTR-3B summary</h2>
+        <p className={layout.subtitle} style={{ marginBottom: 12 }}>
+          Not a filing submission — and not every box on the government form: only outward taxable supplies (3.1) and
+          input tax credit on purchases (4(A)(5)) are shown, since those are the only figures this app can compute
+          from your finalized sales and purchases. Reverse charge, imports, and ITC reversals aren't tracked and are
+          left off rather than shown as a guessed zero — bring those to your CA separately.
+        </p>
+        <ReportTable path="/reports/tax/gstr3b?format=json" />
+      </div>
     </div>
   );
 }

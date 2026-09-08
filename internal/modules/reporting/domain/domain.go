@@ -223,6 +223,24 @@ type GSTR1Line struct {
 	GrandTotal     money.Money
 }
 
+// GSTR3BLine is one line of the GSTR-3B summary return (brief §8's
+// GSTR-1/3B-oriented, NOT filing, export — same non-goal as GSTR1Line
+// above). Label matches the official form's own section numbering
+// (e.g. "3.1(a)") so a business owner or their CA can map each row
+// directly onto the government form, rather than shaping every box the
+// full form has — only the boxes this app actually has data for are
+// included; see reporting.Repository.GSTR3B's own doc comment for
+// exactly which those are and why the rest are deliberately omitted,
+// not shown as a guessed zero.
+type GSTR3BLine struct {
+	Label         string
+	TaxableAmount money.Money
+	IGST          money.Money
+	CGST          money.Money
+	SGST          money.Money
+	CESS          money.Money
+}
+
 // DashboardSummary is brief §23's card set, assembled from a small,
 // deliberately bounded set of indexed queries (docs/adr/0004-dashboard-query-design.md)
 // rather than one query per card fired independently from the frontend.
@@ -256,5 +274,17 @@ type Repository interface {
 	HSNSummary(ctx context.Context, f Filter) ([]HSNSummaryRow, error)
 	TaxRateSummary(ctx context.Context, f Filter) ([]TaxRateSummaryRow, error)
 	GSTR1(ctx context.Context, f Filter) ([]GSTR1Line, error)
+	// GSTR3B covers only Section 3.1(a)/(b) (outward taxable/zero-rated
+	// supplies, from sales' tax_documents — the same data GSTR1 already
+	// reads) and Section 4(A)(5) "All other ITC" (from purchases'
+	// tax_documents, migrations/0038). Every other box on the real
+	// government form — 3.1(c) nil-rated/exempt, 3.1(d) inward reverse
+	// charge, 3.1(e) non-GST supplies, 4(A)(1-4) import/ISD/RCM ITC,
+	// 4(B) ITC reversed, 4(D) ineligible ITC — has no corresponding data
+	// anywhere in this schema (no exempt/nil classification, no reverse-
+	// charge or import tracking) and is deliberately not included as a
+	// row here rather than shown as a guessed zero that could be
+	// mistaken for a confirmed one.
+	GSTR3B(ctx context.Context, f Filter) ([]GSTR3BLine, error)
 	Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) (DashboardSummary, error)
 }

@@ -301,6 +301,21 @@ func (s *Service) GSTR1(ctx context.Context, principal permissions.Principal, f 
 	return out, err
 }
 
+// GSTR3B is GSTR1's identical export-permission rationale — same
+// gate, same reasoning, a different shape of tax-filing-prep data.
+func (s *Service) GSTR3B(ctx context.Context, principal permissions.Principal, f domain.Filter) ([]domain.GSTR3BLine, error) {
+	if err := s.export(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out []domain.GSTR3BLine
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.repo.GSTR3B(ctx, scoped(principal, f))
+		return err
+	})
+	return out, err
+}
+
 func (s *Service) Dashboard(ctx context.Context, principal permissions.Principal) (domain.DashboardSummary, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return domain.DashboardSummary{}, err

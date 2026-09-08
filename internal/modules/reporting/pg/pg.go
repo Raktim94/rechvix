@@ -639,6 +639,76 @@ func (r *Repo) GSTR1(ctx context.Context, f domain.Filter) ([]domain.GSTR1Line, 
 	return out, rows.Err()
 }
 
+// GSTR3B assembles up to 3 rows — see domain.Repository.GSTR3B's own
+// doc comment for exactly which boxes these are and which are
+// deliberately omitted. Two independent queries (outward from
+// sales_documents/tax_documents, ITC from purchase_documents/
+// tax_documents) rather than one UNIONed query — the two sides filter
+// on different parent tables and different date columns (issue_date vs
+// document_date), and there is no shared row shape worth forcing into
+// one SELECT.
+func (r *Repo) GSTR3B(ctx context.Context, f domain.Filter) ([]domain.GSTR3BLine, error) {
+	outward, err := r.gstr3bOutward(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	itc, err := r.gstr3bITC(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.GSTR3BLine
+	out = append(out, outward...)
+	out = append(out, itc)
+	return out, nil
+}
+
+func (r *Repo) gstr3bOutward(ctx context.Context, f domain.Filter) ([]domain.GSTR3BLine, error) {
+	w := newWhere(f.OrganisationID, "sd")
+	w.add("sd.status", "FINALIZED")
+	w.addRange("sd.issue_date", f.From, f.To)
+	q := fmt.Sprintf(`
+		SELECT
+			COALESCE(SUM(td.total_taxable_amount) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.total_taxable_amount) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0)
+		FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
+		WHERE %s`, w.sql())
+	var taxable, igst, cgst, sgst, cess, zeroTaxable, zeroIGST decimal.Decimal
+	row := r.pool.Q(ctx).QueryRow(ctx, q, w.args...)
+	if err := row.Scan(&taxable, &igst, &cgst, &sgst, &cess, &zeroTaxable, &zeroIGST); err != nil {
+		return nil, fmt.Errorf("reporting: GSTR-3B outward query: %w", err)
+	}
+	return []domain.GSTR3BLine{
+		{Label: "3.1(a) Outward taxable supplies", TaxableAmount: inr(taxable), IGST: inr(igst), CGST: inr(cgst), SGST: inr(sgst), CESS: inr(cess)},
+		{Label: "3.1(b) Outward taxable supplies (zero rated)", TaxableAmount: inr(zeroTaxable), IGST: inr(zeroIGST), CGST: inr(decimal.Zero), SGST: inr(decimal.Zero), CESS: inr(decimal.Zero)},
+	}, nil
+}
+
+func (r *Repo) gstr3bITC(ctx context.Context, f domain.Filter) (domain.GSTR3BLine, error) {
+	w := newWhere(f.OrganisationID, "pd")
+	w.add("pd.status", "FINALIZED")
+	w.addRange("pd.document_date", f.From, f.To)
+	q := fmt.Sprintf(`
+		SELECT
+			COALESCE(SUM(td.total_taxable_amount), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')), 0),
+			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')), 0)
+		FROM purchase_documents pd JOIN tax_documents td ON td.id = pd.tax_document_id
+		WHERE %s`, w.sql())
+	var taxable, igst, cgst, sgst, cess decimal.Decimal
+	row := r.pool.Q(ctx).QueryRow(ctx, q, w.args...)
+	if err := row.Scan(&taxable, &igst, &cgst, &sgst, &cess); err != nil {
+		return domain.GSTR3BLine{}, fmt.Errorf("reporting: GSTR-3B ITC query: %w", err)
+	}
+	return domain.GSTR3BLine{Label: "4(A)(5) All other ITC", TaxableAmount: inr(taxable), IGST: inr(igst), CGST: inr(cgst), SGST: inr(sgst), CESS: inr(cess)}, nil
+}
+
 // --- Dashboard (docs/adr/0004-dashboard-query-design.md) ---
 
 func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) (domain.DashboardSummary, error) {

@@ -300,6 +300,25 @@ func (h *Handlers) gstr1(w http.ResponseWriter, r *http.Request) {
 	writeTable(w, r, t)
 }
 
+func (h *Handlers) gstr3b(w http.ResponseWriter, r *http.Request) {
+	f, err := parseFilter(r)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	rows, err := h.svc.GSTR3B(r.Context(), principal(r), f)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	t := export.Table{Title: "GSTR-3B Preparation (NOT a filing submission — only the boxes this app has data for)",
+		Headers: []string{"Section", "Taxable", "IGST", "CGST", "SGST", "CESS"}}
+	for _, g := range rows {
+		t.Rows = append(t.Rows, []string{g.Label, g.TaxableAmount.StringFixed(fixed), g.IGST.StringFixed(fixed), g.CGST.StringFixed(fixed), g.SGST.StringFixed(fixed), g.CESS.StringFixed(fixed)})
+	}
+	writeTable(w, r, t)
+}
+
 func parseAsOf(r *http.Request) time.Time {
 	if v := r.URL.Query().Get("as_of"); v != "" {
 		if t, err := time.Parse("2006-01-02", v); err == nil {

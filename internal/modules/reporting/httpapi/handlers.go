@@ -42,6 +42,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/reports/tax/hsn-summary", h.hsnSummary)
 	r.Get("/reports/tax/rate-summary", h.taxRateSummary)
 	r.Get("/reports/tax/gstr1", h.gstr1)
+	r.Get("/reports/tax/gstr3b", h.gstr3b)
 }
 
 func principal(r *http.Request) permissions.Principal {

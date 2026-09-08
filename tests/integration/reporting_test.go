@@ -10,11 +10,14 @@ import (
 
 	accountingapp "rechvix/internal/modules/accounting/app"
 	accountingdomain "rechvix/internal/modules/accounting/domain"
+	contactsapp "rechvix/internal/modules/contacts/app"
+	contactspg "rechvix/internal/modules/contacts/pg"
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchasesdomain "rechvix/internal/modules/purchases/domain"
 	reportingapp "rechvix/internal/modules/reporting/app"
 	reportingdomain "rechvix/internal/modules/reporting/domain"
 	reportingpg "rechvix/internal/modules/reporting/pg"
+	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/permissions"
 )
 
@@ -255,6 +258,97 @@ func TestReporting_HSNSummary_AggregatesTaxComponents(t *testing.T) {
 	}
 	if !r.IGST.IsZero() {
 		t.Fatalf("IGST = %s, want 0 (intra-state fixture)", r.IGST.StringFixed(0))
+	}
+}
+
+// TestReporting_GSTR3B_OutwardAndITC_MatchHandComputed exercises both
+// halves of the report in one pass: a finalized TAX_INVOICE feeds
+// 3.1(a) (same fixture math as TestReporting_HSNSummary_
+// AggregatesTaxComponents above), and a finalized PURCHASE_INVOICE from
+// a GST-registered supplier feeds 4(A)(5) — proving migrations/0038's
+// purchase-side tax tracking actually reaches this report, not just
+// purchases' own accounting split (already covered by
+// TestPurchases_TaxCalculation_IntraState_SplitsInputTaxCreditFromPurchases
+// in accounting_test.go).
+func TestReporting_GSTR3B_OutwardAndITC_MatchHandComputed(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, purchasesSvc, accountingSvc, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100") // taxable 1000, CGST 90 + SGST 90
+
+	contactsSvc := contactsapp.NewService(
+		sharedPool, contactspg.NewPartyRepo(sharedPool), contactspg.NewAddressRepo(sharedPool), contactspg.NewTaxRegistrationRepo(sharedPool),
+		permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool), audit.NewPGRecorder(sharedPool),
+	)
+	if _, err := contactsSvc.AddTaxRegistration(ctx, fx.Principal, contactsapp.AddTaxRegistrationParams{
+		PartyID: fx.SupplierID, CountryCode: "IN", RegistrationNumber: "27BBBBB0000B1Z1", StateCode: "27", IsPrimary: true,
+	}); err != nil {
+		t.Fatalf("AddTaxRegistration(supplier): %v", err)
+	}
+	purchaseDoc, err := purchasesSvc.CreateDocument(ctx, fx.Principal, purchasesapp.CreateDocumentParams{
+		BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, SupplierPartyID: fx.SupplierID,
+		DocumentType: purchasesdomain.DocPurchaseInvoice, CurrencyCode: "INR", DocumentDate: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("purchases CreateDocument: %v", err)
+	}
+	if _, err := purchasesSvc.AddLine(ctx, fx.Principal, purchasesapp.AddLineParams{
+		DocumentID: purchaseDoc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "5"), UnitPrice: mustDecimal(t, "100"), // taxable 500, CGST 45 + SGST 45
+	}); err != nil {
+		t.Fatalf("purchases AddLine: %v", err)
+	}
+	if _, err := purchasesSvc.FinalizeDocument(ctx, fx.Principal, purchaseDoc.ID); err != nil {
+		t.Fatalf("purchases FinalizeDocument: %v", err)
+	}
+
+	rows, err := reportingSvc.GSTR3B(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("GSTR3B: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("got %d GSTR-3B rows, want 3 (3.1(a), 3.1(b), 4(A)(5))", len(rows))
+	}
+
+	outward := rows[0]
+	if outward.Label != "3.1(a) Outward taxable supplies" {
+		t.Fatalf("rows[0].Label = %q, want 3.1(a)", outward.Label)
+	}
+	if got := outward.TaxableAmount.StringFixed(0); got != "1000.00" {
+		t.Fatalf("outward taxable = %s, want 1000.00", got)
+	}
+	if got := outward.CGST.StringFixed(0); got != "90.00" {
+		t.Fatalf("outward CGST = %s, want 90.00", got)
+	}
+	if got := outward.SGST.StringFixed(0); got != "90.00" {
+		t.Fatalf("outward SGST = %s, want 90.00", got)
+	}
+
+	zeroRated := rows[1]
+	if zeroRated.Label != "3.1(b) Outward taxable supplies (zero rated)" {
+		t.Fatalf("rows[1].Label = %q, want 3.1(b)", zeroRated.Label)
+	}
+	if !zeroRated.TaxableAmount.Decimal().IsZero() {
+		t.Fatalf("zero-rated taxable = %s, want 0 (no export/SEZ documents in this fixture)", zeroRated.TaxableAmount.StringFixed(0))
+	}
+
+	itc := rows[2]
+	if itc.Label != "4(A)(5) All other ITC" {
+		t.Fatalf("rows[2].Label = %q, want 4(A)(5)", itc.Label)
+	}
+	if got := itc.TaxableAmount.StringFixed(0); got != "500.00" {
+		t.Fatalf("ITC taxable = %s, want 500.00", got)
+	}
+	if got := itc.CGST.StringFixed(0); got != "45.00" {
+		t.Fatalf("ITC CGST = %s, want 45.00", got)
+	}
+	if got := itc.SGST.StringFixed(0); got != "45.00" {
+		t.Fatalf("ITC SGST = %s, want 45.00", got)
+	}
+	if !itc.IGST.Decimal().IsZero() {
+		t.Fatalf("ITC IGST = %s, want 0 (intra-state fixture)", itc.IGST.StringFixed(0))
 	}
 }
 
