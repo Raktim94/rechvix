@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { PaymentPanel } from "../../components/PaymentPanel";
 import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
@@ -381,6 +382,23 @@ export function PurchasesPage() {
                 </p>
               )}
             </div>
+
+            {finalized && activeDoc.data ? (
+              <PaymentPanel
+                documentId={activeDoc.data.document.ID}
+                partyId={activeDoc.data.document.SupplierPartyID}
+                // Purchase documents carry no GrandTotalAmount of their
+                // own (internal/modules/purchases/domain.Document has no
+                // such field) — summed from lines client-side, same as
+                // the total already shown per-line just above.
+                grandTotal={
+                  lines[0]
+                    ? { amount: String(lines.reduce((sum, l) => sum + Number(l.LineTotal.amount), 0)), currency: lines[0].LineTotal.currency }
+                    : null
+                }
+                direction="PAY"
+              />
+            ) : null}
           </>
         )}
       </div>

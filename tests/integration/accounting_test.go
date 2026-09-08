@@ -459,6 +459,47 @@ func TestAccounting_ScenarioE_CreditSaleThenPartialReceipt(t *testing.T) {
 	}
 }
 
+// TestAccounting_ListReceiptsForSalesDocument_ScopedToTheRightInvoice is
+// the regression test for the exact gap the audit found: a receipt
+// carries SalesDocumentID from the moment RecordReceipt accepts it, but
+// nothing ever read it back per-invoice before ListReceiptsForSalesDocument
+// existed — every payment screen could only show a customer's total
+// on-account balance, never "how much of THIS invoice is actually paid".
+// Two invoices for the same customer, a receipt against only one of
+// them: the other invoice's own receipt list must come back empty, not
+// leak the first invoice's payment just because they share a customer.
+func TestAccounting_ListReceiptsForSalesDocument_ScopedToTheRightInvoice(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	invoiceA := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "1", "5000")
+	invoiceB := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "1", "3000")
+
+	if _, err := accountingSvc.RecordReceipt(ctx, fx.Principal, accountingapp.RecordReceiptParams{
+		PartyID: fx.CustomerID, SalesDocumentID: &invoiceA.ID, Amount: mustDecimal(t, "2000"),
+		Method: accountingdomain.MethodCash, ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("RecordReceipt against invoice A: %v", err)
+	}
+
+	receiptsA, err := accountingSvc.ListReceiptsForSalesDocument(ctx, fx.Principal, invoiceA.ID)
+	if err != nil {
+		t.Fatalf("ListReceiptsForSalesDocument(A): %v", err)
+	}
+	if len(receiptsA) != 1 || !receiptsA[0].Amount.Decimal().Equal(mustDecimal(t, "2000")) {
+		t.Fatalf("invoice A receipts = %+v, want exactly one receipt of 2000", receiptsA)
+	}
+
+	receiptsB, err := accountingSvc.ListReceiptsForSalesDocument(ctx, fx.Principal, invoiceB.ID)
+	if err != nil {
+		t.Fatalf("ListReceiptsForSalesDocument(B): %v", err)
+	}
+	if len(receiptsB) != 0 {
+		t.Fatalf("invoice B receipts = %+v, want none (the receipt was against A, not B, even though both belong to the same customer)", receiptsB)
+	}
+}
+
 // --- RLS ---
 
 func TestAccounting_RLS_BlocksCrossOrganisationJournalRead(t *testing.T) {

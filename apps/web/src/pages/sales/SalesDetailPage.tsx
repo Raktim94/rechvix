@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { EwayBillCard } from "../../components/EwayBillCard";
 import { WhatsAppIcon } from "../../components/icons";
+import { PaymentPanel } from "../../components/PaymentPanel";
 import { PrintTemplateMenu } from "../../components/PrintTemplateMenu";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
@@ -10,7 +11,7 @@ import type { Party } from "../../lib/partyTypes";
 import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
 import styles from "./SalesDetailPage.module.css";
-import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
+import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, PAYABLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
 
 export function SalesDetailPage({ id }: { id: string }) {
   const doc = useQuery({
@@ -166,6 +167,10 @@ export function SalesDetailPage({ id }: { id: string }) {
           <EwayBillCard documentId={document.ID} />
         ) : null}
       </div>
+
+      {document.Status === "FINALIZED" && PAYABLE_TYPES.has(document.DocumentType) ? (
+        <PaymentPanel documentId={document.ID} partyId={document.CustomerPartyID} grandTotal={document.GrandTotalAmount} direction="RECEIVE" />
+      ) : null}
     </div>
   );
 }

@@ -32,6 +32,8 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/accounting/journals/{id}", h.getJournal)
 	r.Post("/accounting/receipts", h.recordReceipt)
 	r.Post("/accounting/payments", h.recordPayment)
+	r.Get("/accounting/sales-documents/{id}/receipts", h.listReceiptsForSalesDocument)
+	r.Get("/accounting/purchase-documents/{id}/payments", h.listPaymentsForPurchaseDocument)
 	r.Get("/accounting/parties/{id}/ledger", h.getLedger)
 	r.Get("/accounting/parties/{id}/ageing", h.getAgeing)
 	r.Get("/accounting/fiscal-periods", h.listFiscalPeriods)
@@ -101,6 +103,34 @@ func (h *Handlers) listJournals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"journals": out})
+}
+
+func (h *Handlers) listReceiptsForSalesDocument(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	out, err := h.svc.ListReceiptsForSalesDocument(r.Context(), principal(r), id)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"receipts": out})
+}
+
+func (h *Handlers) listPaymentsForPurchaseDocument(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	out, err := h.svc.ListPaymentsForPurchaseDocument(r.Context(), principal(r), id)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"payments": out})
 }
 
 func (h *Handlers) listExpenses(w http.ResponseWriter, r *http.Request) {

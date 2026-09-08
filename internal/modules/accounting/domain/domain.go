@@ -302,11 +302,21 @@ type BankAccountRepository interface {
 type ReceiptRepository interface {
 	Create(ctx context.Context, r *Receipt) error
 	ListByParty(ctx context.Context, orgID, partyID uuid.UUID) ([]*Receipt, error)
+	// ListBySalesDocument answers "how much has actually been received
+	// against THIS invoice" — RecordReceiptParams.SalesDocumentID was
+	// accepted and stored on the Receipt row from day one, but nothing
+	// ever read it back out this way; every payment screen could only
+	// show the party's total on-account balance, never a given invoice's
+	// own paid/outstanding split.
+	ListBySalesDocument(ctx context.Context, orgID, salesDocumentID uuid.UUID) ([]*Receipt, error)
 }
 
 type PaymentRepository interface {
 	Create(ctx context.Context, p *Payment) error
 	ListByParty(ctx context.Context, orgID, partyID uuid.UUID) ([]*Payment, error)
+	// ListByPurchaseDocument is ListBySalesDocument's mirror for the
+	// supplier side.
+	ListByPurchaseDocument(ctx context.Context, orgID, purchaseDocumentID uuid.UUID) ([]*Payment, error)
 }
 
 type ReconciliationRepository interface {

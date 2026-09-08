@@ -482,6 +482,56 @@ func (r *PaymentRepo) ListByParty(ctx context.Context, orgID, partyID uuid.UUID)
 	return out, rows.Err()
 }
 
+func (r *ReceiptRepo) ListBySalesDocument(ctx context.Context, orgID, salesDocumentID uuid.UUID) ([]*domain.Receipt, error) {
+	const q = `SELECT id, organisation_id, party_id, sales_document_id, amount, currency_code, bank_account_id, payment_method,
+			COALESCE(reference_number, ''), received_at, journal_id, created_by, created_at
+		FROM receipts WHERE organisation_id = $1 AND sales_document_id = $2 ORDER BY received_at DESC`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, salesDocumentID)
+	if err != nil {
+		return nil, fmt.Errorf("accounting: listing receipts for sales document: %w", err)
+	}
+	defer rows.Close()
+	var out []*domain.Receipt
+	for rows.Next() {
+		var rec domain.Receipt
+		var amount decimal.Decimal
+		var currency, method string
+		if err := rows.Scan(&rec.ID, &rec.OrganisationID, &rec.PartyID, &rec.SalesDocumentID, &amount, &currency,
+			&rec.BankAccountID, &method, &rec.ReferenceNumber, &rec.ReceivedAt, &rec.JournalID, &rec.CreatedBy, &rec.CreatedAt); err != nil {
+			return nil, fmt.Errorf("accounting: scanning receipt: %w", err)
+		}
+		rec.Amount = money.MustNew(amount, currency)
+		rec.Method = domain.PaymentMethod(method)
+		out = append(out, &rec)
+	}
+	return out, rows.Err()
+}
+
+func (r *PaymentRepo) ListByPurchaseDocument(ctx context.Context, orgID, purchaseDocumentID uuid.UUID) ([]*domain.Payment, error) {
+	const q = `SELECT id, organisation_id, party_id, purchase_document_id, amount, currency_code, bank_account_id, payment_method,
+			COALESCE(reference_number, ''), paid_at, journal_id, created_by, created_at
+		FROM payments WHERE organisation_id = $1 AND purchase_document_id = $2 ORDER BY paid_at DESC`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, purchaseDocumentID)
+	if err != nil {
+		return nil, fmt.Errorf("accounting: listing payments for purchase document: %w", err)
+	}
+	defer rows.Close()
+	var out []*domain.Payment
+	for rows.Next() {
+		var p domain.Payment
+		var amount decimal.Decimal
+		var currency, method string
+		if err := rows.Scan(&p.ID, &p.OrganisationID, &p.PartyID, &p.PurchaseDocumentID, &amount, &currency,
+			&p.BankAccountID, &method, &p.ReferenceNumber, &p.PaidAt, &p.JournalID, &p.CreatedBy, &p.CreatedAt); err != nil {
+			return nil, fmt.Errorf("accounting: scanning payment: %w", err)
+		}
+		p.Amount = money.MustNew(amount, currency)
+		p.Method = domain.PaymentMethod(method)
+		out = append(out, &p)
+	}
+	return out, rows.Err()
+}
+
 // --- reconciliations ---
 
 type ReconciliationRepo struct{ pool *database.Pool }

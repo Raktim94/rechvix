@@ -55,6 +55,12 @@ export interface SalesDocumentLine {
  * of duplicating the set. */
 export const EWB_ELIGIBLE_TYPES = new Set<DocumentType>(["TAX_INVOICE", "POS_INVOICE", "DELIVERY_CHALLAN", "SALES_RETURN"]);
 
+/** Mirrors sales/domain.RevenueAffecting, narrowed to the two types
+ * BillingPage can actually create (a QUOTATION/SALES_ORDER carries no
+ * real receivable to be paid against — no journal is posted for either
+ * on finalize) — the set SalesDetailPage shows a PaymentPanel for. */
+export const PAYABLE_TYPES = new Set<DocumentType>(["TAX_INVOICE", "POS_INVOICE"]);
+
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   QUOTATION: "Quotation",
   PROFORMA_INVOICE: "Proforma invoice",

@@ -446,6 +446,22 @@ func (s *Service) RecordReceipt(ctx context.Context, principal permissions.Princ
 	return rec, nil
 }
 
+// ListReceiptsForSalesDocument is the invoice-detail screen's read path
+// — "how much has actually been paid against THIS invoice", not just
+// the customer's overall on-account balance.
+func (s *Service) ListReceiptsForSalesDocument(ctx context.Context, principal permissions.Principal, salesDocumentID uuid.UUID) ([]*domain.Receipt, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out []*domain.Receipt
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.receipts.ListBySalesDocument(ctx, principal.OrganisationID, salesDocumentID)
+		return err
+	})
+	return out, err
+}
+
 type RecordPaymentParams struct {
 	PartyID            uuid.UUID
 	PurchaseDocumentID *uuid.UUID
@@ -521,6 +537,21 @@ func (s *Service) RecordPayment(ctx context.Context, principal permissions.Princ
 // GetPartyLedger returns partyID's chronological ledger up to asOf, with a
 // running balance — derived fresh from journal_lines every call, never
 // read from a mutable stored balance column (see domain.LedgerEntry's doc
+// ListPaymentsForPurchaseDocument mirrors
+// ListReceiptsForSalesDocument for the supplier side.
+func (s *Service) ListPaymentsForPurchaseDocument(ctx context.Context, principal permissions.Principal, purchaseDocumentID uuid.UUID) ([]*domain.Payment, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out []*domain.Payment
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.payments.ListByPurchaseDocument(ctx, principal.OrganisationID, purchaseDocumentID)
+		return err
+	})
+	return out, err
+}
+
 // comment on why: a separately-maintained running total drifts from the
 // transaction history it's supposed to summarize).
 //
