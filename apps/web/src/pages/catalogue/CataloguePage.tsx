@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
+import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 
 interface Product {
@@ -29,6 +30,7 @@ interface Brand {
 
 export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }) {
   const queryClient = useQueryClient();
+  const org = useOrgContext();
   const [query, setQuery] = useState("");
   // Opened directly from another page's "+ New product" button (e.g.
   // Inventory, where a shop owner discovers a product doesn't exist yet)
@@ -46,6 +48,13 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   const [newUnitName, setNewUnitName] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newBrandName, setNewBrandName] = useState("");
+  // A brand-new product otherwise has zero stock the moment it's saved —
+  // the very first sale of it fails with INSUFFICIENT_STOCK, and nothing
+  // on this screen ever told the person creating it that they'd need to
+  // separately visit Inventory afterward to fix that. Optional: leave
+  // both blank and skip it, same as before.
+  const [openingQty, setOpeningQty] = useState("");
+  const [openingCost, setOpeningCost] = useState("");
 
   const products = useQuery({
     queryKey: ["products", query],
@@ -102,11 +111,20 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         description: "",
         hsn_sac_code: hsn,
       });
-      await api.post(`/catalogue/variants`, {
+      const variant = await api.post<{ ID: string }>(`/catalogue/variants`, {
         product_id: product.ID,
         sku_code: skuCode || product.Name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24),
         attributes: {},
       });
+      if (Number(openingQty) > 0 && org.warehouse) {
+        await api.post("/inventory/opening-stock", {
+          warehouse_id: org.warehouse.ID,
+          product_variant_id: variant.ID,
+          unit_id: unitId,
+          quantity: openingQty,
+          unit_cost: openingCost || "0",
+        });
+      }
       // Optional: set this HSN code's GST rate right here instead of
       // sending the user to a separate GST page just to make a freshly
       // added product actually billable at the right tax rate.
@@ -130,6 +148,8 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       setCategoryId("");
       setBrandId("");
       setGstRate("");
+      setOpeningQty("");
+      setOpeningCost("");
       setShowForm(false);
     },
   });
@@ -196,6 +216,23 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
               <label htmlFor="product-sku">SKU (optional)</label>
               <input id="product-sku" className={ui.input} value={skuCode} onChange={(e) => setSkuCode(e.target.value)} />
             </div>
+            <div className={ui.field}>
+              <label htmlFor="product-opening-qty">Opening stock (optional)</label>
+              <input
+                id="product-opening-qty"
+                className={ui.input}
+                inputMode="decimal"
+                value={openingQty}
+                onChange={(e) => setOpeningQty(e.target.value)}
+                placeholder="How many do you have right now?"
+              />
+            </div>
+            {Number(openingQty) > 0 ? (
+              <div className={ui.field}>
+                <label htmlFor="product-opening-cost">Cost per unit (optional)</label>
+                <input id="product-opening-cost" className={ui.input} inputMode="decimal" value={openingCost} onChange={(e) => setOpeningCost(e.target.value)} placeholder="0.00" />
+              </div>
+            ) : null}
             <div className={ui.field}>
               <label htmlFor="product-category">Category (optional)</label>
               <select id="product-category" className={ui.select} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>

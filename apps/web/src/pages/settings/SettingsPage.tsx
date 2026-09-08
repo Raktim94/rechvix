@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { PasswordInput } from "../../components/PasswordInput";
 import ui from "../../components/ui.module.css";
+import { useAuth } from "../../auth/AuthProvider";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
 import { getOcrProvider, setOcrProvider, type OcrProvider } from "../../lib/ocr";
@@ -500,6 +502,73 @@ function ScanningPanel() {
   );
 }
 
+/** POST /auth/change-password existed with zero frontend callers — the
+ * only way to change a password was to log out and go through
+ * forgot-password, which is a strange thing to make someone do who is
+ * already logged in and knows their current password. Clears the
+ * session cookie server-side on success (identity/httpapi's own
+ * doc comment), so this also clears local session state and returns to
+ * Sign-in with the new password ready to use, rather than leaving a
+ * stale "logged in" UI up against a session the server just revoked.
+ */
+function ChangePasswordPanel() {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const change = useMutation({
+    mutationFn: () => api.post("/auth/change-password", { current_password: currentPassword, new_password: newPassword, confirm_password: confirmPassword }),
+    onSuccess: async () => {
+      await logout();
+      void navigate({ to: "/login" });
+    },
+  });
+
+  const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
+
+  return (
+    <div className={layout.panel}>
+      <h2>Change password</h2>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (currentPassword && newPassword && !mismatch) change.mutate();
+        }}
+      >
+        <div className={ui.formGrid}>
+          <div className={ui.field}>
+            <label htmlFor="current-password">Current password</label>
+            <PasswordInput id="current-password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          </div>
+          <div className={ui.field}>
+            <label htmlFor="new-password">New password</label>
+            <PasswordInput id="new-password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          </div>
+          <div className={ui.field}>
+            <label htmlFor="confirm-new-password">Confirm new password</label>
+            <PasswordInput id="confirm-new-password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+            {mismatch ? (
+              <p style={{ color: "var(--color-negative)", fontSize: "var(--text-xs)", margin: "4px 0 0" }}>Passwords don't match.</p>
+            ) : null}
+          </div>
+        </div>
+        <div className={ui.formActions} style={{ marginTop: 16 }}>
+          <button type="submit" className={ui.btnPrimary} disabled={!currentPassword || !newPassword || mismatch || change.isPending}>
+            {change.isPending ? "Changing…" : "Change password"}
+          </button>
+        </div>
+        {change.isError ? (
+          <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+            {change.error instanceof ApiError ? change.error.message : "Could not change your password."}
+          </p>
+        ) : null}
+      </form>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const org = useOrgContext();
 
@@ -567,6 +636,8 @@ export function SettingsPage() {
       </div>
 
       <ScanningPanel />
+
+      <ChangePasswordPanel />
 
       <TeamPanel />
     </div>
