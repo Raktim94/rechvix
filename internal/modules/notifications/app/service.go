@@ -127,6 +127,29 @@ func (s *Service) RedeemShareLink(ctx context.Context, rawToken string) (*domain
 	return link, nil
 }
 
+// ListShareLinksForDocument is the "which links exist for this
+// document, and are any of them still live" read path — the repository
+// method (ListForDocument) existed from Stage 9, but nothing above it
+// ever called it: SalesDetailPage's own "Share via WhatsApp" comment
+// claims each link is "independently revocable from this same click",
+// but no screen could actually list one to revoke it. TokenHash is
+// intentionally never returned — only a hash is stored, the raw token
+// shown once at creation can't be reconstructed from it, which is
+// exactly why this is a list of "revoke this" rows, not "here's the
+// link again" rows.
+func (s *Service) ListShareLinksForDocument(ctx context.Context, principal permissions.Principal, documentType string, documentID uuid.UUID) ([]*domain.ShareLink, error) {
+	if err := s.perms.Require(ctx, principal, "notifications.share", permissions.Scope{}); err != nil {
+		return nil, err
+	}
+	var out []*domain.ShareLink
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.shareLinks.ListForDocument(ctx, principal.OrganisationID, documentType, documentID)
+		return err
+	})
+	return out, err
+}
+
 func (s *Service) RevokeShareLink(ctx context.Context, principal permissions.Principal, id uuid.UUID) error {
 	if err := s.perms.Require(ctx, principal, "notifications.share", permissions.Scope{}); err != nil {
 		return err

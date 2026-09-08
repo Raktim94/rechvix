@@ -54,6 +54,7 @@ func (h *Handlers) WithDocumentRenderer(fn DocumentRenderer) *Handlers {
 // recipient has no session or API key (brief §21).
 func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/share-links", h.create)
+	r.Get("/share-links", h.list)
 	r.Delete("/share-links/{id}", h.revoke)
 	r.Post("/notifications/send", h.send)
 }
@@ -103,6 +104,22 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) {
 	// Shown exactly once — the URL a caller builds from this token is the
 	// only copy; the server never returns it again (brief §21).
 	httpx.WriteJSON(w, http.StatusCreated, map[string]string{"token": token})
+}
+
+func (h *Handlers) list(w http.ResponseWriter, r *http.Request) {
+	principal, _ := httpx.PrincipalFromContext(r.Context())
+	documentType := r.URL.Query().Get("document_type")
+	documentID, err := uuid.Parse(r.URL.Query().Get("document_id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_DOCUMENT_ID", "document_id query parameter must be a UUID."))
+		return
+	}
+	links, err := h.svc.ListShareLinksForDocument(r.Context(), principal, documentType, documentID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"share_links": links})
 }
 
 func (h *Handlers) revoke(w http.ResponseWriter, r *http.Request) {

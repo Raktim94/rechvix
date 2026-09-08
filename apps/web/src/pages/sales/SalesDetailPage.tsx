@@ -4,6 +4,7 @@ import { EwayBillCard } from "../../components/EwayBillCard";
 import { WhatsAppIcon } from "../../components/icons";
 import { PaymentPanel } from "../../components/PaymentPanel";
 import { PrintTemplateMenu } from "../../components/PrintTemplateMenu";
+import { ShareLinksPanel } from "../../components/ShareLinksPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
@@ -111,6 +112,7 @@ export function SalesDetailPage({ id }: { id: string }) {
           {shareViaWhatsApp.error instanceof ApiError ? shareViaWhatsApp.error.message : "Could not create a share link."}
         </p>
       ) : null}
+      {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}
 
       <div className={styles.grid}>
         <div className={layout.panel}>

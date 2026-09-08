@@ -73,22 +73,81 @@ func TestNotifications_ShareLink_CreateRedeemRevoke(t *testing.T) {
 		t.Fatal("expected RedeemShareLink to reject a garbage token")
 	}
 
-	// Find the created link's ID for revocation — no ListShareLinks
-	// exposed on Service yet, so this test queries directly.
-	var linkID uuid.UUID
-	if err := sharedPool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		return sharedPool.Q(ctx).QueryRow(ctx,
-			`SELECT id FROM share_links WHERE organisation_id = $1 AND document_id = $2`,
-			principal.OrganisationID, docID).Scan(&linkID)
-	}); err != nil {
-		t.Fatalf("looking up share link id: %v", err)
+	// Find the created link's ID for revocation via the list path itself
+	// (the frontend's own "manage share links" screen has no other way
+	// to find one to revoke, since RawToken is shown once at creation
+	// and never stored).
+	links, err := svc.ListShareLinksForDocument(ctx, principal, "sales_document", docID)
+	if err != nil {
+		t.Fatalf("ListShareLinksForDocument: %v", err)
 	}
+	if len(links) != 1 || links[0].RevokedAt != nil {
+		t.Fatalf("ListShareLinksForDocument = %+v, want exactly one not-yet-revoked link", links)
+	}
+	linkID := links[0].ID
 
 	if err := svc.RevokeShareLink(ctx, principal, linkID); err != nil {
 		t.Fatalf("RevokeShareLink: %v", err)
 	}
 	if _, err := svc.RedeemShareLink(ctx, token); err == nil {
 		t.Fatal("expected RedeemShareLink to reject a revoked link")
+	}
+
+	afterRevoke, err := svc.ListShareLinksForDocument(ctx, principal, "sales_document", docID)
+	if err != nil {
+		t.Fatalf("ListShareLinksForDocument after revoke: %v", err)
+	}
+	if len(afterRevoke) != 1 || afterRevoke[0].RevokedAt == nil {
+		t.Fatalf("ListShareLinksForDocument after revoke = %+v, want RevokedAt set", afterRevoke)
+	}
+}
+
+// TestNotifications_ShareLink_RevokingOneLeavesOthersActive is the exact
+// scenario a "manage share links" screen needs to get right: a document
+// shared twice (SalesDetailPage's own "created fresh per click" design)
+// has two independent links, and revoking one must not touch the other.
+func TestNotifications_ShareLink_RevokingOneLeavesOthersActive(t *testing.T) {
+	ctx := context.Background()
+	identitySvc, _ := newTestIdentityService(t)
+	boot := bootstrapTestTenant(t, ctx, identitySvc, "share-multi-"+uuid.NewString()[:8]+"@example.com", "correct horse battery staple 42")
+	principal := permissions.Principal{UserID: boot.OwnerUserID, OrganisationID: boot.OrganisationID}
+
+	svc, _, _ := newTestNotificationsService(t, nil)
+	docID := uuid.Must(uuid.NewV7())
+
+	if _, err := svc.CreateShareLink(ctx, principal, "sales_document", docID); err != nil {
+		t.Fatalf("CreateShareLink (first): %v", err)
+	}
+	if _, err := svc.CreateShareLink(ctx, principal, "sales_document", docID); err != nil {
+		t.Fatalf("CreateShareLink (second): %v", err)
+	}
+
+	links, err := svc.ListShareLinksForDocument(ctx, principal, "sales_document", docID)
+	if err != nil {
+		t.Fatalf("ListShareLinksForDocument: %v", err)
+	}
+	if len(links) != 2 {
+		t.Fatalf("len(links) = %d, want 2", len(links))
+	}
+
+	if err := svc.RevokeShareLink(ctx, principal, links[0].ID); err != nil {
+		t.Fatalf("RevokeShareLink: %v", err)
+	}
+
+	afterRevoke, err := svc.ListShareLinksForDocument(ctx, principal, "sales_document", docID)
+	if err != nil {
+		t.Fatalf("ListShareLinksForDocument after revoke: %v", err)
+	}
+	revokedCount, liveCount := 0, 0
+	for _, l := range afterRevoke {
+		if l.RevokedAt != nil {
+			revokedCount++
+		} else {
+			liveCount++
+		}
+	}
+	if revokedCount != 1 || liveCount != 1 {
+		t.Fatalf("after revoking one of two links: revoked=%d live=%d, want 1 and 1 (revoking one must not touch the other)", revokedCount, liveCount)
 	}
 }
 
