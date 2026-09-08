@@ -10,7 +10,7 @@ import { useAuth } from "../../auth/AuthProvider";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
 import { getOcrProvider, setOcrProvider, type OcrProvider } from "../../lib/ocr";
-import { useOrgContext, type LegalEntity } from "../../lib/useOrgContext";
+import { useOrgContext, type Branch, type LegalEntity, type Warehouse } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 
 /** Mirrors app.TeamMember (internal/modules/identity/app/service.go) as
@@ -726,6 +726,188 @@ function BankAccountsPanel({ legalEntityId }: { legalEntityId: string }) {
   );
 }
 
+/** A single branch's warehouse list plus its own "+ New warehouse" form
+ * — nested inside BranchesPanel below, one per branch. Query key
+ * ["warehouses", branchId] deliberately matches useOrgContext's own key
+ * for the same endpoint, so adding a warehouse here also refreshes
+ * whatever screen is using "the" default warehouse via that hook. */
+function WarehousesForBranch({ branchId }: { branchId: string }) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+
+  const warehouses = useQuery({
+    queryKey: ["warehouses", branchId],
+    queryFn: () => api.getListField<Warehouse>(`/branches/${branchId}/warehouses`, "warehouses"),
+  });
+
+  const create = useMutation({
+    mutationFn: () => api.post("/warehouses", { branch_id: branchId, code, name }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["warehouses", branchId] });
+      setCode("");
+      setName("");
+      setShowForm(false);
+    },
+  });
+
+  return (
+    <div style={{ marginTop: 8, paddingLeft: 16, borderLeft: "2px solid var(--color-border)" }}>
+      {warehouses.isPending ? (
+        <div className={layout.skeleton} style={{ height: 40 }} aria-hidden="true" />
+      ) : (warehouses.data ?? []).length === 0 ? (
+        <p className={ui.muted} style={{ margin: "4px 0" }}>
+          No warehouses in this branch yet.
+        </p>
+      ) : (
+        <ul style={{ listStyle: "none", margin: "4px 0", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+          {(warehouses.data ?? []).map((w) => (
+            <li key={w.ID} className={ui.muted}>
+              {w.Name} <span style={{ opacity: 0.7 }}>({w.Code})</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {showForm ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (code.trim() && name.trim()) create.mutate();
+          }}
+          style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 8, flexWrap: "wrap" }}
+        >
+          <div className={ui.field}>
+            <label htmlFor={`wh-code-${branchId}`}>Code</label>
+            <input id={`wh-code-${branchId}`} className={ui.input} style={{ width: 100 }} value={code} onChange={(e) => setCode(e.target.value)} required />
+          </div>
+          <div className={ui.field}>
+            <label htmlFor={`wh-name-${branchId}`}>Name</label>
+            <input id={`wh-name-${branchId}`} className={ui.input} value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <button type="submit" className={ui.btnPrimary} disabled={!code.trim() || !name.trim() || create.isPending}>
+            {create.isPending ? "Adding…" : "Add"}
+          </button>
+          <button type="button" className={ui.btnSecondary} onClick={() => setShowForm(false)}>
+            Cancel
+          </button>
+          {create.isError ? (
+            <p role="alert" style={{ color: "var(--color-negative)", width: "100%", margin: 0 }}>
+              {create.error instanceof ApiError ? create.error.message : "Could not add this warehouse."}
+            </p>
+          ) : null}
+        </form>
+      ) : (
+        <button type="button" className={ui.btnGhost} style={{ marginTop: 4 }} onClick={() => setShowForm(true)}>
+          + New warehouse
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Branches & Warehouses — internal/modules/organisation's Create/List
+ * Branch/Warehouse endpoints existed with zero frontend callers.
+ * useOrgContext.ts's own doc comment already explains why almost every
+ * screen just resolves "the" first branch/warehouse rather than making
+ * every document-creation screen pick one — that stays true here; this
+ * panel only lets a genuinely multi-branch business SEE and ADD its
+ * branches/warehouses, not choose which one a given sale posts against
+ * (a separate, larger scope). Scoped to one legal entity (org.legalEntity)
+ * — same assumption BankAccountsPanel above already makes. */
+function BranchesPanel({ legalEntityId }: { legalEntityId: string }) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [timezone, setTimezone] = useState("Asia/Kolkata");
+
+  const branches = useQuery({
+    queryKey: ["branches"],
+    queryFn: () => api.getListField<Branch>("/branches", "branches"),
+  });
+
+  const create = useMutation({
+    mutationFn: () => api.post("/branches", { legal_entity_id: legalEntityId, code, name, timezone }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["branches"] });
+      setCode("");
+      setName("");
+      setShowForm(false);
+    },
+  });
+
+  return (
+    <div className={layout.panel}>
+      <div className={ui.toolbar}>
+        <h2 style={{ margin: 0 }}>Branches &amp; warehouses</h2>
+        <div className={ui.toolbarSpacer} />
+        {!showForm ? (
+          <button type="button" className={ui.btnPrimary} onClick={() => setShowForm(true)}>
+            + New branch
+          </button>
+        ) : null}
+      </div>
+      <p className={layout.subtitle} style={{ marginBottom: 16 }}>
+        Most businesses only need one of each — add more here if you run multiple locations or stock points.
+      </p>
+
+      {showForm ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (code.trim() && name.trim()) create.mutate();
+          }}
+          style={{ marginBottom: 20 }}
+        >
+          <div className={ui.formGrid}>
+            <div className={ui.field}>
+              <label htmlFor="branch-code">Code</label>
+              <input id="branch-code" className={ui.input} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. BLR" required />
+            </div>
+            <div className={ui.field}>
+              <label htmlFor="branch-name">Name</label>
+              <input id="branch-name" className={ui.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Bengaluru store" required />
+            </div>
+            <div className={ui.field}>
+              <label htmlFor="branch-timezone">Timezone</label>
+              <input id="branch-timezone" className={ui.input} value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. Asia/Kolkata" />
+            </div>
+          </div>
+          <div className={ui.formActions} style={{ marginTop: 12 }}>
+            <button type="button" className={ui.btnSecondary} onClick={() => setShowForm(false)}>
+              Cancel
+            </button>
+            <button type="submit" className={ui.btnPrimary} disabled={!code.trim() || !name.trim() || create.isPending}>
+              {create.isPending ? "Adding…" : "Add"}
+            </button>
+          </div>
+          {create.isError ? (
+            <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+              {create.error instanceof ApiError ? create.error.message : "Could not add this branch."}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
+
+      {branches.isPending ? (
+        <div className={layout.skeleton} style={{ height: 80 }} aria-hidden="true" />
+      ) : (branches.data ?? []).length === 0 ? (
+        <p className={layout.emptyState}>No branches yet.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {(branches.data ?? []).map((b) => (
+            <div key={b.ID}>
+              <strong>{b.Name}</strong> <span className={ui.muted}>({b.Code})</span>
+              <WarehousesForBranch branchId={b.ID} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const org = useOrgContext();
 
@@ -791,6 +973,8 @@ export function SettingsPage() {
           <Link to="/gst">GST / Tax</Link> page.
         </p>
       </div>
+
+      {org.legalEntity ? <BranchesPanel legalEntityId={org.legalEntity.ID} /> : null}
 
       {org.legalEntity ? <BankAccountsPanel legalEntityId={org.legalEntity.ID} /> : null}
 
