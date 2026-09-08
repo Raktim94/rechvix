@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	cataloguedomain "rechvix/internal/modules/catalogue/domain"
 	"rechvix/internal/platform/money"
 	"rechvix/internal/platform/permissions"
 )
@@ -43,6 +44,24 @@ func (s *Service) BillingLookup(ctx context.Context, principal permissions.Princ
 	if limit <= 0 || limit > 20 {
 		limit = 10
 	}
+
+	// A scanned barcode is checked first and, if it matches, returned as
+	// the ONLY result — the counter screen's own placeholder text has
+	// always promised "scan a barcode" as an alternative to typing a
+	// name, but until now this only ever ran the typed-name search
+	// (catalogue's trigram index on product name), which a raw barcode's
+	// digits essentially never match: the promise was never actually
+	// kept. A barcode uniquely identifies one variant, so there's no
+	// "did you mean" ranking question the way a typed name has — it
+	// either resolves or it doesn't, and on no match this falls through
+	// to the ordinary name search below rather than returning nothing.
+	if bc, err := s.catalogue.LookupBarcode(ctx, principal, query); err == nil && bc != nil {
+		variant, product, err := s.catalogue.GetVariantWithProduct(ctx, principal, bc.VariantID)
+		if err == nil && variant != nil && product != nil {
+			return []BillingLookupResult{s.billingLookupResult(ctx, principal, product, variant, warehouseID, priceListID)}, nil
+		}
+	}
+
 	products, err := s.catalogue.SearchProducts(ctx, principal, query, limit)
 	if err != nil {
 		return nil, err
@@ -53,26 +72,33 @@ func (s *Service) BillingLookup(ctx context.Context, principal permissions.Princ
 		if err != nil || len(variants) == 0 {
 			continue
 		}
-		v := variants[0]
-		result := BillingLookupResult{
-			ProductID: p.ID, ProductName: p.Name, HSNSACCode: p.HSNSACCode,
-			ProductVariantID: v.ID, SKUCode: v.SKUCode,
-		}
-		if warehouseID != nil {
-			bal, err := s.inventory.GetBalance(ctx, principal, *warehouseID, v.ID)
-			if err == nil {
-				result.QuantityOnHand = bal.QuantityOnHand.String()
-				result.QuantityAvailable = bal.QuantityOnHand.Sub(bal.QuantityReserved).String()
-			}
-		}
-		if priceListID != nil && s.pricing != nil {
-			item, err := s.pricing.ResolvePrice(ctx, principal, *priceListID, v.ID, p.BaseUOMID)
-			if err == nil && item != nil {
-				price := item.Price
-				result.UnitPrice = &price
-			}
-		}
-		out = append(out, result)
+		out = append(out, s.billingLookupResult(ctx, principal, p, variants[0], warehouseID, priceListID))
 	}
 	return out, nil
+}
+
+func (s *Service) billingLookupResult(
+	ctx context.Context, principal permissions.Principal,
+	p *cataloguedomain.Product, v *cataloguedomain.ProductVariant,
+	warehouseID *uuid.UUID, priceListID *uuid.UUID,
+) BillingLookupResult {
+	result := BillingLookupResult{
+		ProductID: p.ID, ProductName: p.Name, HSNSACCode: p.HSNSACCode,
+		ProductVariantID: v.ID, SKUCode: v.SKUCode,
+	}
+	if warehouseID != nil {
+		bal, err := s.inventory.GetBalance(ctx, principal, *warehouseID, v.ID)
+		if err == nil {
+			result.QuantityOnHand = bal.QuantityOnHand.String()
+			result.QuantityAvailable = bal.QuantityOnHand.Sub(bal.QuantityReserved).String()
+		}
+	}
+	if priceListID != nil && s.pricing != nil {
+		item, err := s.pricing.ResolvePrice(ctx, principal, *priceListID, v.ID, p.BaseUOMID)
+		if err == nil && item != nil {
+			price := item.Price
+			result.UnitPrice = &price
+		}
+	}
+	return result
 }

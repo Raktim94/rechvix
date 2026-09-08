@@ -55,6 +55,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   // both blank and skip it, same as before.
   const [openingQty, setOpeningQty] = useState("");
   const [openingCost, setOpeningCost] = useState("");
+  const [barcode, setBarcode] = useState("");
 
   const products = useQuery({
     queryKey: ["products", query],
@@ -116,6 +117,13 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         sku_code: skuCode || product.Name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24),
         attributes: {},
       });
+      if (barcode.trim()) {
+        // Scanning this same barcode at the counter now actually finds
+        // this product — BillingLookup previously had no barcode path
+        // at all, despite the billing screen's own placeholder text
+        // promising one.
+        await api.post("/catalogue/barcodes", { variant_id: variant.ID, unit_id: unitId, barcode: barcode.trim() });
+      }
       if (Number(openingQty) > 0 && org.warehouse) {
         await api.post("/inventory/opening-stock", {
           warehouse_id: org.warehouse.ID,
@@ -150,6 +158,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       setGstRate("");
       setOpeningQty("");
       setOpeningCost("");
+      setBarcode("");
       setShowForm(false);
     },
   });
@@ -215,6 +224,10 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
             <div className={ui.field}>
               <label htmlFor="product-sku">SKU (optional)</label>
               <input id="product-sku" className={ui.input} value={skuCode} onChange={(e) => setSkuCode(e.target.value)} />
+            </div>
+            <div className={ui.field}>
+              <label htmlFor="product-barcode">Barcode (optional)</label>
+              <input id="product-barcode" className={ui.input} value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Scan or type it here" />
             </div>
             <div className={ui.field}>
               <label htmlFor="product-opening-qty">Opening stock (optional)</label>

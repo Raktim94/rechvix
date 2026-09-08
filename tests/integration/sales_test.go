@@ -419,6 +419,51 @@ func TestSales_RLS_BlocksCrossOrganisationDocumentRead(t *testing.T) {
 	}
 }
 
+// TestSales_BillingLookup_ScannedBarcodeResolvesExactVariant is the
+// regression test for a real bug: the billing screen's own placeholder
+// text has always said "scan a barcode", but BillingLookup only ever
+// searched by product name (a trigram match, which a barcode's raw
+// digits essentially never satisfy) — scanning a barcode silently found
+// nothing. Attaches a barcode unrelated to the fixture's own product
+// name (so a false positive via name-matching the barcode string can't
+// make this pass for the wrong reason), then proves looking it up
+// resolves exactly that variant, and that an unrelated query still
+// falls through to the ordinary name search rather than erroring.
+func TestSales_BillingLookup_ScannedBarcodeResolvesExactVariant(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, catalogueSvc, _ := newTestSalesServices(t)
+	fx := setupSalesFixture(t, ctx)
+
+	const barcode = "8901234567890"
+	if _, err := catalogueSvc.AddBarcode(ctx, fx.Principal, catalogueapp.AddBarcodeParams{VariantID: fx.VariantID, UnitID: fx.PCS, Barcode: barcode}); err != nil {
+		t.Fatalf("AddBarcode: %v", err)
+	}
+
+	results, err := salesSvc.BillingLookup(ctx, fx.Principal, barcode, &fx.WarehouseID, nil, 10)
+	if err != nil {
+		t.Fatalf("BillingLookup(barcode): %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("BillingLookup(barcode) returned %d results, want exactly 1", len(results))
+	}
+	if results[0].ProductVariantID != fx.VariantID {
+		t.Fatalf("BillingLookup(barcode) resolved variant %s, want %s", results[0].ProductVariantID, fx.VariantID)
+	}
+	if results[0].QuantityOnHand == "" {
+		t.Fatal("BillingLookup(barcode) result carries no stock figure — the warehouse balance lookup didn't run for the barcode path")
+	}
+
+	// A query matching neither a barcode nor the product name: falls
+	// through to the (empty) name search rather than failing.
+	noMatch, err := salesSvc.BillingLookup(ctx, fx.Principal, "no-such-thing-zzz", &fx.WarehouseID, nil, 10)
+	if err != nil {
+		t.Fatalf("BillingLookup(no match): %v", err)
+	}
+	if len(noMatch) != 0 {
+		t.Fatalf("BillingLookup(no match) returned %d results, want 0", len(noMatch))
+	}
+}
+
 func TestSales_Print_A4Invoice_RendersNonEmptyPDF(t *testing.T) {
 	ctx := context.Background()
 	salesSvc, _, _, _ := newTestSalesServices(t)
