@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { EInvoiceCard } from "../../components/EInvoiceCard";
 import { EwayBillCard } from "../../components/EwayBillCard";
 import { WhatsAppIcon } from "../../components/icons";
 import { PaymentPanel } from "../../components/PaymentPanel";
@@ -182,6 +183,9 @@ export function SalesDetailPage({ id }: { id: string }) {
 
         {document.Status === "FINALIZED" && EWB_ELIGIBLE_TYPES.has(document.DocumentType) ? (
           <EwayBillCard documentId={document.ID} />
+        ) : null}
+        {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? (
+          <EInvoiceCard documentId={document.ID} />
         ) : null}
       </div>
 

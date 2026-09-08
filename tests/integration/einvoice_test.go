@@ -374,15 +374,21 @@ func createAndFinalizeTaxInvoice(t *testing.T, ctx context.Context, salesSvc *sa
 	return finalized
 }
 
-func recordFor(t *testing.T, ctx context.Context, _ *einvoiceapp.Service, orgID, salesDocumentID uuid.UUID) (*einvoicedomain.Record, error) {
+// recordFor goes through einvoiceSvc.GetRecordForDocument (the same
+// method einvoice/httpapi's status endpoint calls) rather than querying
+// the repo directly — this is what actually exercises that method
+// end-to-end for every test in this file, including the RLS test below.
+func recordFor(t *testing.T, ctx context.Context, svc *einvoiceapp.Service, orgID, salesDocumentID uuid.UUID) (*einvoicedomain.Record, error) {
 	t.Helper()
-	repo := einvoicepg.NewRecordRepo(sharedPool)
 	var rec *einvoicedomain.Record
 	err := sharedPool.RunScoped(ctx, orgID, func(ctx context.Context) error {
 		var getErr error
-		rec, getErr = repo.GetBySalesDocumentID(ctx, salesDocumentID)
+		rec, getErr = svc.GetRecordForDocument(ctx, orgID, salesDocumentID)
 		return getErr
 	})
+	if err == nil && rec == nil {
+		return nil, einvoicedomain.ErrNotFound
+	}
 	return rec, err
 }
 

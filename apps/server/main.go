@@ -34,6 +34,9 @@ import (
 	contactshttp "rechvix/internal/modules/contacts/httpapi"
 	contactspg "rechvix/internal/modules/contacts/pg"
 	einvoicemock "rechvix/internal/modules/einvoice/v1/mock"
+	einvoiceapp "rechvix/internal/modules/einvoice/app"
+	einvoicehttp "rechvix/internal/modules/einvoice/httpapi"
+	einvoicepg "rechvix/internal/modules/einvoice/pg"
 	ewaybillapp "rechvix/internal/modules/ewaybill/app"
 	"rechvix/internal/modules/ewaybill/eligibility"
 	"rechvix/internal/modules/ewaybill/govportal"
@@ -328,6 +331,15 @@ func run() error {
 		auditRecorder,
 	)
 
+	// einvoiceSvc here is read-only from the API server's perspective —
+	// only GetRecordForDocument is ever called from httpapi below, never
+	// GenerateForDocument (that's apps/worker's outbox-driven job,
+	// apps/worker/main.go's own buildEInvoiceProvider). The mock provider
+	// is wired only because NewService requires one; it is never invoked
+	// from this binary.
+	einvoiceSvc := einvoiceapp.NewService(einvoicepg.NewRecordRepo(pool), einvoicemock.New(), "mock",
+		salesSvc, taxationSvc, orgSvc, contactsSvc, outboxStore)
+
 	// ewaybillSvc's AUTOMATIC_API path (einvoicemock.New()) is wired but not
 	// exposed via any httpapi route in this pass — only the FREE_PORTAL
 	// flow (docs/architecture.md §9b, this codebase's default and only
@@ -482,6 +494,7 @@ func run() error {
 			logisticshttp.NewHandlers(logisticsSvc).Mount(r)
 			staffhttp.NewHandlers(staffSvc).Mount(r)
 			ewaybillhttp.NewHandlers(ewaybillSvc, pool, permissionsChecker, govPortalSvc).Mount(r)
+			einvoicehttp.NewHandlers(einvoiceSvc, pool, permissionsChecker).Mount(r)
 		})
 	})
 

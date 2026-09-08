@@ -57,6 +57,28 @@ func NewService(
 	}
 }
 
+// GetRecordForDocument returns the e-Invoice record for a sales
+// document, or (nil, nil) if IRN generation was never applicable/never
+// ran for it (a document type sales.FinalizeDocument doesn't enqueue
+// einvoice.generate for, e.g. a QUOTATION — or one that's simply
+// finalized too recently for the outbox worker to have picked it up
+// yet). Read-only, permission-agnostic by design (same convention as
+// ewaybill/app.Service.GetRecordForDocument) — the httpapi caller does
+// its own "sales.view" check before calling this.
+func (s *Service) GetRecordForDocument(ctx context.Context, orgID, salesDocumentID uuid.UUID) (*domain.Record, error) {
+	rec, err := s.records.GetBySalesDocumentID(ctx, salesDocumentID)
+	if err == domain.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if rec.OrganisationID != orgID {
+		return nil, domain.ErrNotFound
+	}
+	return rec, nil
+}
+
 // EventTypeGenerate is the outbox event_type sales.FinalizeDocument
 // enqueues (Stage 8's addition to sales/app/service.go) and the one this
 // service's Handler processes.
