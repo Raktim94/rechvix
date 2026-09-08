@@ -167,7 +167,11 @@ export function ContactsPage() {
                         {p.LegalName}
                       </Link>
                     </td>
-                    <td>{p.PartyType}</td>
+                    <td>
+                      <span className={ui.badge} data-tone="neutral">
+                        {p.PartyType}
+                      </span>
+                    </td>
                     <td>{p.Phone}</td>
                     <td>{p.Email}</td>
                   </tr>

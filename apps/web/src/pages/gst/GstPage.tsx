@@ -108,18 +108,29 @@ function VehiclesSection() {
           <label htmlFor="vehicle-nickname">Nickname (optional)</label>
           <input id="vehicle-nickname" className={ui.input} value={nickname} onChange={(e) => setNickname(e.target.value)} />
         </div>
-        <button type="button" className={ui.btnSecondary} disabled={!reg || createVehicle.isPending} onClick={() => createVehicle.mutate()}>
+        <button type="button" className={ui.btnPrimary} disabled={!reg || createVehicle.isPending} onClick={() => createVehicle.mutate()}>
           Add vehicle
         </button>
       </div>
       {vehicles.data?.length ? (
-        <ul style={{ marginTop: 12 }}>
-          {vehicles.data.map((v) => (
-            <li key={v.ID}>
-              {v.RegistrationNumber} {v.Nickname ? `(${v.Nickname})` : ""}
-            </li>
-          ))}
-        </ul>
+        <div className={ui.tableScroll} style={{ marginTop: 12 }}>
+          <table className={ui.table}>
+            <thead>
+              <tr>
+                <th scope="col">Registration</th>
+                <th scope="col">Nickname</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vehicles.data.map((v) => (
+                <tr key={v.ID}>
+                  <td>{v.RegistrationNumber}</td>
+                  <td>{v.Nickname || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className={layout.emptyState}>No vehicles added yet.</p>
       )}
@@ -153,16 +164,29 @@ function TransportersSection() {
           <label htmlFor="transporter-gstin">GSTIN (optional)</label>
           <input id="transporter-gstin" className={ui.input} value={gstin} onChange={(e) => setGstin(e.target.value)} />
         </div>
-        <button type="button" className={ui.btnSecondary} disabled={!name || createTransporter.isPending} onClick={() => createTransporter.mutate()}>
+        <button type="button" className={ui.btnPrimary} disabled={!name || createTransporter.isPending} onClick={() => createTransporter.mutate()}>
           Add transporter
         </button>
       </div>
       {transporters.data?.length ? (
-        <ul style={{ marginTop: 12 }}>
-          {transporters.data.map((t) => (
-            <li key={t.ID}>{t.Name}</li>
-          ))}
-        </ul>
+        <div className={ui.tableScroll} style={{ marginTop: 12 }}>
+          <table className={ui.table}>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">GSTIN</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transporters.data.map((t) => (
+                <tr key={t.ID}>
+                  <td>{t.Name}</td>
+                  <td>{t.GSTIN || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className={layout.emptyState}>No transporters added yet.</p>
       )}
@@ -201,13 +225,26 @@ function TaxRatesSection() {
       </div>
       {lookupHsn ? (
         rates.data?.length ? (
-          <ul style={{ marginBottom: 16 }}>
-            {rates.data.map((r, i) => (
-              <li key={i}>
-                GST {r.GSTRate}% (from {new Date(r.ValidFrom).toLocaleDateString()})
-              </li>
-            ))}
-          </ul>
+          <div className={ui.tableScroll} style={{ marginBottom: 16 }}>
+            <table className={ui.table}>
+              <thead>
+                <tr>
+                  <th scope="col">GST rate</th>
+                  <th scope="col">Cess</th>
+                  <th scope="col">Effective from</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rates.data.map((r, i) => (
+                  <tr key={i}>
+                    <td className="num">{r.GSTRate}%</td>
+                    <td className="num">{r.CessRate}%</td>
+                    <td>{new Date(r.ValidFrom).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p className={layout.emptyState}>No rate on file for this code yet.</p>
         )
@@ -226,7 +263,7 @@ function TaxRatesSection() {
           <label htmlFor="new-rate-from">Effective from</label>
           <input id="new-rate-from" type="date" className={ui.input} value={validFrom} onChange={(e) => setValidFrom(e.target.value)} />
         </div>
-        <button type="button" className={ui.btnSecondary} disabled={!hsn || !gstRate || createRate.isPending} onClick={() => createRate.mutate()}>
+        <button type="button" className={ui.btnPrimary} disabled={!hsn || !gstRate || createRate.isPending} onClick={() => createRate.mutate()}>
           Save rate
         </button>
       </div>

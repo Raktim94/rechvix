@@ -84,13 +84,26 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
     <div className={layout.panel}>
       <h2>GST / tax registration</h2>
       {regs.data?.length ? (
-        <ul style={{ marginTop: 8, marginBottom: 16 }}>
-          {regs.data.map((r) => (
-            <li key={r.ID}>
-              {r.RegistrationNumber} ({r.StateCode}) {r.IsPrimary ? <span className={ui.muted}>· primary</span> : null}
-            </li>
-          ))}
-        </ul>
+        <div className={ui.tableScroll} style={{ marginTop: 8, marginBottom: 16 }}>
+          <table className={ui.table}>
+            <thead>
+              <tr>
+                <th scope="col">GSTIN</th>
+                <th scope="col">State</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {regs.data.map((r) => (
+                <tr key={r.ID}>
+                  <td>{r.RegistrationNumber}</td>
+                  <td>{r.StateCode}</td>
+                  <td>{r.IsPrimary ? <span className={ui.badge} data-tone="positive">primary</span> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className={layout.emptyState} style={{ marginBottom: 16 }}>
           No GSTIN on file — add one below to place this contact's state for GST purposes.
@@ -114,7 +127,7 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
           <label htmlFor="party-tax-number">GSTIN</label>
           <input id="party-tax-number" className={ui.input} value={number} onChange={(e) => setNumber(e.target.value)} />
         </div>
-        <button type="button" className={ui.btnSecondary} disabled={!stateCode || !number || add.isPending} onClick={() => add.mutate()}>
+        <button type="button" className={ui.btnPrimary} disabled={!stateCode || !number || add.isPending} onClick={() => add.mutate()}>
           {add.isPending ? "Adding…" : "Add GSTIN"}
         </button>
       </div>
@@ -167,16 +180,26 @@ function AddressesPanel({ partyId }: { partyId: string }) {
     <div className={layout.panel}>
       <h2>Addresses</h2>
       {addresses.data?.length ? (
-        <ul style={{ marginTop: 8, marginBottom: 16 }}>
-          {addresses.data.map((a) => (
-            <li key={a.ID}>
-              <strong>{ADDRESS_TYPE_LABELS[a.AddressType]}</strong>
-              {a.IsDefault ? <span className={ui.muted}> · default</span> : null}
-              {" — "}
-              {[a.Line1, a.Line2, a.City, a.State, a.PostalCode].filter(Boolean).join(", ")}
-            </li>
-          ))}
-        </ul>
+        <div className={ui.tableScroll} style={{ marginTop: 8, marginBottom: 16 }}>
+          <table className={ui.table}>
+            <thead>
+              <tr>
+                <th scope="col">Type</th>
+                <th scope="col">Address</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {addresses.data.map((a) => (
+                <tr key={a.ID}>
+                  <td>{ADDRESS_TYPE_LABELS[a.AddressType]}</td>
+                  <td>{[a.Line1, a.Line2, a.City, a.State, a.PostalCode].filter(Boolean).join(", ")}</td>
+                  <td>{a.IsDefault ? <span className={ui.badge} data-tone="positive">default</span> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className={layout.emptyState} style={{ marginBottom: 16 }}>
           No addresses saved yet.
@@ -215,7 +238,7 @@ function AddressesPanel({ partyId }: { partyId: string }) {
         </div>
       </div>
       <div className={ui.formActions} style={{ marginTop: 12 }}>
-        <button type="button" className={ui.btnSecondary} disabled={!line1 || !city || add.isPending} onClick={() => add.mutate()}>
+        <button type="button" className={ui.btnPrimary} disabled={!line1 || !city || add.isPending} onClick={() => add.mutate()}>
           {add.isPending ? "Adding…" : "Add address"}
         </button>
       </div>
@@ -242,6 +265,18 @@ function RecordPaymentPanel({ party }: { party: Party }) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("CASH");
   const [reference, setReference] = useState("");
+  // Without a real bank_account_id, RecordReceipt/RecordPayment both
+  // default to the Cash ledger account regardless of Method — same gap
+  // components/PaymentPanel.tsx was fixed for; this party-level form
+  // (no specific invoice/bill to attach to, so PaymentPanel itself
+  // doesn't fit here) needed the identical fix.
+  const [bankAccountId, setBankAccountId] = useState("");
+
+  const bankAccounts = useQuery({
+    queryKey: ["bank-accounts"],
+    queryFn: () => api.get<{ ID: string; Name: string; Kind: string; IsActive: boolean }[]>("/accounting/bank-accounts"),
+  });
+  const activeBankAccounts = (bankAccounts.data ?? []).filter((a) => a.IsActive && a.Kind === "BANK");
 
   const record = useMutation({
     mutationFn: () => {
@@ -251,6 +286,7 @@ function RecordPaymentPanel({ party }: { party: Party }) {
         amount,
         method,
         reference_number: reference,
+        bank_account_id: bankAccountId || undefined,
       });
     },
     onSuccess: () => {
@@ -258,6 +294,7 @@ function RecordPaymentPanel({ party }: { party: Party }) {
       void queryClient.invalidateQueries({ queryKey: ["party-ageing", party.ID] });
       setAmount("");
       setReference("");
+      setBankAccountId("");
     },
   });
 
@@ -295,6 +332,19 @@ function RecordPaymentPanel({ party }: { party: Party }) {
           <label htmlFor="pay-reference">Reference (optional)</label>
           <input id="pay-reference" className={ui.input} value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UTR / cheque no. / note" />
         </div>
+        {activeBankAccounts.length > 0 ? (
+          <div className={ui.field}>
+            <label htmlFor="pay-bank-account">{direction === "RECEIVE" ? "Deposited to" : "Paid from"}</label>
+            <select id="pay-bank-account" className={ui.select} value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}>
+              <option value="">Cash</option>
+              {activeBankAccounts.map((a) => (
+                <option key={a.ID} value={a.ID}>
+                  {a.Name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
       <div className={ui.formActions} style={{ marginTop: 12 }}>
         <button type="button" className={ui.btnPrimary} disabled={!amount || record.isPending} onClick={() => record.mutate()}>
