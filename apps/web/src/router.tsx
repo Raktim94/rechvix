@@ -10,10 +10,12 @@ import {
   AccountingPage,
   BackupPage,
   BillingPage,
+  CalendarPage,
   CataloguePage,
   ContactDetailPage,
   ContactsPage,
   DashboardPage,
+  ExpensesPage,
   GstPage,
   IntegrationsPage,
   InventoryPage,
@@ -23,6 +25,7 @@ import {
   SalesDetailPage,
   SalesListPage,
   SettingsPage,
+  StaffPage,
 } from "./lazyPages";
 
 /**
@@ -171,11 +174,14 @@ const contactDetailRoute = createRoute({
   }),
 });
 const accountingRoute = realRoute("/accounting", AccountingPage);
+const expensesRoute = realRoute("/expenses", ExpensesPage);
 const gstRoute = realRoute("/gst", GstPage);
 const reportsRoute = realRoute("/reports", ReportsPage);
 const integrationsRoute = realRoute("/integrations", IntegrationsPage);
 const settingsRoute = realRoute("/settings", SettingsPage);
 const backupRoute = realRoute("/backup", BackupPage);
+const staffRoute = realRoute("/staff", StaffPage);
+const calendarRoute = realRoute("/calendar", CalendarPage);
 
 const notFoundRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -199,10 +205,13 @@ const routeTree = rootRoute.addChildren([
   contactsRoute,
   contactDetailRoute,
   accountingRoute,
+  expensesRoute,
   gstRoute,
   reportsRoute,
   integrationsRoute,
   backupRoute,
+  staffRoute,
+  calendarRoute,
   settingsRoute,
   notFoundRoute,
 ]);

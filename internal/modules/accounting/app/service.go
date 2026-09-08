@@ -335,6 +335,42 @@ func (s *Service) GetJournal(ctx context.Context, principal permissions.Principa
 	return j, lines, nil
 }
 
+// ListJournals is the "browse the general ledger" read path — the
+// Expenses page (a thin UI over the same manual-journal capability Post
+// already exists for, per its own doc comment) filters this list down to
+// SourceType == "manual_expense" client-side rather than needing a
+// dedicated server-side filter, the same "return everything, filter in
+// the page" pattern ContactsPage/PurchasesPage already use at this scale.
+func (s *Service) ListJournals(ctx context.Context, principal permissions.Principal, limit int) ([]*domain.Journal, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out []*domain.Journal
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.journals.ListByOrganisation(ctx, principal.OrganisationID, limit)
+		return err
+	})
+	return out, err
+}
+
+// ListExpenseEntries is the Expenses page's read path — one row per
+// manual-expense journal (the debit side only; see
+// domain.JournalLineRepository.ListDebitLinesBySourceType's doc comment
+// for why the credit side isn't also returned).
+func (s *Service) ListExpenseEntries(ctx context.Context, principal permissions.Principal, limit int) ([]domain.ExpenseEntry, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out []domain.ExpenseEntry
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.journalLines.ListDebitLinesBySourceType(ctx, principal.OrganisationID, "manual_expense", limit)
+		return err
+	})
+	return out, err
+}
+
 // --- Receipts / Payments ---
 
 type RecordReceiptParams struct {

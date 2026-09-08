@@ -35,6 +35,7 @@ func TestRLS_Sweep_Stage4Tables(t *testing.T) {
 	fxB := setupPurchasesFixture(t, ctx)
 
 	batches := inventorypg.NewStockBatchRepo(sharedPool)
+	costLots := inventorypg.NewStockCostLotRepo(sharedPool)
 	serials := inventorypg.NewSerialNumberRepo(sharedPool)
 	transfers := inventorypg.NewStockTransferRepo(sharedPool)
 	adjustments := inventorypg.NewStockAdjustmentRepo(sharedPool)
@@ -52,6 +53,20 @@ func TestRLS_Sweep_Stage4Tables(t *testing.T) {
 			return nil
 		})
 		assertInvisibleToOtherOrg(t, ctx, "stock_batches", id, fxB.Principal.OrganisationID)
+	})
+
+	t.Run("stock_cost_lots", func(t *testing.T) {
+		var id uuid.UUID
+		mustRunScoped(t, ctx, fxA.Principal.OrganisationID, func(ctx context.Context) error {
+			lot, err := costLots.UpsertReceipt(ctx, fxA.Principal.OrganisationID, fxA.WarehouseID, fxA.VariantID,
+				mustDecimal(t, "12.50"), mustDecimal(t, "10"), "rls-sweep", nil)
+			if err != nil {
+				return err
+			}
+			id = lot.ID
+			return nil
+		})
+		assertInvisibleToOtherOrg(t, ctx, "stock_cost_lots", id, fxB.Principal.OrganisationID)
 	})
 
 	t.Run("stock_serial_numbers", func(t *testing.T) {

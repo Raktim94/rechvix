@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { WhatsAppIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import layout from "../DashboardPage.module.css";
@@ -339,15 +341,50 @@ function WebhooksPanel() {
   );
 }
 
+function WhatsAppBillingPanel() {
+  return (
+    <div className={layout.panel}>
+      <div className={ui.toolbar}>
+        <span
+          aria-hidden="true"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 36,
+            height: 36,
+            borderRadius: "var(--radius-md)",
+            background: "var(--color-positive-soft)",
+            color: "var(--color-positive)",
+          }}
+        >
+          <WhatsAppIcon />
+        </span>
+        <h2 style={{ margin: 0 }}>WhatsApp billing</h2>
+        <span className={ui.badge} data-tone="positive">
+          Active — no setup needed
+        </span>
+      </div>
+      <p className={layout.subtitle} style={{ marginTop: 12, marginBottom: 0 }}>
+        Every finalized sale can be sent straight to a customer's WhatsApp as a real, working link to their invoice PDF — no
+        WhatsApp Business API account or credentials to configure. Look for <strong>Share via WhatsApp</strong> on a sale's detail
+        page, or the WhatsApp icon on any row in the <Link to="/sales">Sales</Link> list; it only appears once that customer has a
+        phone number saved under <Link to="/contacts">Contacts</Link>.
+      </p>
+    </div>
+  );
+}
+
 export function IntegrationsPage() {
   return (
     <div className={layout.page}>
       <div className={layout.heading}>
         <div>
           <h1>Integrations</h1>
-          <p className={layout.subtitle}>API keys and webhooks for connecting your own website or software to this business.</p>
+          <p className={layout.subtitle}>WhatsApp billing, API keys, and webhooks for connecting this business to the outside world.</p>
         </div>
       </div>
+      <WhatsAppBillingPanel />
       <ApiKeysPanel />
       <WebhooksPanel />
     </div>

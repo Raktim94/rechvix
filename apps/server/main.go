@@ -72,6 +72,9 @@ import (
 	saleshttp "rechvix/internal/modules/sales/httpapi"
 	salespg "rechvix/internal/modules/sales/pg"
 	"rechvix/internal/modules/sales/printing"
+	staffapp "rechvix/internal/modules/staff/app"
+	staffhttp "rechvix/internal/modules/staff/httpapi"
+	staffpg "rechvix/internal/modules/staff/pg"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
 	webhooksapp "rechvix/internal/modules/webhooks/app"
@@ -243,6 +246,7 @@ func run() error {
 		inventorypg.NewStockBalanceRepo(pool),
 		inventorypg.NewStockReservationRepo(pool),
 		inventorypg.NewStockBatchRepo(pool),
+		inventorypg.NewStockCostLotRepo(pool),
 		inventorypg.NewSerialNumberRepo(pool),
 		inventorypg.NewStockPolicyRepo(pool),
 		inventorypg.NewStockTransferRepo(pool),
@@ -362,6 +366,15 @@ func run() error {
 		auditRecorder,
 	)
 
+	staffSvc := staffapp.NewService(
+		pool,
+		staffpg.NewStaffMemberRepo(pool),
+		staffpg.NewAttendanceRepo(pool),
+		staffpg.NewTaskRepo(pool),
+		permissionsChecker,
+		auditRecorder,
+	)
+
 	// No EmailProvider/SMSProvider/WhatsAppProvider is wired by default —
 	// none has real credentials in a fresh self-hosted install (brief §20
 	// explicitly forbids a WhatsApp Web-scraping stand-in). QueueSend
@@ -467,6 +480,7 @@ func run() error {
 			backuphttp.NewHandlers(backupSvc).Mount(r)
 			notificationshttp.NewHandlers(notificationsSvc).Mount(r)
 			logisticshttp.NewHandlers(logisticsSvc).Mount(r)
+			staffhttp.NewHandlers(staffSvc).Mount(r)
 			ewaybillhttp.NewHandlers(ewaybillSvc, pool, permissionsChecker, govPortalSvc).Mount(r)
 		})
 	})

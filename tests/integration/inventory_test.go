@@ -31,6 +31,7 @@ func newTestInventoryService(t *testing.T) *inventoryapp.Service {
 		inventorypg.NewStockBalanceRepo(sharedPool),
 		inventorypg.NewStockReservationRepo(sharedPool),
 		inventorypg.NewStockBatchRepo(sharedPool),
+		inventorypg.NewStockCostLotRepo(sharedPool),
 		inventorypg.NewSerialNumberRepo(sharedPool),
 		inventorypg.NewStockPolicyRepo(sharedPool),
 		inventorypg.NewStockTransferRepo(sharedPool),
@@ -194,6 +195,86 @@ func TestInventory_Adjustment_InsufficientStockRejected(t *testing.T) {
 	}
 	if !bal.QuantityOnHand.Equal(mustDecimal(t, "5")) {
 		t.Fatalf("QuantityOnHand after rejected adjustment = %s, want unchanged 5", bal.QuantityOnHand)
+	}
+}
+
+// TestInventory_CostLots_SamePriceAccumulates_DifferentPriceOpensNewLot
+// is the regression test for the OCR purchase-intake feature's core
+// requirement: a distributor delivering the same product at the same
+// price as before should just top up the existing cost lot, but a
+// delivery at a different price must open a distinct one so a later
+// sale's margin still reflects what was actually paid for the specific
+// units sold. Also exercises ConsumeFIFO (via an outward MovementDamage
+// adjustment) draining the oldest lot first.
+func TestInventory_CostLots_SamePriceAccumulates_DifferentPriceOpensNewLot(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestInventoryService(t)
+	fx := setupInventoryFixture(t, ctx)
+	costLots := inventorypg.NewStockCostLotRepo(sharedPool)
+
+	if _, err := svc.RecordOpeningStock(ctx, fx.Principal, inventoryapp.RecordMovementParams{
+		WarehouseID: fx.WarehouseID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "10"), UnitCost: decimalPtr(mustDecimal(t, "50")),
+	}); err != nil {
+		t.Fatalf("RecordOpeningStock #1 (10 @ 50): %v", err)
+	}
+	if _, err := svc.RecordOpeningStock(ctx, fx.Principal, inventoryapp.RecordMovementParams{
+		WarehouseID: fx.WarehouseID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "5"), UnitCost: decimalPtr(mustDecimal(t, "50")),
+	}); err != nil {
+		t.Fatalf("RecordOpeningStock #2 (5 @ 50, same price): %v", err)
+	}
+	if _, err := svc.RecordOpeningStock(ctx, fx.Principal, inventoryapp.RecordMovementParams{
+		WarehouseID: fx.WarehouseID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "8"), UnitCost: decimalPtr(mustDecimal(t, "60")),
+	}); err != nil {
+		t.Fatalf("RecordOpeningStock #3 (8 @ 60, different price): %v", err)
+	}
+
+	var lots []*inventorydomain.StockCostLot
+	if err := sharedPool.RunScoped(ctx, fx.Principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		lots, err = costLots.ListRemaining(ctx, fx.Principal.OrganisationID, fx.WarehouseID, fx.VariantID)
+		return err
+	}); err != nil {
+		t.Fatalf("ListRemaining: %v", err)
+	}
+	if len(lots) != 2 {
+		t.Fatalf("lot count = %d, want 2 (one per distinct price)", len(lots))
+	}
+	if !lots[0].UnitCost.Equal(mustDecimal(t, "50")) || !lots[0].QuantityRemaining.Equal(mustDecimal(t, "15")) {
+		t.Fatalf("oldest lot = cost %s qty %s, want cost 50 qty 15 (10+5 merged)", lots[0].UnitCost, lots[0].QuantityRemaining)
+	}
+	if !lots[1].UnitCost.Equal(mustDecimal(t, "60")) || !lots[1].QuantityRemaining.Equal(mustDecimal(t, "8")) {
+		t.Fatalf("newest lot = cost %s qty %s, want cost 60 qty 8 (separate lot)", lots[1].UnitCost, lots[1].QuantityRemaining)
+	}
+
+	// Drain 10 units — should come entirely from the older (cost-50) lot,
+	// leaving 5 there and the cost-60 lot untouched.
+	if _, _, err := svc.RecordAdjustment(ctx, fx.Principal, inventoryapp.RecordAdjustmentParams{
+		WarehouseID: fx.WarehouseID, Reason: "rls/costing test drawdown",
+		Lines: []inventoryapp.AdjustmentLineParams{
+			{ProductVariantID: fx.VariantID, UnitID: fx.PCS, Quantity: mustDecimal(t, "10"), MovementType: inventorydomain.MovementDamage},
+		},
+	}); err != nil {
+		t.Fatalf("RecordAdjustment(damage 10): %v", err)
+	}
+
+	if err := sharedPool.RunScoped(ctx, fx.Principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		lots, err = costLots.ListRemaining(ctx, fx.Principal.OrganisationID, fx.WarehouseID, fx.VariantID)
+		return err
+	}); err != nil {
+		t.Fatalf("ListRemaining after drawdown: %v", err)
+	}
+	if len(lots) != 2 {
+		t.Fatalf("lot count after drawdown = %d, want 2 (older lot still has 5 remaining)", len(lots))
+	}
+	if !lots[0].QuantityRemaining.Equal(mustDecimal(t, "5")) {
+		t.Fatalf("oldest lot remaining after drawdown = %s, want 5 (15-10)", lots[0].QuantityRemaining)
+	}
+	if !lots[1].QuantityRemaining.Equal(mustDecimal(t, "8")) {
+		t.Fatalf("newest lot remaining after drawdown = %s, want unchanged 8", lots[1].QuantityRemaining)
 	}
 }
 

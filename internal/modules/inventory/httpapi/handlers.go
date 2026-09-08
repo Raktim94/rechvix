@@ -28,6 +28,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/inventory/reservations", h.reserve)
 	r.Post("/inventory/reservations/{id}/release", h.releaseReservation)
 	r.Get("/inventory/balances", h.getBalance)
+	r.Get("/inventory/cost-lots", h.listCostLots)
 	r.Get("/inventory/movements", h.listMovements)
 	r.Get("/inventory/low-stock", h.listLowStock)
 	r.Put("/inventory/policies", h.setStockPolicy)
@@ -251,6 +252,25 @@ func (h *Handlers) getBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, bal)
+}
+
+func (h *Handlers) listCostLots(w http.ResponseWriter, r *http.Request) {
+	warehouseID, err := uuid.Parse(r.URL.Query().Get("warehouse_id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_WAREHOUSE_ID", "warehouse_id query parameter must be a UUID."))
+		return
+	}
+	variantID, err := uuid.Parse(r.URL.Query().Get("product_variant_id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_VARIANT_ID", "product_variant_id query parameter must be a UUID."))
+		return
+	}
+	lots, err := h.svc.ListCostLots(r.Context(), principal(r), warehouseID, variantID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"cost_lots": lots})
 }
 
 func (h *Handlers) listMovements(w http.ResponseWriter, r *http.Request) {

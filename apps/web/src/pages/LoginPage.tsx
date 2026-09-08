@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Link, useNavigate } from "@tanstack/react-router";
 import styles from "./auth.module.css";
 import { Logo } from "../components/Logo";
+import { PasswordInput } from "../components/PasswordInput";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api-client";
 
@@ -109,9 +110,8 @@ export function LoginPage() {
           </div>
           <div className={styles.field}>
             <label htmlFor="password">Password</label>
-            <input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               disabled={mfaRequired}
               aria-invalid={!!errors.password}

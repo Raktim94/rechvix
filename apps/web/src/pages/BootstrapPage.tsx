@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useNavigate } from "@tanstack/react-router";
 import styles from "./auth.module.css";
 import { Logo } from "../components/Logo";
+import { PasswordInput } from "../components/PasswordInput";
 import { api, ApiError } from "../lib/api-client";
 import { GST_STATE_CODES } from "../lib/gstStateCodes";
 
@@ -168,17 +169,12 @@ export function BootstrapPage() {
           <div className={styles.grid2}>
             <div className={styles.field}>
               <label htmlFor="ownerPassword">Password</label>
-              <input id="ownerPassword" type="password" autoComplete="new-password" {...register("ownerPassword")} />
+              <PasswordInput id="ownerPassword" autoComplete="new-password" {...register("ownerPassword")} />
               {errors.ownerPassword ? <p className={styles.error}>{errors.ownerPassword.message}</p> : null}
             </div>
             <div className={styles.field}>
               <label htmlFor="confirmPassword">Confirm password</label>
-              <input
-                id="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                {...register("confirmPassword")}
-              />
+              <PasswordInput id="confirmPassword" autoComplete="new-password" {...register("confirmPassword")} />
               {errors.confirmPassword ? <p className={styles.error}>{errors.confirmPassword.message}</p> : null}
             </div>
           </div>

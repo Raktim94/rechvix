@@ -288,6 +288,112 @@ func (r *StockBatchRepo) ListExpiringBefore(ctx context.Context, orgID uuid.UUID
 	return out, rows.Err()
 }
 
+// --- Stock cost lots ---
+
+type StockCostLotRepo struct{ pool *database.Pool }
+
+func NewStockCostLotRepo(pool *database.Pool) *StockCostLotRepo { return &StockCostLotRepo{pool: pool} }
+
+const costLotCols = `id, organisation_id, warehouse_id, product_variant_id, unit_cost,
+	quantity_received, quantity_remaining, COALESCE(source_reference_type, ''), source_reference_id,
+	received_at, created_at, updated_at`
+
+func scanCostLot(row interface {
+	Scan(dest ...any) error
+}) (*domain.StockCostLot, error) {
+	var lot domain.StockCostLot
+	err := row.Scan(&lot.ID, &lot.OrganisationID, &lot.WarehouseID, &lot.ProductVariantID, &lot.UnitCost,
+		&lot.QuantityReceived, &lot.QuantityRemaining, &lot.SourceReferenceType, &lot.SourceReferenceID,
+		&lot.ReceivedAt, &lot.CreatedAt, &lot.UpdatedAt)
+	return &lot, err
+}
+
+// UpsertReceipt is the same INSERT ... ON CONFLICT DO UPDATE ... RETURNING
+// shape as StockBatchRepo.GetOrCreate above, for the same reason (one
+// round trip, race-safe against a concurrent receipt at the identical
+// price). received_at is deliberately left untouched by the DO UPDATE
+// branch — a lot's FIFO position is when it was FIRST opened, not when
+// it was last topped up.
+func (r *StockCostLotRepo) UpsertReceipt(ctx context.Context, orgID, warehouseID, variantID uuid.UUID, unitCost, quantity decimal.Decimal, sourceRefType string, sourceRefID *uuid.UUID) (*domain.StockCostLot, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("inventory: generating stock_cost_lot id: %w", err)
+	}
+	q := fmt.Sprintf(`
+		INSERT INTO stock_cost_lots (id, organisation_id, warehouse_id, product_variant_id, unit_cost,
+			quantity_received, quantity_remaining, source_reference_type, source_reference_id, received_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,now(),now(),now())
+		ON CONFLICT (organisation_id, warehouse_id, product_variant_id, unit_cost)
+		DO UPDATE SET
+			quantity_received = stock_cost_lots.quantity_received + EXCLUDED.quantity_received,
+			quantity_remaining = stock_cost_lots.quantity_remaining + EXCLUDED.quantity_remaining,
+			updated_at = now()
+		RETURNING %s`, costLotCols)
+	row := r.pool.Q(ctx).QueryRow(ctx, q, id, orgID, warehouseID, variantID, unitCost, quantity, nullIfEmpty(sourceRefType), sourceRefID)
+	lot, err := scanCostLot(row)
+	if err != nil {
+		return nil, fmt.Errorf("inventory: upserting stock_cost_lot: %w", err)
+	}
+	return lot, nil
+}
+
+// ConsumeFIFO decrements the oldest lot(s) first until quantity is
+// accounted for. Runs as a loop of single-row SELECT ... FOR UPDATE +
+// UPDATE statements rather than one aggregate UPDATE, since "take from
+// lot A, and whatever's left over take from lot B" isn't expressible as
+// a single SQL statement once more than one lot is involved. Stops
+// silently (not an error) once no lot with remaining quantity is left —
+// see the interface doc comment for why that has to be a no-op rather
+// than a failure.
+func (r *StockCostLotRepo) ConsumeFIFO(ctx context.Context, orgID, warehouseID, variantID uuid.UUID, quantity decimal.Decimal) error {
+	remaining := quantity
+	for remaining.IsPositive() {
+		const selectQ = `
+			SELECT id, quantity_remaining FROM stock_cost_lots
+			WHERE organisation_id = $1 AND warehouse_id = $2 AND product_variant_id = $3 AND quantity_remaining > 0
+			ORDER BY received_at ASC LIMIT 1 FOR UPDATE`
+		row := r.pool.Q(ctx).QueryRow(ctx, selectQ, orgID, warehouseID, variantID)
+		var lotID uuid.UUID
+		var lotRemaining decimal.Decimal
+		if err := row.Scan(&lotID, &lotRemaining); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("inventory: selecting cost lot to consume: %w", err)
+		}
+		take := remaining
+		if lotRemaining.LessThan(take) {
+			take = lotRemaining
+		}
+		const updateQ = `UPDATE stock_cost_lots SET quantity_remaining = quantity_remaining - $1, updated_at = now() WHERE id = $2`
+		if _, err := r.pool.Q(ctx).Exec(ctx, updateQ, take, lotID); err != nil {
+			return fmt.Errorf("inventory: decrementing stock_cost_lot: %w", err)
+		}
+		remaining = remaining.Sub(take)
+	}
+	return nil
+}
+
+func (r *StockCostLotRepo) ListRemaining(ctx context.Context, orgID, warehouseID, variantID uuid.UUID) ([]*domain.StockCostLot, error) {
+	q := fmt.Sprintf(`SELECT %s FROM stock_cost_lots
+		WHERE organisation_id = $1 AND warehouse_id = $2 AND product_variant_id = $3 AND quantity_remaining > 0
+		ORDER BY received_at ASC`, costLotCols)
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, warehouseID, variantID)
+	if err != nil {
+		return nil, fmt.Errorf("inventory: listing stock_cost_lots: %w", err)
+	}
+	defer rows.Close()
+	var out []*domain.StockCostLot
+	for rows.Next() {
+		lot, err := scanCostLot(rows)
+		if err != nil {
+			return nil, fmt.Errorf("inventory: scanning stock_cost_lot row: %w", err)
+		}
+		out = append(out, lot)
+	}
+	return out, rows.Err()
+}
+
 // --- Serial numbers ---
 
 type SerialNumberRepo struct{ pool *database.Pool }

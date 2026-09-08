@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
@@ -52,6 +53,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const [customer, setCustomer] = useState<Party | null>(null);
   const [showCustomerResults, setShowCustomerResults] = useState(false);
 
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<BillingLookupResult[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -288,39 +290,63 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 </button>
               </div>
             ) : (
-              <div className={styles.customerSearchWrap}>
-                <input
-                  id="customer-search"
-                  ref={customerSearchRef}
-                  className={ui.input}
-                  placeholder="Search customer by name or phone…"
-                  value={customerQuery}
-                  onChange={(e) => {
-                    setCustomerQuery(e.target.value);
-                    setShowCustomerResults(true);
-                  }}
-                  onFocus={() => setShowCustomerResults(true)}
-                  autoComplete="off"
-                />
-                {showCustomerResults && customerSearch.data?.length ? (
-                  <ul className={styles.dropdown} role="menu" aria-label="Customer results">
-                    {customerSearch.data.map((p) => (
-                      <li key={p.ID}>
+              <div className={styles.customerSearchRow}>
+                <div className={styles.customerSearchWrap}>
+                  <input
+                    id="customer-search"
+                    ref={customerSearchRef}
+                    className={ui.input}
+                    placeholder="Search customer by name or phone…"
+                    value={customerQuery}
+                    onChange={(e) => {
+                      setCustomerQuery(e.target.value);
+                      setShowCustomerResults(true);
+                    }}
+                    onFocus={() => setShowCustomerResults(true)}
+                    autoComplete="off"
+                  />
+                  {showCustomerResults && customerQuery.trim().length >= 2 ? (
+                    <ul className={styles.dropdown} role="menu" aria-label="Customer results">
+                      {customerSearch.data && customerSearch.data.length > 0 ? (
+                        customerSearch.data.map((p) => (
+                          <li key={p.ID}>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className={styles.dropdownItem}
+                              onClick={() => {
+                                setCustomer(p);
+                                setShowCustomerResults(false);
+                              }}
+                            >
+                              {p.LegalName} {p.Phone ? <span className={ui.muted}>· {p.Phone}</span> : null}
+                            </button>
+                          </li>
+                        ))
+                      ) : (
+                        <li className={ui.muted} style={{ padding: "8px 12px" }}>
+                          No match for "{customerQuery}".
+                        </li>
+                      )}
+                      <li>
                         <button
                           type="button"
                           role="menuitem"
                           className={styles.dropdownItem}
                           onClick={() => {
-                            setCustomer(p);
                             setShowCustomerResults(false);
+                            setQuickAddOpen(true);
                           }}
                         >
-                          {p.LegalName} {p.Phone ? <span className={ui.muted}>· {p.Phone}</span> : null}
+                          <strong style={{ color: "var(--color-accent)" }}>+ New customer{customerQuery.trim() ? ` "${customerQuery.trim()}"` : ""}</strong>
                         </button>
                       </li>
-                    ))}
-                  </ul>
-                ) : null}
+                    </ul>
+                  ) : null}
+                </div>
+                <button type="button" className={ui.btnSecondary} onClick={() => setQuickAddOpen(true)}>
+                  + New
+                </button>
               </div>
             )}
           </div>
@@ -447,6 +473,19 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
           </div>
         </>
       ) : null}
+
+      <QuickAddPartyModal
+        open={quickAddOpen}
+        onOpenChange={setQuickAddOpen}
+        partyType="CUSTOMER"
+        currencyCode={org.organisation?.DefaultCurrencyCode || "INR"}
+        initialLegalName={customerQuery.trim()}
+        onCreated={(party) => {
+          setCustomer(party);
+          setCustomerQuery("");
+          setShowCustomerResults(false);
+        }}
+      />
     </div>
   );
 }

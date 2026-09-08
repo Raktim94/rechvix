@@ -29,6 +29,7 @@ type Service struct {
 	balances        domain.StockBalanceRepository
 	reservations    domain.StockReservationRepository
 	batches         domain.StockBatchRepository
+	costLots        domain.StockCostLotRepository
 	serials         domain.SerialNumberRepository
 	policies        domain.StockPolicyRepository
 	transfers       domain.StockTransferRepository
@@ -48,6 +49,7 @@ func NewService(
 	balances domain.StockBalanceRepository,
 	reservations domain.StockReservationRepository,
 	batches domain.StockBatchRepository,
+	costLots domain.StockCostLotRepository,
 	serials domain.SerialNumberRepository,
 	policies domain.StockPolicyRepository,
 	transfers domain.StockTransferRepository,
@@ -60,7 +62,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		pool: pool, movements: movements, balances: balances, reservations: reservations,
-		batches: batches, serials: serials, policies: policies, transfers: transfers, adjustments: adjustments,
+		batches: batches, costLots: costLots, serials: serials, policies: policies, transfers: transfers, adjustments: adjustments,
 		variants: variants, products: products, unitConversions: unitConversions,
 		costing: domain.WeightedAverageCostingStrategy{}, permissions: checker, audit: recorder, now: time.Now,
 	}
@@ -196,6 +198,16 @@ func (s *Service) recordMovement(ctx context.Context, orgID, actorUserID uuid.UU
 			// used to convert quantity, before it ever reaches costing.
 			baseUnitCost := p.UnitCost.Div(factor)
 			newAvgCost = s.costing.OnReceipt(balBefore.QuantityOnHand, balBefore.AverageCost, baseQty, baseUnitCost)
+
+			// Cost-lot ledger (migrations/0036): additive to the weighted
+			// average above, not a replacement for it — see
+			// domain.StockCostLotRepository's doc comment. Same price as
+			// an existing lot adds to it; a different price opens a new
+			// one, which is exactly what a distributor bill at a changed
+			// price needs to produce.
+			if _, err := s.costLots.UpsertReceipt(ctx, orgID, p.WarehouseID, p.ProductVariantID, baseUnitCost, baseQty, p.ReferenceType, p.ReferenceID); err != nil {
+				return nil, fmt.Errorf("inventory: recording cost lot: %w", err)
+			}
 		}
 		newQty = newQty.Add(baseQty)
 	} else {
@@ -209,6 +221,13 @@ func (s *Service) recordMovement(ctx context.Context, orgID, actorUserID uuid.UU
 			return nil, domain.ErrInsufficientStock
 		}
 		newQty = resultingQty
+
+		// Best-effort FIFO drawdown of the cost-lot ledger — see
+		// ConsumeFIFO's doc comment for why a lack of lot coverage (stock
+		// received before this table existed) never blocks this movement.
+		if err := s.costLots.ConsumeFIFO(ctx, orgID, p.WarehouseID, p.ProductVariantID, baseQty); err != nil {
+			return nil, fmt.Errorf("inventory: consuming cost lot: %w", err)
+		}
 	}
 
 	id, err := uuid.NewV7()
@@ -546,6 +565,24 @@ func (s *Service) ListMovements(ctx context.Context, principal permissions.Princ
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		result, err = s.movements.ListByVariantWarehouse(ctx, principal.OrganisationID, warehouseID, variantID, limit)
+		return err
+	})
+	return result, err
+}
+
+// ListCostLots returns the priced receipt lots still carrying quantity
+// for one product at one warehouse, oldest first — the Inventory page's
+// "what did we actually pay for what's on the shelf" view, and what the
+// purchases-review screen checks before an OCR-scanned bill's price
+// would open a brand-new lot instead of adding to an existing one.
+func (s *Service) ListCostLots(ctx context.Context, principal permissions.Principal, warehouseID, variantID uuid.UUID) ([]*domain.StockCostLot, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var result []*domain.StockCostLot
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		result, err = s.costLots.ListRemaining(ctx, principal.OrganisationID, warehouseID, variantID)
 		return err
 	})
 	return result, err

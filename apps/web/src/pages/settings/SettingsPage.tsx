@@ -7,6 +7,7 @@ import { z } from "zod";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
+import { getOcrProvider, setOcrProvider, type OcrProvider } from "../../lib/ocr";
 import { useOrgContext, type LegalEntity } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 
@@ -459,6 +460,46 @@ function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
   );
 }
 
+/** A per-browser preference (localStorage, via lib/ocr.ts), not a
+ * server-persisted org setting — deliberately, since which OCR engine
+ * to use is about THIS device's own tradeoff (Puter.js needs a live
+ * connection and sends the image out; the offline engine doesn't), not
+ * a business-wide policy every counter has to share. */
+function ScanningPanel() {
+  const [provider, setProvider] = useState<OcrProvider>(getOcrProvider);
+
+  function choose(p: OcrProvider) {
+    setProvider(p);
+    setOcrProvider(p);
+  }
+
+  return (
+    <div className={layout.panel}>
+      <h2>Scanning distributor bills</h2>
+      <p className={layout.subtitle} style={{ marginBottom: 16 }}>
+        Which OCR engine reads a scanned purchase bill on the Purchases page's "Scan bill" button. You still review and edit
+        everything it finds before anything is created.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <input type="radio" name="ocr-provider" checked={provider === "offline"} onChange={() => choose("offline")} style={{ marginTop: 4 }} />
+          <span>
+            <strong>Offline (recommended)</strong>
+            <div className={ui.muted}>Runs in this browser, not on a server — nothing about the scan itself leaves this device.</div>
+          </span>
+        </label>
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <input type="radio" name="ocr-provider" checked={provider === "puter"} onChange={() => choose("puter")} style={{ marginTop: 4 }} />
+          <span>
+            <strong>Puter.js (online)</strong>
+            <div className={ui.muted}>Often more accurate on messy or handwritten bills — sends the scanned image to Puter's free OCR service.</div>
+          </span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const org = useOrgContext();
 
@@ -524,6 +565,8 @@ export function SettingsPage() {
           <Link to="/gst">GST / Tax</Link> page.
         </p>
       </div>
+
+      <ScanningPanel />
 
       <TeamPanel />
     </div>

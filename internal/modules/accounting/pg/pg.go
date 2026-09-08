@@ -239,6 +239,36 @@ func (r *JournalLineRepo) ListByPartyUpTo(ctx context.Context, orgID, partyID uu
 	return out, rows.Err()
 }
 
+func (r *JournalLineRepo) ListDebitLinesBySourceType(ctx context.Context, orgID uuid.UUID, sourceType string, limit int) ([]domain.ExpenseEntry, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	const q = `
+		SELECT j.id, j.journal_date, a.code, a.name, COALESCE(jl.description, j.description, ''), jl.debit_amount
+		FROM journal_lines jl
+		JOIN journals j ON j.id = jl.journal_id
+		JOIN accounts a ON a.id = jl.account_id
+		WHERE jl.organisation_id = $1 AND j.source_type = $2 AND jl.debit_amount > 0
+		ORDER BY j.journal_date DESC, j.created_at DESC
+		LIMIT $3`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, sourceType, limit)
+	if err != nil {
+		return nil, fmt.Errorf("accounting: listing debit lines for source type %s: %w", sourceType, err)
+	}
+	defer rows.Close()
+	var out []domain.ExpenseEntry
+	for rows.Next() {
+		var e domain.ExpenseEntry
+		var amount decimal.Decimal
+		if err := rows.Scan(&e.JournalID, &e.JournalDate, &e.AccountCode, &e.AccountName, &e.Description, &amount); err != nil {
+			return nil, fmt.Errorf("accounting: scanning expense entry row: %w", err)
+		}
+		e.Amount = money.MustNew(amount, "INR")
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // --- fiscal_periods ---
 
 type FiscalPeriodRepo struct{ pool *database.Pool }

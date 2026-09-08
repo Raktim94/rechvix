@@ -1,37 +1,16 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { EwayBillCard } from "../../components/EwayBillCard";
+import { WhatsAppIcon } from "../../components/icons";
+import { PrintTemplateMenu } from "../../components/PrintTemplateMenu";
 import ui from "../../components/ui.module.css";
-import { api, apiUrl, ApiError } from "../../lib/api-client";
+import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
+import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
 import styles from "./SalesDetailPage.module.css";
 import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
-
-/** A WhatsApp "click to chat" deep link (`wa.me`) — no WhatsApp Business
- * API credential needed, works for any customer with a saved phone
- * number. Assumes an Indian 10-digit mobile number when the customer's
- * on-file number carries no country code, since that's what every
- * contact created via ContactsPage/BillingPage looks like today. */
-function whatsAppShareUrl(phone: string, message: string): string | null {
-  const digits = phone.replace(/\D/g, "");
-  if (!digits) return null;
-  const withCountryCode = digits.length === 10 ? `91${digits}` : digits;
-  return `https://wa.me/${withCountryCode}?text=${encodeURIComponent(message)}`;
-}
-
-/** apiUrl() returns a same-origin-relative path (e.g. "/api/v1/..."); a
- * link handed to WhatsApp is opened on the RECIPIENT's device, not this
- * one, so it must be absolute. Most self-hosted installs serve the API
- * from the same origin as the SPA (Stage 10a's WEB_DIST_DIR embedding),
- * so window.location.origin is correct there; a deployment with
- * VITE_API_BASE_URL pointed at a separate origin already gets an
- * absolute URL out of apiUrl() itself, left untouched below. */
-function absoluteApiUrl(path: string): string {
-  const url = apiUrl(path);
-  return /^https?:\/\//.test(url) ? url : `${window.location.origin}${url}`;
-}
 
 export function SalesDetailPage({ id }: { id: string }) {
   const doc = useQuery({
@@ -56,17 +35,7 @@ export function SalesDetailPage({ id }: { id: string }) {
   // "manage this document's share links" UI, and the 7-day-ish TTL
   // notifications/app.Service.CreateShareLink sets is generous enough
   // that click-to-share doesn't need its own expiry picker.
-  const shareViaWhatsApp = useMutation({
-    mutationFn: async (params: { documentId: string; phone: string; message: string }) => {
-      const { token } = await api.post<{ token: string }>("/share-links", {
-        document_type: "sales_document",
-        document_id: params.documentId,
-      });
-      const pdfUrl = absoluteApiUrl(`/share/${token}/pdf`);
-      const url = whatsAppShareUrl(params.phone, `${params.message}\n${pdfUrl}`);
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
-    },
-  });
+  const shareViaWhatsApp = useShareSalesDocumentOnWhatsApp();
 
   if (doc.isPending) {
     return (
@@ -105,9 +74,7 @@ export function SalesDetailPage({ id }: { id: string }) {
           </Link>
         ) : (
           <div className={styles.headerActions}>
-            <a href={`/api/v1/sales/documents/${document.ID}/print`} target="_blank" rel="noopener noreferrer" className={ui.btnSecondary}>
-              Print / Download PDF
-            </a>
+            <PrintTemplateMenu documentId={document.ID} />
             {(() => {
               const canShare = !!customer.data?.Phone;
               return (
@@ -125,7 +92,13 @@ export function SalesDetailPage({ id }: { id: string }) {
                     })
                   }
                 >
-                  {shareViaWhatsApp.isPending ? "Preparing…" : "Share via WhatsApp"}
+                  {shareViaWhatsApp.isPending ? (
+                    "Preparing…"
+                  ) : (
+                    <>
+                      <WhatsAppIcon /> Share via WhatsApp
+                    </>
+                  )}
                 </button>
               );
             })()}

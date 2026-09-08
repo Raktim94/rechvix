@@ -350,6 +350,62 @@ func firstJournalLineID(t *testing.T, ctx context.Context, orgID, salesDocumentI
 	return lineID
 }
 
+// TestAccounting_ManualExpense_ListedBySourceType is the Expenses page's
+// backing query, proven directly against Service.Post (the same
+// standalone entry point postJournal's HTTP handler wraps) rather than
+// through the HTTP layer: two manual_expense journals at different
+// amounts/accounts both come back from ListExpenseEntries, newest first,
+// each row carrying the debit-side account's own name and amount — and
+// a real auto-posted sales journal (source_type "sales_document",
+// already proven elsewhere) does NOT leak into the same list, since
+// ListDebitLinesBySourceType filters by source_type.
+func TestAccounting_ManualExpense_ListedBySourceType(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	post := func(accountCode string, amount string, description string) {
+		t.Helper()
+		if _, err := accountingSvc.Post(ctx, fx.Principal, accountingapp.JournalRequest{
+			OrganisationID: fx.Principal.OrganisationID, SourceType: "manual_expense", JournalDate: time.Now(),
+			Description: description, CreatedBy: fx.Principal.UserID,
+			Lines: []accountingapp.JournalLineRequest{
+				{AccountCode: accountCode, Debit: mustDecimal(t, amount), Description: description},
+				{AccountCode: accountingdomain.CodeCash, Credit: mustDecimal(t, amount), Description: description},
+			},
+		}); err != nil {
+			t.Fatalf("Post(manual_expense %s %s): %v", accountCode, amount, err)
+		}
+	}
+	post(accountingdomain.CodeGeneralExpenses, "500", "Electricity bill")
+	post(accountingdomain.CodeFreight, "150", "Auto-rickshaw delivery charge")
+
+	// A real, differently-sourced journal (source_type "sales_document",
+	// auto-posted on finalize — same fixture as
+	// TestAccounting_AutoPostOnSalesFinalize) must not leak into the
+	// expense list just because ListDebitLinesBySourceType filters by
+	// source_type, not by account type.
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100")
+
+	entries, err := accountingSvc.ListExpenseEntries(ctx, fx.Principal, 0)
+	if err != nil {
+		t.Fatalf("ListExpenseEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("len(entries) = %d, want 2", len(entries))
+	}
+	// Newest first: Freight (posted second) before General Expenses.
+	if entries[0].AccountCode != accountingdomain.CodeFreight || !entries[0].Amount.Decimal().Equal(mustDecimal(t, "150")) {
+		t.Fatalf("entries[0] = %+v, want Freight/150", entries[0])
+	}
+	if entries[1].AccountCode != accountingdomain.CodeGeneralExpenses || !entries[1].Amount.Decimal().Equal(mustDecimal(t, "500")) {
+		t.Fatalf("entries[1] = %+v, want General Expenses/500", entries[1])
+	}
+	if entries[0].AccountName == "" || entries[1].Description == "" {
+		t.Fatalf("expected account name and description to be populated, got %+v / %+v", entries[0], entries[1])
+	}
+}
+
 // --- Scenario E (brief §79): credit-sale invoice, partial receipt, ledger outstanding ---
 
 func TestAccounting_ScenarioE_CreditSaleThenPartialReceipt(t *testing.T) {

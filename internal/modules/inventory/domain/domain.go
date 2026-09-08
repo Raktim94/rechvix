@@ -144,6 +144,29 @@ type StockReservation struct {
 	ReleasedAt       *time.Time
 }
 
+// StockCostLot is a priced receipt lot (migrations/0036) — a distinct
+// concept from StockBatch below: StockBatch is a manufacturer/expiry
+// identity (its own explicit batch_code, no cost), while a cost lot has
+// no batch_code at all and exists purely to answer "which price(s) make
+// up the stock we're currently holding." QuantityRemaining is decremented
+// FIFO as outward movements are recorded; it never goes negative and
+// legacy (pre-this-table) stock simply has no lot to decrement — see
+// StockCostLotRepository.ConsumeFIFO's doc comment.
+type StockCostLot struct {
+	ID                  uuid.UUID
+	OrganisationID      uuid.UUID
+	WarehouseID         uuid.UUID
+	ProductVariantID    uuid.UUID
+	UnitCost            decimal.Decimal
+	QuantityReceived    decimal.Decimal
+	QuantityRemaining   decimal.Decimal
+	SourceReferenceType string
+	SourceReferenceID   *uuid.UUID
+	ReceivedAt          time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
 type StockBatch struct {
 	ID               uuid.UUID
 	OrganisationID   uuid.UUID
@@ -247,6 +270,24 @@ type StockBatchRepository interface {
 	Create(ctx context.Context, b *StockBatch) error
 	GetOrCreate(ctx context.Context, orgID, variantID uuid.UUID, batchCode string, manufactureDate, expiryDate *time.Time) (*StockBatch, error)
 	ListExpiringBefore(ctx context.Context, orgID uuid.UUID, before time.Time) ([]*StockBatch, error)
+}
+
+type StockCostLotRepository interface {
+	// UpsertReceipt records an inward movement against the cost-lot
+	// ledger: a lot already at this exact unit cost gains quantity ("same
+	// stock, same price"); any other unit cost starts a new lot row
+	// ("different batch, because price moved") — the UNIQUE(warehouse,
+	// variant, unit_cost) constraint is the actual decision-maker via
+	// ON CONFLICT, not application-layer branching.
+	UpsertReceipt(ctx context.Context, orgID, warehouseID, variantID uuid.UUID, unitCost, quantity decimal.Decimal, sourceRefType string, sourceRefID *uuid.UUID) (*StockCostLot, error)
+	// ConsumeFIFO decrements quantity_remaining across the oldest lots
+	// first until quantity is accounted for, clamping rather than erroring
+	// if existing lots don't cover it (stock received before this table
+	// existed, or before this deployment upgraded to it, has no lot at
+	// all) — an outward movement must never fail just because its
+	// informational cost-lot bookkeeping can't fully reconcile.
+	ConsumeFIFO(ctx context.Context, orgID, warehouseID, variantID uuid.UUID, quantity decimal.Decimal) error
+	ListRemaining(ctx context.Context, orgID, warehouseID, variantID uuid.UUID) ([]*StockCostLot, error)
 }
 
 type SerialNumberRepository interface {

@@ -1,11 +1,96 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import ReactECharts from "echarts-for-react";
 import styles from "./DashboardPage.module.css";
+import { AlertTriangleIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, BoxIcon, ClockIcon, SalesIcon, WalletIcon } from "../components/icons";
 import { QuickAccess } from "../components/QuickAccess";
 import { StatCard } from "../components/StatCard";
 import { api } from "../lib/api-client";
+import { toLocalIsoDate } from "../lib/calendarGrid";
 import { formatMoney, isZeroMoney, moneyToApproxNumber, type Money } from "../lib/money";
 import { useTheme } from "../theme/ThemeProvider";
+
+interface StaffMember {
+  ID: string;
+  Name: string;
+  IsActive: boolean;
+}
+interface AttendanceRecord {
+  StaffMemberID: string;
+  Status: "PRESENT" | "ABSENT" | "LEAVE";
+}
+interface Task {
+  ID: string;
+  Title: string;
+  Status: "PENDING" | "DONE";
+}
+
+/** "What to do" today, plus who's in — the brief's own ask for a daily
+ * summary that covers both tasks and staff. Kept as its own panel
+ * rather than folded into the financial stat-card grid above, since
+ * "today's numbers" and "today's people/to-dos" are different questions
+ * a shop owner asks at different moments of the day. */
+function TodaySummaryPanel() {
+  const todayIso = toLocalIsoDate(new Date());
+  const staff = useQuery({
+    queryKey: ["staff-members"],
+    queryFn: () => api.getListField<StaffMember>("/staff/members", "staff_members"),
+  });
+  const attendance = useQuery({
+    queryKey: ["staff-attendance", todayIso, todayIso],
+    queryFn: () => api.getListField<AttendanceRecord>(`/staff/attendance?from=${todayIso}&to=${todayIso}`, "attendance"),
+  });
+  const tasks = useQuery({
+    queryKey: ["staff-tasks", todayIso, todayIso],
+    queryFn: () => api.getListField<Task>(`/staff/tasks?from=${todayIso}&to=${todayIso}`, "tasks"),
+  });
+
+  const activeStaff = (staff.data ?? []).filter((m) => m.IsActive);
+  const statusByStaffId = new Map((attendance.data ?? []).map((a) => [a.StaffMemberID, a.Status]));
+  const absentToday = activeStaff.filter((m) => statusByStaffId.get(m.ID) === "ABSENT");
+  const pendingTasks = (tasks.data ?? []).filter((t) => t.Status === "PENDING");
+
+  if (staff.isPending || attendance.isPending || tasks.isPending) {
+    return (
+      <div className={styles.panel}>
+        <div className={styles.skeleton} style={{ height: 120 }} aria-hidden="true" />
+      </div>
+    );
+  }
+  if (activeStaff.length === 0 && pendingTasks.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.panel}>
+      <h2>Today</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        <div>
+          <p className={styles.subtitle} style={{ marginBottom: 8 }}>
+            {activeStaff.length > 0 ? `${activeStaff.length - absentToday.length} of ${activeStaff.length} staff in today` : "No staff added yet"}
+          </p>
+          {absentToday.length > 0 ? (
+            <p style={{ color: "var(--color-negative)", fontSize: "var(--text-sm)" }}>Absent: {absentToday.map((m) => m.Name).join(", ")}</p>
+          ) : null}
+          <Link to="/calendar" style={{ fontSize: "var(--text-sm)" }}>
+            Mark attendance →
+          </Link>
+        </div>
+        <div>
+          <p className={styles.subtitle} style={{ marginBottom: 8 }}>
+            {pendingTasks.length > 0 ? `${pendingTasks.length} task${pendingTasks.length > 1 ? "s" : ""} due today` : "Nothing due today"}
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--text-sm)" }}>
+            {pendingTasks.slice(0, 4).map((t) => (
+              <li key={t.ID}>{t.Title}</li>
+            ))}
+          </ul>
+          {pendingTasks.length > 4 ? <p className={styles.subtitle}>+{pendingTasks.length - 4} more</p> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** Mirrors internal/modules/reporting/domain.DashboardSummary exactly —
  * that struct has no json tags, so field names serialize verbatim as Go's
@@ -72,33 +157,38 @@ export function DashboardPage() {
         </div>
       ) : (
         <div className={styles.cardGrid}>
-          <StatCard label="Today's sales" value={formatMoney(dashboard.data.TodaySales)} />
+          <StatCard label="Today's sales" value={formatMoney(dashboard.data.TodaySales)} icon={<SalesIcon />} />
           <StatCard
             label="Today's collections"
             value={formatMoney(dashboard.data.TodayCollections)}
             polarity={isZeroMoney(dashboard.data.TodayCollections) ? "neutral" : "positive"}
+            icon={<WalletIcon />}
           />
-          <StatCard label="Today's purchases" value={formatMoney(dashboard.data.TodayPurchases)} />
+          <StatCard label="Today's purchases" value={formatMoney(dashboard.data.TodayPurchases)} icon={<ArrowUpCircleIcon />} />
           <StatCard
             label="Outstanding receivable"
             value={formatMoney(dashboard.data.OutstandingReceivable)}
             polarity={isZeroMoney(dashboard.data.OutstandingReceivable) ? "neutral" : "warning"}
+            icon={<ArrowDownCircleIcon />}
           />
           <StatCard
             label="Outstanding payable"
             value={formatMoney(dashboard.data.OutstandingPayable)}
             polarity={isZeroMoney(dashboard.data.OutstandingPayable) ? "neutral" : "warning"}
+            icon={<ArrowUpCircleIcon />}
           />
-          <StatCard label="Current stock value" value={formatMoney(dashboard.data.CurrentStockValue)} />
+          <StatCard label="Current stock value" value={formatMoney(dashboard.data.CurrentStockValue)} icon={<BoxIcon />} />
           <StatCard
             label="Low stock items"
             value={String(dashboard.data.LowStockCount)}
             polarity={dashboard.data.LowStockCount > 0 ? "warning" : "neutral"}
+            icon={<AlertTriangleIcon />}
           />
           <StatCard
             label="Overdue receivable"
             value={formatMoney(dashboard.data.OverdueReceivable)}
             polarity={isZeroMoney(dashboard.data.OverdueReceivable) ? "neutral" : "negative"}
+            icon={<ClockIcon />}
           />
         </div>
       )}
@@ -140,6 +230,8 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+
+      <TodaySummaryPanel />
     </div>
   );
 }

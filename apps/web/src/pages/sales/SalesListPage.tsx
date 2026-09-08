@@ -1,12 +1,45 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { WhatsAppIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
 import { api } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
+import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
 import { DOCUMENT_TYPE_LABELS, type DocumentStatus, type SalesDocument } from "./types";
+
+/** Row-level counterpart to SalesDetailPage's "Share via WhatsApp" —
+ * lets a counter operator send a finalized bill straight from the list
+ * without opening it first, the fastest path when they already know
+ * which row they want. Drafts have no finalized total/number to share
+ * yet, so this only ever renders for non-draft rows. */
+function ShareRowButton({ document, customer }: { document: SalesDocument; customer: Party | undefined }) {
+  const share = useShareSalesDocumentOnWhatsApp();
+  const phone = customer?.Phone;
+  if (!phone) return null;
+  return (
+    <button
+      type="button"
+      className={ui.btnGhost}
+      disabled={share.isPending}
+      title="Share via WhatsApp"
+      aria-label={`Share ${document.DocumentNumber || "this sale"} via WhatsApp`}
+      onClick={() =>
+        share.mutate({
+          documentId: document.ID,
+          phone,
+          message: `Hi ${customer.LegalName}, your ${DOCUMENT_TYPE_LABELS[document.DocumentType].toLowerCase()} ${document.DocumentNumber} for ${
+            document.GrandTotalAmount ? formatMoney(document.GrandTotalAmount) : "—"
+          } is ready. Thank you for your business!`,
+        })
+      }
+    >
+      <WhatsAppIcon />
+    </button>
+  );
+}
 
 function statusTone(status: SalesDocument["Status"]) {
   if (status === "FINALIZED") return "positive";
@@ -36,6 +69,7 @@ export function SalesListPage() {
     queryKey: ["parties"],
     queryFn: () => api.getListField<Party>("/contacts/parties", "parties"),
   });
+  const customerById = new Map(customers.data?.map((p) => [p.ID, p]));
   const customerNameById = new Map(customers.data?.map((p) => [p.ID, p.LegalName]));
 
   const q = query.trim().toLowerCase();
@@ -109,6 +143,7 @@ export function SalesListPage() {
                   <th scope="col">Status</th>
                   <th scope="col">Date</th>
                   <th scope="col">Total</th>
+                  <th scope="col" />
                 </tr>
               </thead>
               <tbody>
@@ -133,6 +168,7 @@ export function SalesListPage() {
                     </td>
                     <td>{new Date(d.IssueDate).toLocaleDateString()}</td>
                     <td className="num">{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
+                    <td>{d.Status !== "DRAFT" ? <ShareRowButton document={d} customer={customerById.get(d.CustomerPartyID)} /> : null}</td>
                   </tr>
                 ))}
               </tbody>

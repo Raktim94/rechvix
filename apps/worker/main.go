@@ -89,7 +89,7 @@ func run() error {
 	pricingSvc := pricingapp.NewService(pool, pricingpg.NewPriceListRepo(pool), pricingpg.NewPriceListItemRepo(pool),
 		permissionsChecker, auditRecorder)
 	inventorySvc := inventoryapp.NewService(pool, inventorypg.NewStockMovementRepo(pool), inventorypg.NewStockBalanceRepo(pool),
-		inventorypg.NewStockReservationRepo(pool), inventorypg.NewStockBatchRepo(pool), inventorypg.NewSerialNumberRepo(pool),
+		inventorypg.NewStockReservationRepo(pool), inventorypg.NewStockBatchRepo(pool), inventorypg.NewStockCostLotRepo(pool), inventorypg.NewSerialNumberRepo(pool),
 		inventorypg.NewStockPolicyRepo(pool), inventorypg.NewStockTransferRepo(pool), inventorypg.NewStockAdjustmentRepo(pool),
 		cataloguepg.NewProductVariantRepo(pool), cataloguepg.NewProductRepo(pool), cataloguepg.NewUnitConversionRepo(pool),
 		permissionsChecker, auditRecorder)

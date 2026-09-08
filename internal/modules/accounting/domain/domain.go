@@ -245,6 +245,27 @@ type JournalLineRepository interface {
 	// journals.journal_date <= asOf, oldest first — the raw feed
 	// LedgerEntry/AgeingBucket are built from.
 	ListByPartyUpTo(ctx context.Context, orgID, partyID uuid.UUID, asOf time.Time) ([]LedgerRow, error)
+	// ListDebitLinesBySourceType returns the debit-side line (joined with
+	// its account for a display name) of every journal tagged
+	// sourceType, newest first — one row per journal, not per line: for
+	// a simple two-line entry (debit an expense account, credit
+	// Cash/Bank) debit always equals credit, so the credit-side line
+	// carries no information a caller like the Expenses page needs and
+	// would only double the list if also returned.
+	ListDebitLinesBySourceType(ctx context.Context, orgID uuid.UUID, sourceType string, limit int) ([]ExpenseEntry, error)
+}
+
+// ExpenseEntry is ListDebitLinesBySourceType's row shape — currently
+// only consumed by the Expenses page (source type "manual_expense"), but
+// not named "ExpenseJournalLine" since nothing about the query is
+// actually expense-specific beyond the sourceType a caller passes in.
+type ExpenseEntry struct {
+	JournalID   uuid.UUID
+	JournalDate time.Time
+	AccountCode string
+	AccountName string
+	Description string
+	Amount      money.Money
 }
 
 // LedgerRow is JournalLineRepository.ListByPartyUpTo's raw row shape — the

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,9 @@ func NewHandlers(svc *app.Service) *Handlers { return &Handlers{svc: svc} }
 func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/accounting/accounts", h.listAccounts)
 	r.Post("/accounting/accounts/ensure-default-chart", h.ensureDefaultChart)
+	r.Get("/accounting/journals", h.listJournals)
+	r.Get("/accounting/expenses", h.listExpenses)
+	r.Post("/accounting/journals", h.postJournal)
 	r.Get("/accounting/journals/{id}", h.getJournal)
 	r.Post("/accounting/receipts", h.recordReceipt)
 	r.Post("/accounting/payments", h.recordPayment)
@@ -87,6 +91,75 @@ func (h *Handlers) ensureDefaultChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handlers) listJournals(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	out, err := h.svc.ListJournals(r.Context(), principal(r), limit)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"journals": out})
+}
+
+func (h *Handlers) listExpenses(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	out, err := h.svc.ListExpenseEntries(r.Context(), principal(r), limit)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"expenses": out})
+}
+
+type postJournalLineRequest struct {
+	AccountCode string          `json:"account_code"`
+	PartyID     *uuid.UUID      `json:"party_id"`
+	Debit       decimal.Decimal `json:"debit"`
+	Credit      decimal.Decimal `json:"credit"`
+	Description string          `json:"description"`
+}
+
+type postJournalRequest struct {
+	SourceType  string                   `json:"source_type"`
+	JournalDate *time.Time               `json:"journal_date"`
+	Description string                   `json:"description"`
+	Lines       []postJournalLineRequest `json:"lines"`
+}
+
+// postJournal is the HTTP face of Service.Post's own doc comment ("a
+// manual adjustment journal posted directly from an accounting screen")
+// — never previously exposed over HTTP. The Expenses page is its first
+// real caller: two lines (debit an expense account, credit Cash/Bank),
+// but this stays a general balanced-journal endpoint rather than an
+// "expenses"-specific one, since Post itself already is.
+func (h *Handlers) postJournal(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[postJournalRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Could not parse the request body."))
+		return
+	}
+	journalDate := time.Now()
+	if req.JournalDate != nil {
+		journalDate = *req.JournalDate
+	}
+	lines := make([]app.JournalLineRequest, 0, len(req.Lines))
+	for _, l := range req.Lines {
+		lines = append(lines, app.JournalLineRequest{
+			AccountCode: l.AccountCode, PartyID: l.PartyID, Debit: l.Debit, Credit: l.Credit, Description: l.Description,
+		})
+	}
+	p := principal(r)
+	j, err := h.svc.Post(r.Context(), p, app.JournalRequest{
+		OrganisationID: p.OrganisationID, SourceType: req.SourceType, JournalDate: journalDate,
+		Description: req.Description, CreatedBy: p.UserID, Lines: lines,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, j)
 }
 
 func (h *Handlers) getJournal(w http.ResponseWriter, r *http.Request) {

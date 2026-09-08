@@ -1,11 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
+import { parseBillText, type ParsedBill } from "../../lib/billParser";
 import { formatMoney } from "../../lib/money";
+import { getOcrProvider, runOcr } from "../../lib/ocr";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
+import { PurchaseScanReviewModal, type ResolvedScanLine } from "./PurchaseScanReviewModal";
 
 type PurchaseStatus = "DRAFT" | "FINALIZED" | "CANCELLED";
 type StatusFilter = "ALL" | PurchaseStatus;
@@ -42,6 +46,7 @@ export function PurchasesPage() {
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [supplierQuery, setSupplierQuery] = useState("");
   const [supplier, setSupplier] = useState<Party | null>(null);
+  const [quickAddSupplierOpen, setQuickAddSupplierOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<Product[]>([]);
   const [qty, setQty] = useState("1");
@@ -50,6 +55,13 @@ export function PurchasesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [parsedBill, setParsedBill] = useState<ParsedBill | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const documents = useQuery({
     queryKey: ["purchase-documents"],
@@ -105,6 +117,60 @@ export function PurchasesPage() {
     onSuccess: (d) => {
       setActiveDocId(d.ID);
       queryClient.invalidateQueries({ queryKey: ["purchase-documents"] });
+    },
+  });
+
+  async function handleScanFile(file: File) {
+    setScanning(true);
+    setScanProgress(0);
+    setScanError(null);
+    try {
+      const text = await runOcr(file, getOcrProvider(), setScanProgress);
+      setParsedBill(parseBillText(text));
+      setReviewOpen(true);
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Could not read this image.");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  // Everything the review modal decided (which supplier, which lines at
+  // what price) lands here as plain data — this is the one place that
+  // actually calls the same /purchases/documents(+/lines) endpoints
+  // startPurchase/addLine use below, just supplier-first instead of
+  // one-field-at-a-time, since the modal already resolved every field.
+  const commitScan = useMutation({
+    mutationFn: async (result: { supplierId: string; lines: ResolvedScanLine[] }) => {
+      if (!org.branch || !org.warehouse) throw new Error("Missing organisation context.");
+      const doc = await api.post<PurchaseDocument>("/purchases/documents", {
+        branch_id: org.branch.ID,
+        warehouse_id: org.warehouse.ID,
+        supplier_party_id: result.supplierId,
+        document_type: "PURCHASE_INVOICE",
+        currency_code: org.organisation?.DefaultCurrencyCode || "INR",
+        notes: "Created from a scanned distributor bill.",
+      });
+      for (const line of result.lines) {
+        await api.post(`/purchases/documents/${doc.ID}/lines`, {
+          product_variant_id: line.productVariantId,
+          unit_id: line.unitId,
+          quantity: line.quantity,
+          unit_price: line.unitPrice,
+          batch_code: "",
+        });
+      }
+      return doc;
+    },
+    onSuccess: (doc) => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-documents"] });
+      setReviewOpen(false);
+      setParsedBill(null);
+      setCreating(false);
+      setActiveDocId(doc.ID);
+    },
+    onError: (err) => {
+      setScanError(err instanceof ApiError ? err.message : "Could not create the purchase from this scan.");
     },
   });
 
@@ -184,27 +250,49 @@ export function PurchasesPage() {
                 </div>
               ) : (
                 <>
-                  <input
-                    id="supplier-search"
-                    className={ui.input}
-                    value={supplierQuery}
-                    onChange={(e) => setSupplierQuery(e.target.value)}
-                    placeholder="Search supplier…"
-                  />
-                  {supplierSearch.data?.length ? (
-                    <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                      {supplierSearch.data.map((p) => (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      id="supplier-search"
+                      className={ui.input}
+                      value={supplierQuery}
+                      onChange={(e) => setSupplierQuery(e.target.value)}
+                      placeholder="Search supplier…"
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" className={ui.btnSecondary} onClick={() => setQuickAddSupplierOpen(true)}>
+                      + New
+                    </button>
+                  </div>
+                  {supplierQuery.trim().length >= 2 ? (
+                    <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0 }}>
+                      {(supplierSearch.data ?? []).map((p) => (
                         <li key={p.ID}>
-                          <button type="button" className={ui.btnSecondary} style={{ margin: "4px 4px 0 0" }} onClick={() => setSupplier(p)}>
+                          <button type="button" className={ui.btnSecondary} style={{ margin: "0 4px 4px 0" }} onClick={() => setSupplier(p)}>
                             {p.LegalName}
                           </button>
                         </li>
                       ))}
+                      <li>
+                        <button type="button" className={ui.btnSecondary} style={{ margin: "0 4px 4px 0", color: "var(--color-accent)" }} onClick={() => setQuickAddSupplierOpen(true)}>
+                          + New supplier "{supplierQuery.trim()}"
+                        </button>
+                      </li>
                     </ul>
                   ) : null}
                 </>
               )}
             </div>
+            <QuickAddPartyModal
+              open={quickAddSupplierOpen}
+              onOpenChange={setQuickAddSupplierOpen}
+              partyType="SUPPLIER"
+              currencyCode={org.organisation?.DefaultCurrencyCode || "INR"}
+              initialLegalName={supplierQuery.trim()}
+              onCreated={(party) => {
+                setSupplier(party);
+                setSupplierQuery("");
+              }}
+            />
             <div className={ui.formActions} style={{ marginTop: 12 }}>
               <button type="button" className={ui.btnPrimary} disabled={!supplier || startPurchase.isPending} onClick={() => startPurchase.mutate()}>
                 Start purchase
@@ -306,10 +394,32 @@ export function PurchasesPage() {
           <h1>Purchases</h1>
           <p className={layout.subtitle}>What you've bought from suppliers.</p>
         </div>
-        <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
-          + New purchase
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            ref={scanInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void handleScanFile(file);
+            }}
+          />
+          <button type="button" className={ui.btnSecondary} disabled={scanning} onClick={() => scanInputRef.current?.click()}>
+            {scanning ? `Scanning… ${Math.round(scanProgress * 100)}%` : "Scan bill"}
+          </button>
+          <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
+            + New purchase
+          </button>
+        </div>
       </div>
+      {scanError ? (
+        <p role="alert" style={{ color: "var(--color-negative)" }}>
+          {scanError}
+        </p>
+      ) : null}
       <div className={layout.panel}>
         <div className={ui.toolbar} style={{ marginBottom: 12 }}>
           <input
@@ -383,6 +493,15 @@ export function PurchasesPage() {
           </div>
         )}
       </div>
+
+      <PurchaseScanReviewModal
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        parsedBill={parsedBill}
+        currencyCode={org.organisation?.DefaultCurrencyCode || "INR"}
+        committing={commitScan.isPending}
+        onCommitted={(result) => commitScan.mutate(result)}
+      />
     </div>
   );
 }

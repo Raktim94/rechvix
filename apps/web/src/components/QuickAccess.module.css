@@ -23,26 +23,37 @@
   padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   color: var(--color-text);
   text-decoration: none;
   font-size: var(--text-sm);
   font-weight: 600;
   box-shadow: var(--shadow-card);
-  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
-.tile svg {
+.tile .iconChip {
   flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
   color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 @media (hover: hover) {
   .tile:hover {
     border-color: var(--color-accent);
-    background: var(--color-accent-soft);
-    box-shadow: var(--shadow-popover);
-    transform: translateY(-1px);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+  }
+  .tile:hover .iconChip {
+    background: var(--color-accent);
+    color: var(--color-on-accent);
   }
 }
 
