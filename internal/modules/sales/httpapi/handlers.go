@@ -55,6 +55,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/sales/documents/{id}/lines", h.addLine)
 	r.Post("/sales/documents/{id}/finalize", h.finalizeDocument)
 	r.Post("/sales/documents/{id}/convert", h.convertDocument)
+	r.Post("/sales/documents/{id}/cancel", h.cancelDocument)
 	r.Get("/sales/documents/{id}/print", h.printDocument)
 	r.Get("/sales/billing-lookup", h.billingLookup)
 }
@@ -77,7 +78,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrDocumentNotDraft):
 		httpx.WriteError(w, r, httpx.NewConflict("DOCUMENT_NOT_DRAFT", "This document is not in DRAFT status and cannot be modified or finalized again."))
 	case errors.Is(err, domain.ErrDocumentNotFinalized):
-		httpx.WriteError(w, r, httpx.NewConflict("DOCUMENT_NOT_FINALIZED", "Only a FINALIZED document can be converted."))
+		httpx.WriteError(w, r, httpx.NewConflict("DOCUMENT_NOT_FINALIZED", "Only a FINALIZED document can be converted or cancelled."))
 	case errors.Is(err, domain.ErrEmptyDocument):
 		httpx.WriteError(w, r, httpx.NewConflict("EMPTY_DOCUMENT", "A document needs at least one line before it can be finalized."))
 	case errors.Is(err, domain.ErrZeroValueDocument):
@@ -299,6 +300,20 @@ func (h *Handlers) convertDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, target)
+}
+
+func (h *Handlers) cancelDocument(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	doc, err := h.svc.CancelDocument(r.Context(), principal(r), id)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, doc)
 }
 
 // printDocument renders a finalized document to PDF. ?template= selects

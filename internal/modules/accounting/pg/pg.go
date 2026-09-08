@@ -143,6 +143,12 @@ func (r *JournalRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain
 	return scanJournal(r.pool.Q(ctx).QueryRow(ctx, q, orgID, id))
 }
 
+func (r *JournalRepo) GetBySource(ctx context.Context, orgID uuid.UUID, sourceType string, sourceID uuid.UUID) (*domain.Journal, error) {
+	q := fmt.Sprintf(`SELECT %s FROM journals WHERE organisation_id = $1 AND source_type = $2 AND source_id = $3
+		ORDER BY created_at DESC LIMIT 1`, journalCols)
+	return scanJournal(r.pool.Q(ctx).QueryRow(ctx, q, orgID, sourceType, sourceID))
+}
+
 func (r *JournalRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID, limit int) ([]*domain.Journal, error) {
 	if limit <= 0 {
 		limit = 200

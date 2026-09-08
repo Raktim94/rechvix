@@ -235,6 +235,15 @@ type JournalRepository interface {
 	Create(ctx context.Context, j *Journal) error
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Journal, error)
 	ListByOrganisation(ctx context.Context, orgID uuid.UUID, limit int) ([]*Journal, error)
+	// GetBySource returns the most recent journal posted for
+	// (sourceType, sourceID) — the one a reversal needs to reverse. In
+	// every source type this schema actually posts against a given
+	// source more than once for (e.g. "sales_document": one finalize,
+	// at most one later cancellation), the caller has already excluded
+	// the "already cancelled" case before asking, so "most recent" and
+	// "the original" coincide in practice; this does not attempt to
+	// disambiguate a source with a longer real correction history.
+	GetBySource(ctx context.Context, orgID uuid.UUID, sourceType string, sourceID uuid.UUID) (*Journal, error)
 }
 
 type JournalLineRepository interface {

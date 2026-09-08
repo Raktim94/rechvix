@@ -620,3 +620,106 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 	}
 	return target, nil
 }
+
+// CancelDocument voids a mis-billed FINALIZED document: reverses its
+// stock effect (StockAffecting types only — the same restocking a
+// SALES_RETURN does, since "this sale is void" and "these goods came
+// back" have the identical inventory consequence) and its accounting
+// effect (RevenueAffecting types only — a journal with every line's
+// Debit/Credit swapped from the original, same technique
+// ReducesReceivable-handling already uses above, posted as its own
+// entry rather than deleting/editing the original one: journal_lines
+// are immutable by DB trigger, brief §7, and a real audit trail needs
+// the reversal to be visible as its own event, not a silent edit).
+// Uses sales.finalize — the same permission that let this document be
+// finalized in the first place is what's needed to undo that.
+//
+// Deliberately does NOT touch any receipt/payment already recorded
+// against this document (accounting.Receipt/Payment rows referencing
+// it via SalesDocumentID) — whether an already-collected payment should
+// be refunded, kept as store credit, or applied elsewhere is a business
+// decision this method has no basis to make unilaterally. The caller
+// (httpapi/frontend) surfaces that as a warning before cancelling, not
+// as something this method resolves on its own.
+func (s *Service) CancelDocument(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*domain.Document, error) {
+	if err := s.finalizePerm(ctx, principal); err != nil {
+		return nil, err
+	}
+	now := s.now()
+	var doc *domain.Document
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		doc, err = s.documents.GetByID(ctx, principal.OrganisationID, documentID)
+		if err != nil {
+			return err
+		}
+		if doc.Status != domain.StatusFinalized {
+			return domain.ErrDocumentNotFinalized
+		}
+		lines, err := s.lines.ListByDocument(ctx, documentID)
+		if err != nil {
+			return err
+		}
+
+		if domain.StockAffecting(doc.DocumentType) {
+			// The reversal of whatever finalize originally posted: a
+			// document that took stock out (SALE-type movements) gets it
+			// back via SALE_RETURN; one that already put it back
+			// (SALES_RETURN itself, cancelled) takes it back out via SALE.
+			movementType := inventorydomain.MovementSaleReturn
+			if domain.MovementTypeFor(doc.DocumentType) == "SALE_RETURN" {
+				movementType = inventorydomain.MovementSale
+			}
+			for _, line := range lines {
+				params := inventoryapp.RecordMovementParams{
+					WarehouseID: doc.WarehouseID, ProductVariantID: line.ProductVariantID, MovementType: movementType,
+					UnitID: line.UnitID, Quantity: line.Quantity,
+					ReferenceType: "sales_document", ReferenceID: &doc.ID,
+					Notes: fmt.Sprintf("Cancellation of %s %s line %d", doc.DocumentType, doc.DocumentNumber, line.LineNumber),
+				}
+				if line.BatchCode != "" {
+					batchCode := line.BatchCode
+					params.BatchCode = &batchCode
+				}
+				if line.SerialCode != "" {
+					serialCode := line.SerialCode
+					params.SerialCode = &serialCode
+				}
+				if _, err := s.inventory.RecordMovementForOtherModule(ctx, principal.OrganisationID, principal.UserID, params); err != nil {
+					return fmt.Errorf("reversing stock movement for line %d: %w", line.LineNumber, err)
+				}
+			}
+		}
+
+		if s.accounting != nil && domain.RevenueAffecting(doc.DocumentType) {
+			// Reverses the EXACT journal finalize posted (same accounts,
+			// same taxable/tax split, whichever polarity ReducesReceivable
+			// already gave it) rather than reconstructing one from
+			// doc.GrandTotalAmount — sales_documents doesn't store the
+			// taxable/tax split at all (only the grand total), so
+			// rebuilding it here would either have to re-derive tax
+			// (drifting from what was actually posted if a rate changed
+			// since) or lump the whole total onto Sales with no separate
+			// tax line. Reversing the real journal is both simpler and
+			// exact.
+			if _, err := s.accounting.ReverseJournalForSourceTx(ctx, principal, "sales_document", doc.ID, "sales_document_cancellation", "Cancellation of "+doc.DocumentNumber); err != nil {
+				return fmt.Errorf("reversing sale journal: %w", err)
+			}
+		}
+
+		if err := s.documents.UpdateStatus(ctx, documentID, domain.StatusCancelled, &now); err != nil {
+			return err
+		}
+		doc.Status = domain.StatusCancelled
+
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "sales_document.cancelled", EntityType: "sales_document", EntityID: &doc.ID,
+			AfterState: map[string]any{"document_number": doc.DocumentNumber, "document_type": string(doc.DocumentType)}, At: now,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
+}

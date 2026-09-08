@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -263,6 +264,102 @@ func TestAccounting_AutoPostOnSalesFinalize(t *testing.T) {
 	}
 	if entries[0].SourceType != "sales_document" || entries[0].SourceID == nil || *entries[0].SourceID != doc.ID {
 		t.Fatalf("ledger entry source = %s/%v, want sales_document/%s", entries[0].SourceType, entries[0].SourceID, doc.ID)
+	}
+}
+
+// TestSales_CancelDocument_ReversesStockAndLedgerExactly is the
+// regression test for the audit finding that StatusCancelled existed as
+// an enum value with nothing anywhere that ever set it: a mis-billed
+// invoice had no undo. Also the first real proof that
+// domain.Journal.ReversedJournalID — documented since Stage 6 as "how a
+// correction is always done" but never implemented — actually works.
+func TestSales_CancelDocument_ReversesStockAndLedgerExactly(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, inventorySvc := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	doc := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100")
+
+	balAfterSale, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetBalance after sale: %v", err)
+	}
+	if !balAfterSale.QuantityOnHand.Equal(mustDecimal(t, "90")) {
+		t.Fatalf("QuantityOnHand after sale = %s, want 90 (100 opening - 10 sold)", balAfterSale.QuantityOnHand)
+	}
+
+	cancelled, err := salesSvc.CancelDocument(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("CancelDocument: %v", err)
+	}
+	if cancelled.Status != salesdomain.StatusCancelled {
+		t.Fatalf("status after cancel = %s, want CANCELLED", cancelled.Status)
+	}
+
+	balAfterCancel, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetBalance after cancel: %v", err)
+	}
+	if !balAfterCancel.QuantityOnHand.Equal(mustDecimal(t, "100")) {
+		t.Fatalf("QuantityOnHand after cancel = %s, want 100 (fully restocked)", balAfterCancel.QuantityOnHand)
+	}
+
+	entries, err := accountingSvc.GetPartyLedger(ctx, fx.Principal, fx.CustomerID, time.Now())
+	if err != nil {
+		t.Fatalf("GetPartyLedger: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("customer ledger has %d entries after cancel, want 2 (original debit + reversal credit)", len(entries))
+	}
+	last := entries[len(entries)-1]
+	if got := last.RunningBalance.StringFixed(money.RoundHalfUp); got != "0.00" {
+		t.Fatalf("outstanding balance after cancelling the only invoice = %s, want exactly 0.00", got)
+	}
+	if entries[1].SourceType != "sales_document_cancellation" {
+		t.Fatalf("reversal entry SourceType = %s, want the cancellation posted under its own source type, not indistinguishable from the original sale", entries[1].SourceType)
+	}
+
+	// Cancelling an already-cancelled document must be rejected, not
+	// silently reverse the reversal.
+	if _, err := salesSvc.CancelDocument(ctx, fx.Principal, doc.ID); !errors.Is(err, salesdomain.ErrDocumentNotFinalized) {
+		t.Fatalf("CancelDocument (already cancelled) error = %v, want ErrDocumentNotFinalized", err)
+	}
+}
+
+// TestSales_CancelDocument_NonRevenueType_NoOpAccountingReversal proves
+// CancelDocument doesn't blow up on a document type that never posted a
+// journal or moved stock in the first place (a QUOTATION) — the
+// RevenueAffecting/StockAffecting guards must skip both reversal calls
+// entirely rather than erroring out looking for a journal that was
+// never posted.
+func TestSales_CancelDocument_NonRevenueType_NoOpAccountingReversal(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocQuotation, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	if _, err := salesSvc.AddLine(ctx, fx.Principal, salesapp.AddLineParams{
+		DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, "100"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	if _, err := salesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID); err != nil {
+		t.Fatalf("FinalizeDocument(quotation): %v", err)
+	}
+
+	cancelled, err := salesSvc.CancelDocument(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("CancelDocument(quotation): %v", err)
+	}
+	if cancelled.Status != salesdomain.StatusCancelled {
+		t.Fatalf("status = %s, want CANCELLED", cancelled.Status)
 	}
 }
 

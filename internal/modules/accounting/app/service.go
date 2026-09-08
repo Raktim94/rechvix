@@ -178,6 +178,12 @@ type JournalRequest struct {
 	Description    string
 	CreatedBy      uuid.UUID
 	Lines          []JournalLineRequest
+	// ReversedJournalID is set only by ReverseJournalForSourceTx — a
+	// direct caller of Post/PostTx has no reversal to link, since
+	// reversing IS the dedicated operation for that (see its own doc
+	// comment for why this isn't just another field callers fill in
+	// themselves).
+	ReversedJournalID *uuid.UUID
 }
 
 // Post is the standalone entry point (permission-checked, opens its own
@@ -274,7 +280,8 @@ func (s *Service) doPost(ctx context.Context, principal permissions.Principal, r
 	now := s.now()
 	j := &domain.Journal{
 		ID: id, OrganisationID: req.OrganisationID, SourceType: req.SourceType, SourceID: req.SourceID,
-		JournalDate: journalDate, Description: req.Description, CreatedBy: req.CreatedBy, CreatedAt: now,
+		JournalDate: journalDate, Description: req.Description, ReversedJournalID: req.ReversedJournalID,
+		CreatedBy: req.CreatedBy, CreatedAt: now,
 	}
 	if err := s.journals.Create(ctx, j); err != nil {
 		return nil, err
@@ -312,6 +319,54 @@ func (s *Service) doPost(ctx context.Context, principal permissions.Principal, r
 		return nil, err
 	}
 	return j, nil
+}
+
+// ReverseJournalForSourceTx posts a new journal that exactly reverses
+// the most recent journal already posted for (lookupSourceType,
+// sourceID) — every line's Debit/Credit swapped, same accounts and
+// parties, linked back via ReversedJournalID (domain.Journal's own doc
+// comment has always described this as the correction mechanism;
+// nothing had implemented it before this). The reversal itself is
+// posted under reversalSourceType (not lookupSourceType) — deliberately
+// a separate value, so a party's ledger (or anything else reading
+// SourceType) can tell a reversal apart from the original entry instead
+// of the two being indistinguishable rows with the same source. journals/
+// journal_lines are otherwise immutable by DB trigger (brief §7) — a
+// correction is always a new, fully independent entry, never an edit of
+// the original. Nested-transaction-safe (PostTx's own shape/doc comment
+// applies identically here): the caller must already be inside a
+// transaction scoped to principal's organisation. Returns
+// domain.ErrNotFound if no journal was ever posted for that source (a
+// document type that never posted one, e.g. a QUOTATION, correctly has
+// nothing to reverse — the caller decides whether that's an error or a
+// silent no-op for its own case).
+func (s *Service) ReverseJournalForSourceTx(ctx context.Context, principal permissions.Principal, lookupSourceType string, sourceID uuid.UUID, reversalSourceType string, description string) (*domain.Journal, error) {
+	original, err := s.journals.GetBySource(ctx, principal.OrganisationID, lookupSourceType, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	lines, err := s.journalLines.ListByJournal(ctx, principal.OrganisationID, original.ID)
+	if err != nil {
+		return nil, err
+	}
+	reqLines := make([]JournalLineRequest, 0, len(lines))
+	for _, l := range lines {
+		acct, err := s.accounts.GetByID(ctx, principal.OrganisationID, l.AccountID)
+		if err != nil {
+			return nil, fmt.Errorf("accounting: resolving account for reversal: %w", err)
+		}
+		reqLines = append(reqLines, JournalLineRequest{
+			AccountCode: acct.Code, PartyID: l.PartyID,
+			Debit: l.Credit.Decimal(), Credit: l.Debit.Decimal(), // swapped
+			Description: description,
+		})
+	}
+	reversalID := original.ID
+	return s.doPost(ctx, principal, JournalRequest{
+		OrganisationID: principal.OrganisationID, SourceType: reversalSourceType, SourceID: &sourceID,
+		JournalDate: s.now(), Description: description, CreatedBy: principal.UserID,
+		Lines: reqLines, ReversedJournalID: &reversalID,
+	})
 }
 
 func (s *Service) GetJournal(ctx context.Context, principal permissions.Principal, id uuid.UUID) (*domain.Journal, []*domain.JournalLine, error) {
