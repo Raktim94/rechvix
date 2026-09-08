@@ -14,6 +14,13 @@ interface Transaction {
   PaidAt?: string;
 }
 
+interface BankAccount {
+  ID: string;
+  Name: string;
+  Kind: "BANK" | "CASH";
+  IsActive: boolean;
+}
+
 const METHOD_LABELS: Record<string, string> = {
   CASH: "Cash",
   UPI: "UPI",
@@ -47,6 +54,19 @@ export function PaymentPanel({
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("CASH");
   const [reference, setReference] = useState("");
+  // Empty string means "no bank_account_id" — RecordReceipt/RecordPayment
+  // both default to the plain Cash ledger account in that case (their own
+  // doc comments). Without ever sending a real bank_account_id here, a
+  // payment recorded as "UPI" or "Bank transfer" was still posted to Cash
+  // in the books regardless — the Method field was purely descriptive
+  // metadata, not what actually decided which GL account was credited.
+  const [bankAccountId, setBankAccountId] = useState("");
+
+  const bankAccounts = useQuery({
+    queryKey: ["bank-accounts"],
+    queryFn: () => api.get<BankAccount[]>("/accounting/bank-accounts"),
+  });
+  const activeBankAccounts = (bankAccounts.data ?? []).filter((a) => a.IsActive && a.Kind === "BANK");
 
   const isReceive = direction === "RECEIVE";
   const listPath = isReceive ? `/accounting/sales-documents/${documentId}/receipts` : `/accounting/purchase-documents/${documentId}/payments`;
@@ -71,6 +91,7 @@ export function PaymentPanel({
         amount,
         method,
         reference_number: reference,
+        bank_account_id: bankAccountId || undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey });
@@ -78,6 +99,7 @@ export function PaymentPanel({
       void queryClient.invalidateQueries({ queryKey: ["party-ageing", partyId] });
       setAmount("");
       setReference("");
+      setBankAccountId("");
       setShowForm(false);
     },
   });
@@ -143,6 +165,19 @@ export function PaymentPanel({
               <label htmlFor="payment-reference">Reference (optional)</label>
               <input id="payment-reference" className={ui.input} value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UTR / cheque no." />
             </div>
+            {activeBankAccounts.length > 0 ? (
+              <div className={ui.field}>
+                <label htmlFor="payment-bank-account">{isReceive ? "Deposited to" : "Paid from"}</label>
+                <select id="payment-bank-account" className={ui.select} value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}>
+                  <option value="">Cash</option>
+                  {activeBankAccounts.map((a) => (
+                    <option key={a.ID} value={a.ID}>
+                      {a.Name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
           </div>
           <div className={ui.formActions} style={{ marginTop: 12 }}>
             <button type="button" className={ui.btnSecondary} onClick={() => setShowForm(false)}>

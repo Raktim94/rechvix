@@ -569,6 +569,163 @@ function ChangePasswordPanel() {
   );
 }
 
+interface BankAccount {
+  ID: string;
+  Name: string;
+  Kind: "BANK" | "CASH";
+  AccountNumber: string;
+  BankName: string;
+  IFSCCode: string;
+  IsActive: boolean;
+}
+
+/** POST/GET /accounting/bank-accounts had zero frontend callers — every
+ * receipt or payment recorded anywhere in the app (RecordReceipt/
+ * RecordPayment's own BankAccountID plumbing) silently posted to the
+ * Cash ledger account no matter what "method" (UPI, card, bank
+ * transfer...) was picked in that form, since nothing ever supplied a
+ * real bank_account_id for it to resolve instead. This panel is what
+ * makes a real bank account existablE at all; PaymentPanel now lets one
+ * be picked once this exists. */
+function BankAccountsPanel({ legalEntityId }: { legalEntityId: string }) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"BANK" | "CASH">("BANK");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [ifsc, setIfsc] = useState("");
+
+  const accounts = useQuery({
+    queryKey: ["bank-accounts"],
+    queryFn: () => api.get<BankAccount[]>("/accounting/bank-accounts"),
+  });
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.post("/accounting/bank-accounts", {
+        legal_entity_id: legalEntityId,
+        name,
+        kind,
+        account_number: accountNumber,
+        bank_name: bankName,
+        ifsc_code: ifsc,
+        currency_code: "INR",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      setName("");
+      setAccountNumber("");
+      setBankName("");
+      setIfsc("");
+      setShowForm(false);
+    },
+  });
+
+  return (
+    <div className={layout.panel}>
+      <div className={ui.toolbar}>
+        <h2 style={{ margin: 0 }}>Bank accounts</h2>
+        <div className={ui.toolbarSpacer} />
+        {!showForm ? (
+          <button type="button" className={ui.btnPrimary} onClick={() => setShowForm(true)}>
+            + New bank account
+          </button>
+        ) : null}
+      </div>
+      <p className={layout.subtitle} style={{ marginBottom: 16 }}>
+        Lets a receipt or payment be tagged to the actual account the money moved through, instead of always assuming cash.
+      </p>
+
+      {showForm ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name.trim()) create.mutate();
+          }}
+          style={{ marginBottom: 20 }}
+        >
+          <div className={ui.formGrid}>
+            <div className={ui.field}>
+              <label htmlFor="bank-name">Label</label>
+              <input id="bank-name" className={ui.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HDFC Current Account" required />
+            </div>
+            <div className={ui.field}>
+              <label htmlFor="bank-kind">Type</label>
+              <select id="bank-kind" className={ui.select} value={kind} onChange={(e) => setKind(e.target.value as "BANK" | "CASH")}>
+                <option value="BANK">Bank</option>
+                <option value="CASH">Cash drawer</option>
+              </select>
+            </div>
+            {kind === "BANK" ? (
+              <>
+                <div className={ui.field}>
+                  <label htmlFor="bank-institution">Bank name</label>
+                  <input id="bank-institution" className={ui.input} value={bankName} onChange={(e) => setBankName(e.target.value)} />
+                </div>
+                <div className={ui.field}>
+                  <label htmlFor="bank-account-number">Account number</label>
+                  <input id="bank-account-number" className={ui.input} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} />
+                </div>
+                <div className={ui.field}>
+                  <label htmlFor="bank-ifsc">IFSC</label>
+                  <input id="bank-ifsc" className={ui.input} value={ifsc} onChange={(e) => setIfsc(e.target.value)} />
+                </div>
+              </>
+            ) : null}
+          </div>
+          <div className={ui.formActions} style={{ marginTop: 12 }}>
+            <button type="button" className={ui.btnSecondary} onClick={() => setShowForm(false)}>
+              Cancel
+            </button>
+            <button type="submit" className={ui.btnPrimary} disabled={!name.trim() || create.isPending}>
+              {create.isPending ? "Adding…" : "Add"}
+            </button>
+          </div>
+          {create.isError ? (
+            <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+              {create.error instanceof ApiError ? create.error.message : "Could not add this bank account."}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
+
+      {accounts.isPending ? (
+        <div className={layout.skeleton} style={{ height: 80 }} aria-hidden="true" />
+      ) : (accounts.data ?? []).length === 0 ? (
+        <p className={layout.emptyState}>No bank accounts yet — receipts and payments will post to Cash by default.</p>
+      ) : (
+        <div className={ui.tableScroll}>
+          <table className={ui.table}>
+            <thead>
+              <tr>
+                <th scope="col">Label</th>
+                <th scope="col">Type</th>
+                <th scope="col">Bank</th>
+                <th scope="col">Account no.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(accounts.data ?? []).map((a) => (
+                <tr key={a.ID}>
+                  <td>{a.Name}</td>
+                  <td>
+                    <span className={ui.badge} data-tone={a.Kind === "CASH" ? "neutral" : "positive"}>
+                      {a.Kind === "CASH" ? "Cash" : "Bank"}
+                    </span>
+                  </td>
+                  <td>{a.BankName || "—"}</td>
+                  <td>{a.AccountNumber || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const org = useOrgContext();
 
@@ -634,6 +791,8 @@ export function SettingsPage() {
           <Link to="/gst">GST / Tax</Link> page.
         </p>
       </div>
+
+      {org.legalEntity ? <BankAccountsPanel legalEntityId={org.legalEntity.ID} /> : null}
 
       <ScanningPanel />
 
