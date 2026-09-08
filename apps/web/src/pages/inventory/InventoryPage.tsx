@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
@@ -212,6 +213,13 @@ export function InventoryPage() {
           <h1>Inventory</h1>
           <p className={layout.subtitle}>Search a product to see its stock, movement history, and adjust it.</p>
         </div>
+        {/* This page could only ever search products that already existed —
+            someone realising mid-stocktake that a product isn't in the
+            system had to work out on their own that products are created
+            over on Catalogue. */}
+        <Link to="/catalogue" search={{ new: true }} className={ui.btnPrimary}>
+          + New product
+        </Link>
       </div>
 
       <div className={layout.panel}>

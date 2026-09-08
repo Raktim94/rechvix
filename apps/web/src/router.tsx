@@ -161,7 +161,21 @@ const salesDetailRoute = createRoute({
 
 const purchasesRoute = realRoute("/purchases", PurchasesPage);
 const inventoryRoute = realRoute("/inventory", InventoryPage);
-const catalogueRoute = realRoute("/catalogue", CataloguePage);
+// ?new=1 opens the add-product form on arrival, so a "+ New product"
+// button on another page (Inventory, Billing) can land the user directly
+// on the form instead of on a list they then have to find a button in.
+const catalogueRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/catalogue",
+  beforeLoad: requireAuth,
+  validateSearch: (search: Record<string, unknown>): { new?: boolean } => ({
+    new: search.new === true || search.new === "1" || search.new === "true" ? true : undefined,
+  }),
+  component: withShell(() => {
+    const { new: openNew } = useSearch({ from: catalogueRoute.id });
+    return <CataloguePage openNewForm={!!openNew} />;
+  }),
+});
 const pricingRoute = realRoute("/pricing", PricingPage);
 const contactsRoute = realRoute("/contacts", ContactsPage);
 const contactDetailRoute = createRoute({

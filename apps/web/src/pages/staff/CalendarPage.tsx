@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import modal from "../../components/Modal.module.css";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { monthGrid, toLocalIsoDate } from "../../lib/calendarGrid";
@@ -52,6 +53,10 @@ export function CalendarPage() {
   const [selectedIso, setSelectedIso] = useState(toLocalIsoDate(today));
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskAssignee, setNewTaskAssignee] = useState("");
+  // Google-Calendar-style quick composer: opens on the selected day,
+  // Enter saves, Escape closes — so adding something to a date never
+  // means scrolling to find a form.
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const cells = monthGrid(viewYear, viewMonth);
   const rangeFrom = cells[0]?.iso ?? selectedIso;
@@ -102,6 +107,7 @@ export function CalendarPage() {
       void queryClient.invalidateQueries({ queryKey: ["staff-tasks"] });
       setNewTaskTitle("");
       setNewTaskAssignee("");
+      setComposerOpen(false);
     },
   });
 
@@ -127,6 +133,9 @@ export function CalendarPage() {
           <h1>Calendar</h1>
           <p className={layout.subtitle}>Staff attendance and tasks, day by day.</p>
         </div>
+        <button type="button" className={ui.btnPrimary} onClick={() => setComposerOpen(true)}>
+          + New task
+        </button>
       </div>
 
       <div className={layout.panel}>
@@ -166,6 +175,11 @@ export function CalendarPage() {
                 data-today={cell.iso === toLocalIsoDate(today)}
                 data-selected={cell.iso === selectedIso}
                 onClick={() => setSelectedIso(cell.iso)}
+                onDoubleClick={() => {
+                  setSelectedIso(cell.iso);
+                  setComposerOpen(true);
+                }}
+                title="Click to open this day · double-click to add a task"
               >
                 <span className={styles.dayNumber}>{cell.date.getDate()}</span>
                 <span className={styles.dayBadges}>
@@ -275,6 +289,67 @@ export function CalendarPage() {
           </div>
         </div>
       </div>
+
+      {composerOpen ? (
+        <div className={modal.overlay} onClick={() => setComposerOpen(false)}>
+          <div className={modal.dialog} role="dialog" aria-modal="true" aria-label="New task" onClick={(e) => e.stopPropagation()}>
+            <div className={modal.header}>
+              <h2>New task</h2>
+              <button type="button" className={modal.closeButton} aria-label="Close" onClick={() => setComposerOpen(false)}>
+                ×
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (newTaskTitle.trim()) addTask.mutate();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setComposerOpen(false);
+              }}
+            >
+              <div className={modal.body}>
+                <div className={ui.field}>
+                  <label htmlFor="composer-title">Task</label>
+                  <input
+                    id="composer-title"
+                    className={ui.input}
+                    autoFocus
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    placeholder="e.g. Pay electricity bill"
+                  />
+                </div>
+                <div className={ui.formGrid}>
+                  <div className={ui.field}>
+                    <label htmlFor="composer-date">Date</label>
+                    <input id="composer-date" type="date" className={ui.input} value={selectedIso} onChange={(e) => setSelectedIso(e.target.value)} />
+                  </div>
+                  <div className={ui.field}>
+                    <label htmlFor="composer-assignee">Assign to</label>
+                    <select id="composer-assignee" className={ui.select} value={newTaskAssignee} onChange={(e) => setNewTaskAssignee(e.target.value)}>
+                      <option value="">Unassigned</option>
+                      {activeStaff.map((m) => (
+                        <option key={m.ID} value={m.ID}>
+                          {m.Name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className={modal.footer}>
+                <button type="button" className={ui.btnSecondary} onClick={() => setComposerOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className={ui.btnPrimary} disabled={!newTaskTitle.trim() || addTask.isPending}>
+                  {addTask.isPending ? "Saving…" : "Add task"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

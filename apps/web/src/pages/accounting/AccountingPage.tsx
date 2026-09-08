@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
 import { api } from "../../lib/api-client";
@@ -25,6 +26,9 @@ export function AccountingPage() {
           <h1>Accounting</h1>
           <p className={layout.subtitle}>Chart of accounts, trial balance, and who owes what.</p>
         </div>
+        <Link to="/expenses" className={ui.btnPrimary}>
+          + Record expense
+        </Link>
       </div>
 
       <div className={layout.panel}>

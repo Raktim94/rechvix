@@ -27,10 +27,14 @@ interface Brand {
   Name: string;
 }
 
-export function CataloguePage() {
+export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  // Opened directly from another page's "+ New product" button (e.g.
+  // Inventory, where a shop owner discovers a product doesn't exist yet)
+  // via /catalogue?new=1 — the form is right here, it just used to be
+  // one unexplained click away for anyone arriving from elsewhere.
+  const [showForm, setShowForm] = useState(openNewForm);
   const [name, setName] = useState("");
   const [hsn, setHsn] = useState("");
   const [unitId, setUnitId] = useState("");
