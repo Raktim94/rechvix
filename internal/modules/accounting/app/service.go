@@ -16,6 +16,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -336,12 +337,18 @@ func (s *Service) doPost(ctx context.Context, principal permissions.Principal, r
 // the original. Nested-transaction-safe (PostTx's own shape/doc comment
 // applies identically here): the caller must already be inside a
 // transaction scoped to principal's organisation. Returns
-// domain.ErrNotFound if no journal was ever posted for that source (a
-// document type that never posted one, e.g. a QUOTATION, correctly has
-// nothing to reverse — the caller decides whether that's an error or a
-// silent no-op for its own case).
+// Returns (nil, nil) — not an error — if no journal was ever posted for
+// that source: FinalizeDocument-style callers only post a journal when
+// there's a non-zero amount to post (both sales and purchases guard
+// this, though not identically — sales rejects a zero-value document
+// outright at finalize time via ErrZeroValueDocument, purchases simply
+// skips posting), so "finalized but nothing was ever booked" is a real,
+// legitimate state to cancel out of, not a caller error.
 func (s *Service) ReverseJournalForSourceTx(ctx context.Context, principal permissions.Principal, lookupSourceType string, sourceID uuid.UUID, reversalSourceType string, description string) (*domain.Journal, error) {
 	original, err := s.journals.GetBySource(ctx, principal.OrganisationID, lookupSourceType, sourceID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

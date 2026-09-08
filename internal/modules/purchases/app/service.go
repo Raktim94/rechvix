@@ -334,3 +334,85 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 	}
 	return doc, nil
 }
+
+// CancelDocument voids a mis-entered FINALIZED purchase document: mirrors
+// sales.Service.CancelDocument (internal/modules/sales/app/service.go)
+// exactly — reverses its stock effect (StockAffecting types only) and
+// its accounting effect (AccountingAffecting types only) via a
+// swapped-Debit/Credit reversal journal linked back through
+// ReversedJournalID, rather than reconstructing one from the document's
+// own totals. Uses purchases.finalize — the same permission that let
+// this document be finalized is what's needed to undo that.
+func (s *Service) CancelDocument(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*domain.Document, error) {
+	if err := s.finalizePerm(ctx, principal); err != nil {
+		return nil, err
+	}
+	now := s.now()
+	var doc *domain.Document
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		doc, err = s.documents.GetByID(ctx, principal.OrganisationID, documentID)
+		if err != nil {
+			return err
+		}
+		if doc.Status != domain.StatusFinalized {
+			return domain.ErrDocumentNotFinalized
+		}
+		lines, err := s.lines.ListByDocument(ctx, documentID)
+		if err != nil {
+			return err
+		}
+
+		if domain.StockAffecting(doc.DocumentType, doc.ReferenceDocumentID) {
+			// The reversal of whatever finalize originally posted: a
+			// document that put stock in (GOODS_RECEIPT/PURCHASE_INVOICE)
+			// gets it taken back out via PURCHASE_RETURN's movement type;
+			// one that already took it out (PURCHASE_RETURN itself,
+			// cancelled) puts it back in via the receipt movement type.
+			movementType := inventorydomain.MovementPurchaseReturn
+			if doc.DocumentType == domain.DocPurchaseReturn {
+				movementType = inventorydomain.MovementPurchaseReceipt
+			}
+			for _, line := range lines {
+				params := inventoryapp.RecordMovementParams{
+					WarehouseID: doc.WarehouseID, ProductVariantID: line.ProductVariantID, MovementType: movementType,
+					UnitID: line.UnitID, Quantity: line.Quantity,
+					ReferenceType: "purchase_document", ReferenceID: &doc.ID,
+					Notes: fmt.Sprintf("Cancellation of %s %s line %d", doc.DocumentType, doc.DocumentNumber, line.LineNumber),
+				}
+				if line.BatchCode != "" {
+					batchCode := line.BatchCode
+					params.BatchCode = &batchCode
+				}
+				if inventorydomain.IsReceipt(movementType) {
+					cost := line.UnitPrice.Decimal()
+					params.UnitCost = &cost
+				}
+				if _, err := s.inventory.RecordMovementForOtherModule(ctx, principal.OrganisationID, principal.UserID, params); err != nil {
+					return fmt.Errorf("reversing stock movement for line %d: %w", line.LineNumber, err)
+				}
+			}
+		}
+
+		if s.accounting != nil && domain.AccountingAffecting(doc.DocumentType) {
+			if _, err := s.accounting.ReverseJournalForSourceTx(ctx, principal, "purchase_document", doc.ID, "purchase_document_cancellation", "Cancellation of "+doc.DocumentNumber); err != nil {
+				return fmt.Errorf("reversing purchase journal: %w", err)
+			}
+		}
+
+		if err := s.documents.UpdateStatus(ctx, documentID, domain.StatusCancelled, &now); err != nil {
+			return err
+		}
+		doc.Status = domain.StatusCancelled
+
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "purchase_document.cancelled", EntityType: "purchase_document", EntityID: &doc.ID,
+			AfterState: map[string]any{"document_number": doc.DocumentNumber, "document_type": string(doc.DocumentType)}, At: now,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
+}

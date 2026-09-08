@@ -10,6 +10,7 @@ import { getOcrProvider, runOcr } from "../../lib/ocr";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
+import { CancelPurchaseModal } from "./CancelPurchaseModal";
 import { PurchaseScanReviewModal, type ResolvedScanLine } from "./PurchaseScanReviewModal";
 
 type PurchaseStatus = "DRAFT" | "FINALIZED" | "CANCELLED";
@@ -63,6 +64,7 @@ export function PurchasesPage() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [parsedBill, setParsedBill] = useState<ParsedBill | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
   const documents = useQuery({
     queryKey: ["purchase-documents"],
@@ -218,6 +220,13 @@ export function PurchasesPage() {
   if (creating || activeDocId) {
     const lines = activeDoc.data?.lines ?? [];
     const finalized = activeDoc.data?.document.Status === "FINALIZED";
+    const cancelled = activeDoc.data?.document.Status === "CANCELLED";
+    // Editable state — a document is only still a work-in-progress DRAFT
+    // when it's neither finalized nor cancelled. `!finalized` alone used
+    // to also mean "draft" back when CANCELLED was unreachable; now that
+    // CancelDocument can actually produce one, a cancelled document must
+    // not fall back into the add-line/finalize form.
+    const editable = !finalized && !cancelled;
     return (
       <div className={layout.page}>
         <div className={layout.heading}>
@@ -307,7 +316,7 @@ export function PurchasesPage() {
           </div>
         ) : (
           <>
-            {!finalized ? (
+            {editable ? (
               <div className={layout.panel}>
                 <div className={ui.formGrid}>
                   <div className={ui.field} style={{ gridColumn: "span 2" }}>
@@ -370,16 +379,25 @@ export function PurchasesPage() {
                   </table>
                 </div>
               )}
-              {!finalized ? (
+              {editable ? (
                 <div className={ui.formActions} style={{ marginTop: 12 }}>
                   <button type="button" className={ui.btnPrimary} disabled={lines.length === 0 || finalize.isPending} onClick={() => finalize.mutate()}>
                     Finalize purchase
                   </button>
                 </div>
-              ) : (
-                <p className={ui.badge} data-tone="positive" style={{ marginTop: 12 }}>
-                  Finalized
+              ) : cancelled ? (
+                <p className={ui.badge} data-tone="negative" style={{ marginTop: 12 }}>
+                  Cancelled
                 </p>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+                  <p className={ui.badge} data-tone="positive" style={{ margin: 0 }}>
+                    Finalized
+                  </p>
+                  <button type="button" className={ui.btnSecondary} onClick={() => setCancelModalOpen(true)}>
+                    Cancel purchase
+                  </button>
+                </div>
               )}
             </div>
 
@@ -397,6 +415,16 @@ export function PurchasesPage() {
                     : null
                 }
                 direction="PAY"
+              />
+            ) : null}
+
+            {activeDoc.data ? (
+              <CancelPurchaseModal
+                open={cancelModalOpen}
+                onOpenChange={setCancelModalOpen}
+                documentId={activeDoc.data.document.ID}
+                documentNumber={activeDoc.data.document.DocumentNumber}
+                currencyCode={lines[0]?.LineTotal.currency ?? org.organisation?.DefaultCurrencyCode ?? "INR"}
               />
             ) : null}
           </>
@@ -499,7 +527,7 @@ export function PurchasesPage() {
                     <td>{supplierNameById.get(d.SupplierPartyID) ?? "—"}</td>
                     <td>{d.DocumentType}</td>
                     <td>
-                      <span className={ui.badge} data-tone={d.Status === "FINALIZED" ? "positive" : "warning"}>
+                      <span className={ui.badge} data-tone={d.Status === "FINALIZED" ? "positive" : d.Status === "CANCELLED" ? "negative" : "warning"}>
                         {d.Status}
                       </span>
                     </td>

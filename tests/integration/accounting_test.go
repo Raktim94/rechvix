@@ -403,6 +403,114 @@ func TestAccounting_AutoPostOnPurchaseFinalize(t *testing.T) {
 	}
 }
 
+// TestPurchases_CancelDocument_ReversesStockAndLedgerExactly mirrors
+// TestSales_CancelDocument_ReversesStockAndLedgerExactly exactly, on the
+// purchases side: a PURCHASE_INVOICE puts stock in and books a payable;
+// cancelling it must take the stock back out and net the payable to
+// zero via its own, distinctly-sourced reversal journal.
+func TestPurchases_CancelDocument_ReversesStockAndLedgerExactly(t *testing.T) {
+	ctx := context.Background()
+	_, purchasesSvc, accountingSvc, inventorySvc := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	doc, err := purchasesSvc.CreateDocument(ctx, fx.Principal, purchasesapp.CreateDocumentParams{
+		BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, SupplierPartyID: fx.SupplierID,
+		DocumentType: purchasesdomain.DocPurchaseInvoice, CurrencyCode: "INR", DocumentDate: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	if _, err := purchasesSvc.AddLine(ctx, fx.Principal, purchasesapp.AddLineParams{
+		DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "5"), UnitPrice: mustDecimal(t, "200"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	if _, err := purchasesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID); err != nil {
+		t.Fatalf("FinalizeDocument: %v", err)
+	}
+
+	balAfterPurchase, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetBalance after purchase: %v", err)
+	}
+	if !balAfterPurchase.QuantityOnHand.Equal(mustDecimal(t, "105")) {
+		t.Fatalf("QuantityOnHand after purchase = %s, want 105 (100 opening + 5 received)", balAfterPurchase.QuantityOnHand)
+	}
+
+	cancelled, err := purchasesSvc.CancelDocument(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("CancelDocument: %v", err)
+	}
+	if cancelled.Status != purchasesdomain.StatusCancelled {
+		t.Fatalf("status after cancel = %s, want CANCELLED", cancelled.Status)
+	}
+
+	balAfterCancel, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetBalance after cancel: %v", err)
+	}
+	if !balAfterCancel.QuantityOnHand.Equal(mustDecimal(t, "100")) {
+		t.Fatalf("QuantityOnHand after cancel = %s, want 100 (back to opening)", balAfterCancel.QuantityOnHand)
+	}
+
+	entries, err := accountingSvc.GetPartyLedger(ctx, fx.Principal, fx.SupplierID, time.Now())
+	if err != nil {
+		t.Fatalf("GetPartyLedger: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("supplier ledger has %d entries after cancel, want 2 (original credit + reversal debit)", len(entries))
+	}
+	last := entries[len(entries)-1]
+	if got := last.RunningBalance.StringFixed(money.RoundHalfUp); got != "0.00" {
+		t.Fatalf("outstanding balance after cancelling the only bill = %s, want exactly 0.00", got)
+	}
+	if entries[1].SourceType != "purchase_document_cancellation" {
+		t.Fatalf("reversal entry SourceType = %s, want purchase_document_cancellation", entries[1].SourceType)
+	}
+
+	if _, err := purchasesSvc.CancelDocument(ctx, fx.Principal, doc.ID); !errors.Is(err, purchasesdomain.ErrDocumentNotFinalized) {
+		t.Fatalf("CancelDocument (already cancelled) error = %v, want ErrDocumentNotFinalized", err)
+	}
+}
+
+// TestPurchases_CancelDocument_NonStockNonAccountingType_NoOp proves
+// CancelDocument doesn't blow up on a PURCHASE_ORDER — a commitment
+// that never posts stock or a journal in the first place (neither
+// StockAffecting nor AccountingAffecting), so both reversal calls must
+// be skipped entirely rather than erroring out looking for something
+// that was never posted.
+func TestPurchases_CancelDocument_NonStockNonAccountingType_NoOp(t *testing.T) {
+	ctx := context.Background()
+	_, purchasesSvc, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	doc, err := purchasesSvc.CreateDocument(ctx, fx.Principal, purchasesapp.CreateDocumentParams{
+		BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, SupplierPartyID: fx.SupplierID,
+		DocumentType: purchasesdomain.DocPurchaseOrder, CurrencyCode: "INR", DocumentDate: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	if _, err := purchasesSvc.AddLine(ctx, fx.Principal, purchasesapp.AddLineParams{
+		DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, "200"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	if _, err := purchasesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID); err != nil {
+		t.Fatalf("FinalizeDocument(purchase order): %v", err)
+	}
+
+	cancelled, err := purchasesSvc.CancelDocument(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("CancelDocument(purchase order): %v", err)
+	}
+	if cancelled.Status != purchasesdomain.StatusCancelled {
+		t.Fatalf("status = %s, want CANCELLED", cancelled.Status)
+	}
+}
+
 // finalizeSimpleTaxInvoice creates and finalizes one TAX_INVOICE line
 // (qty * price, exclusive pricing, the fixture's 18% intra-state HSN) —
 // shared by several tests above that only need "some finalized sale

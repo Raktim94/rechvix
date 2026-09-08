@@ -28,6 +28,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/purchases/documents/{id}", h.getDocument)
 	r.Post("/purchases/documents/{id}/lines", h.addLine)
 	r.Post("/purchases/documents/{id}/finalize", h.finalizeDocument)
+	r.Post("/purchases/documents/{id}/cancel", h.cancelDocument)
 }
 
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -49,6 +50,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, httpx.NewConflict("DOCUMENT_NOT_DRAFT", "This document is not in DRAFT status and cannot be modified or finalized again."))
 	case errors.Is(err, domain.ErrEmptyDocument):
 		httpx.WriteError(w, r, httpx.NewConflict("EMPTY_DOCUMENT", "A document needs at least one line before it can be finalized."))
+	case errors.Is(err, domain.ErrDocumentNotFinalized):
+		httpx.WriteError(w, r, httpx.NewConflict("DOCUMENT_NOT_FINALIZED", "Only a FINALIZED document can be cancelled."))
 	case errors.Is(err, domain.ErrDuplicateNumber):
 		httpx.WriteError(w, r, httpx.NewConflict("DUPLICATE_NUMBER", "That document number is already in use."))
 	case errors.As(err, &forbidden):
@@ -174,6 +177,20 @@ func (h *Handlers) finalizeDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, err := h.svc.FinalizeDocument(r.Context(), principal(r), id)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, doc)
+}
+
+func (h *Handlers) cancelDocument(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	doc, err := h.svc.CancelDocument(r.Context(), principal(r), id)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
