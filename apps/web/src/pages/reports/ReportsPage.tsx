@@ -41,8 +41,30 @@ export function ReportsPage() {
         <ReportTable path="/reports/purchases/summary?format=json" />
       </div>
       <div className={layout.panel}>
+        <h2>Purchase documents</h2>
+        <ReportTable path="/reports/purchases/documents?format=json" emptyLabel="No purchases recorded yet." />
+      </div>
+      <div className={layout.panel}>
         <h2>Stock movements</h2>
         <ReportTable path="/reports/inventory/movements?format=json" emptyLabel="No stock movements recorded yet." />
+      </div>
+
+      {/* Trial balance/receivables/payables also live on Accounting
+          (alongside the chart of accounts they're derived from) — shown
+          here too since "Reports" is where anyone actually goes looking
+          for them; same ReportTable, same live data, just a second door
+          into it rather than a duplicate implementation. */}
+      <div className={layout.panel}>
+        <h2>Trial balance</h2>
+        <ReportTable path="/reports/accounting/trial-balance?format=json" />
+      </div>
+      <div className={layout.panel}>
+        <h2>Receivables (who owes you)</h2>
+        <ReportTable path="/reports/accounting/receivables?format=json" emptyLabel="Nobody owes you anything right now." />
+      </div>
+      <div className={layout.panel}>
+        <h2>Payables (what you owe)</h2>
+        <ReportTable path="/reports/accounting/payables?format=json" emptyLabel="You don't owe any suppliers right now." />
       </div>
     </div>
   );
