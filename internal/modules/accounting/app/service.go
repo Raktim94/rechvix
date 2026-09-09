@@ -32,18 +32,19 @@ import (
 )
 
 type Service struct {
-	pool            database.Runner
-	accounts        domain.AccountRepository
-	journals        domain.JournalRepository
-	journalLines    domain.JournalLineRepository
-	fiscalPeriods   domain.FiscalPeriodRepository
-	bankAccounts    domain.BankAccountRepository
-	receipts        domain.ReceiptRepository
-	payments        domain.PaymentRepository
-	reconciliations domain.ReconciliationRepository
-	permissions     *permissions.Checker
-	audit           audit.Recorder
-	now             func() time.Time
+	pool               database.Runner
+	accounts           domain.AccountRepository
+	journals           domain.JournalRepository
+	journalLines       domain.JournalLineRepository
+	fiscalPeriods      domain.FiscalPeriodRepository
+	bankAccounts       domain.BankAccountRepository
+	receipts           domain.ReceiptRepository
+	payments           domain.PaymentRepository
+	reconciliations    domain.ReconciliationRepository
+	expenseAttachments domain.ExpenseAttachmentRepository
+	permissions        *permissions.Checker
+	audit              audit.Recorder
+	now                func() time.Time
 }
 
 func NewService(
@@ -56,12 +57,13 @@ func NewService(
 	receipts domain.ReceiptRepository,
 	payments domain.PaymentRepository,
 	reconciliations domain.ReconciliationRepository,
+	expenseAttachments domain.ExpenseAttachmentRepository,
 	checker *permissions.Checker,
 	recorder audit.Recorder,
 ) *Service {
 	return &Service{pool: pool, accounts: accounts, journals: journals, journalLines: journalLines,
 		fiscalPeriods: fiscalPeriods, bankAccounts: bankAccounts, receipts: receipts, payments: payments,
-		reconciliations: reconciliations, permissions: checker, audit: recorder, now: time.Now}
+		reconciliations: reconciliations, expenseAttachments: expenseAttachments, permissions: checker, audit: recorder, now: time.Now}
 }
 
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
@@ -431,6 +433,108 @@ func (s *Service) ListExpenseEntries(ctx context.Context, principal permissions.
 		return err
 	})
 	return out, err
+}
+
+// --- Expense attachments ---
+
+// maxExpenseAttachmentBytes mirrors expense_attachments.file_size_bytes'
+// own CHECK constraint (migrations/0040) — enforced here too so an
+// oversized upload gets a clear error message instead of a raw DB
+// constraint-violation.
+const maxExpenseAttachmentBytes = 8 * 1024 * 1024
+
+var allowedExpenseAttachmentTypes = map[string]bool{
+	"image/png": true, "image/jpeg": true, "image/webp": true, "application/pdf": true,
+}
+
+type UploadExpenseAttachmentParams struct {
+	JournalID   uuid.UUID
+	Filename    string
+	ContentType string
+	Data        []byte
+}
+
+func (s *Service) UploadExpenseAttachment(ctx context.Context, principal permissions.Principal, p UploadExpenseAttachmentParams) (*domain.ExpenseAttachment, error) {
+	if err := s.post(ctx, principal); err != nil {
+		return nil, err
+	}
+	if len(p.Data) == 0 {
+		return nil, fmt.Errorf("accounting: attachment file is empty")
+	}
+	if len(p.Data) > maxExpenseAttachmentBytes {
+		return nil, fmt.Errorf("accounting: attachment is too large — please use a file under 8MB")
+	}
+	if !allowedExpenseAttachmentTypes[p.ContentType] {
+		return nil, fmt.Errorf("accounting: attachment must be a PNG, JPEG, WEBP, or PDF file")
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("accounting: generating expense attachment id: %w", err)
+	}
+	att := &domain.ExpenseAttachment{
+		ID: id, OrganisationID: principal.OrganisationID, JournalID: p.JournalID,
+		Filename: p.Filename, ContentType: p.ContentType, FileData: p.Data,
+		FileSizeBytes: int64(len(p.Data)), CreatedBy: principal.UserID, CreatedAt: s.now(),
+	}
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.expenseAttachments.Create(ctx, att); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "expense_attachment.uploaded", EntityType: "expense_attachment", EntityID: &id,
+			AfterState: map[string]any{"journal_id": p.JournalID, "filename": p.Filename, "size_bytes": len(p.Data)}, At: att.CreatedAt,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return att, nil
+}
+
+func (s *Service) ListExpenseAttachments(ctx context.Context, principal permissions.Principal, journalID uuid.UUID) ([]*domain.ExpenseAttachment, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out []*domain.ExpenseAttachment
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.expenseAttachments.ListByJournal(ctx, principal.OrganisationID, journalID)
+		return err
+	})
+	return out, err
+}
+
+// GetExpenseAttachment returns the full attachment INCLUDING its bytes —
+// the download path only. Never use this for a list view (see
+// ExpenseAttachment's own doc comment).
+func (s *Service) GetExpenseAttachment(ctx context.Context, principal permissions.Principal, id uuid.UUID) (*domain.ExpenseAttachment, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out *domain.ExpenseAttachment
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.expenseAttachments.Get(ctx, principal.OrganisationID, id)
+		return err
+	})
+	return out, err
+}
+
+func (s *Service) DeleteExpenseAttachment(ctx context.Context, principal permissions.Principal, id uuid.UUID) error {
+	if err := s.post(ctx, principal); err != nil {
+		return err
+	}
+	now := s.now()
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.expenseAttachments.Delete(ctx, principal.OrganisationID, id); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "expense_attachment.deleted", EntityType: "expense_attachment", EntityID: &id, At: now,
+		})
+	})
 }
 
 // --- Receipts / Payments ---

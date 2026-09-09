@@ -7,6 +7,7 @@ import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import layout from "../DashboardPage.module.css";
+import { ALLOWED_TYPES, ExpenseAttachments, MAX_ATTACHMENT_BYTES, readFileAsBase64 } from "./ExpenseAttachments";
 
 interface Account {
   ID: string;
@@ -26,6 +27,16 @@ interface ExpenseEntry {
 }
 
 const CASH_BANK_CODES = new Set(["1000", "1010"]);
+// "General Expenses" (accounting.domain.CodeGeneralExpenses) is the
+// default chart's own catch-all EXPENSE account -- exactly the "Other"
+// category a shop owner needs when nothing else fits, it just wasn't
+// labeled that way here. Relabeling it in this one picker (not renaming
+// the underlying account, which other screens/reports already reference
+// by its real name) and requiring the Note field once it's picked is
+// what actually makes "type your own expense" work, without inventing a
+// second, ad-hoc "free-text category" concept alongside a real
+// double-entry chart of accounts.
+const OTHER_CATEGORY_CODE = "5990";
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -45,6 +56,8 @@ export function ExpensesPage() {
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIsoDate);
   const [note, setNote] = useState("");
+  const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
 
   const accounts = useQuery({
     queryKey: ["accounts"],
@@ -78,8 +91,8 @@ export function ExpensesPage() {
     .reduce((sum, e) => sum + Number(e.Amount.amount), 0);
 
   const record = useMutation({
-    mutationFn: () =>
-      api.post("/accounting/journals", {
+    mutationFn: async () => {
+      const journal = await api.post<{ ID: string }>("/accounting/journals", {
         source_type: "manual_expense",
         journal_date: new Date(date).toISOString(),
         description: note,
@@ -87,15 +100,35 @@ export function ExpensesPage() {
           { account_code: category, debit: amount, credit: "0", description: note },
           { account_code: paidVia, debit: "0", credit: amount, description: note },
         ],
-      }),
+      });
+      if (attachFile) {
+        try {
+          const base64 = await readFileAsBase64(attachFile);
+          await api.post(`/accounting/expenses/${journal.ID}/attachments`, {
+            filename: attachFile.name,
+            content_type: attachFile.type,
+            data_base64: base64,
+          });
+        } catch (err) {
+          // The expense itself is already recorded at this point --
+          // don't make a receipt-photo upload failure look like the
+          // whole entry failed. Surfaced separately so the shop owner
+          // knows to attach it again from the row below instead.
+          setAttachError(err instanceof ApiError ? err.message : "Expense recorded, but the attachment could not be uploaded.");
+        }
+      }
+      return journal;
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["expenses"] });
       setAmount("");
+      setAttachFile(null);
       setNote("");
     },
   });
 
-  const ready = !!category && !!paidVia && Number(amount) > 0;
+  const isOther = category === OTHER_CATEGORY_CODE;
+  const ready = !!category && !!paidVia && Number(amount) > 0 && (!isOther || note.trim().length > 0);
 
   return (
     <div className={layout.page}>
@@ -132,7 +165,7 @@ export function ExpensesPage() {
                 <select id="expense-category" className={ui.select} value={category || expenseAccounts[0]?.Code} onChange={(e) => setCategory(e.target.value)}>
                   {expenseAccounts.map((a) => (
                     <option key={a.ID} value={a.Code}>
-                      {a.Name}
+                      {a.Code === OTHER_CATEGORY_CODE ? "Other (describe below)" : a.Name}
                     </option>
                   ))}
                 </select>
@@ -156,8 +189,39 @@ export function ExpensesPage() {
                 <input id="expense-date" type="date" className={ui.input} value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
               <div className={ui.field} style={{ gridColumn: "span 2" }}>
-                <label htmlFor="expense-note">Note</label>
-                <input id="expense-note" className={ui.input} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Electricity bill for August" />
+                <label htmlFor="expense-note">{isOther ? "What was this expense for? (required)" : "Note"}</label>
+                <input
+                  id="expense-note"
+                  className={ui.input}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={isOther ? "e.g. Diwali decorations for the shop front" : "e.g. Electricity bill for August"}
+                  required={isOther}
+                />
+              </div>
+              <div className={ui.field} style={{ gridColumn: "span 2" }}>
+                <label htmlFor="expense-attachment">Attach a receipt or bill (optional)</label>
+                <input
+                  id="expense-attachment"
+                  type="file"
+                  className={ui.input}
+                  accept="image/png,image/jpeg,image/webp,application/pdf"
+                  onChange={(e) => {
+                    setAttachError(null);
+                    const file = e.target.files?.[0] ?? null;
+                    if (file && file.size > MAX_ATTACHMENT_BYTES) {
+                      setAttachError("File is too large — please use one under 8MB.");
+                      e.target.value = "";
+                      return;
+                    }
+                    if (file && !ALLOWED_TYPES.has(file.type)) {
+                      setAttachError("Please attach a PNG, JPEG, WEBP, or PDF file.");
+                      e.target.value = "";
+                      return;
+                    }
+                    setAttachFile(file);
+                  }}
+                />
               </div>
             </div>
             <div className={ui.formActions} style={{ marginTop: 16 }}>
@@ -168,6 +232,11 @@ export function ExpensesPage() {
             {record.isError ? (
               <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
                 {record.error instanceof ApiError ? record.error.message : "Could not record this expense."}
+              </p>
+            ) : null}
+            {attachError ? (
+              <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+                {attachError}
               </p>
             ) : null}
           </form>
@@ -193,6 +262,7 @@ export function ExpensesPage() {
                   <th scope="col">Category</th>
                   <th scope="col">Note</th>
                   <th scope="col">Amount</th>
+                  <th scope="col">Documents</th>
                 </tr>
               </thead>
               <tbody>
@@ -202,6 +272,9 @@ export function ExpensesPage() {
                     <td>{e.AccountName}</td>
                     <td>{e.Description || "—"}</td>
                     <td className="num">{formatMoney(e.Amount)}</td>
+                    <td>
+                      <ExpenseAttachments journalId={e.JournalID} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

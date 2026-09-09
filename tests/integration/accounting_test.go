@@ -57,6 +57,7 @@ func newTestAccountingServices(t *testing.T) (*salesapp.Service, *purchasesapp.S
 		accountingpg.NewReceiptRepo(sharedPool),
 		accountingpg.NewPaymentRepo(sharedPool),
 		accountingpg.NewReconciliationRepo(sharedPool),
+		accountingpg.NewExpenseAttachmentRepo(sharedPool),
 		checker, recorder,
 	)
 

@@ -332,3 +332,30 @@ type ReconciliationRepository interface {
 	Create(ctx context.Context, r *Reconciliation) error
 	ListByBankAccount(ctx context.Context, orgID, bankAccountID uuid.UUID) ([]*Reconciliation, error)
 }
+
+// ExpenseAttachment is a receipt/bill photo or PDF attached to a manual
+// expense (ExpensesPage) — a manual expense has no dedicated entity of
+// its own (it's just a POSTED journals row, source_type='manual_expense'
+// per Service.Post), so this points at the journal directly. FileData is
+// only populated by Get, never by List — a receipt table row has no
+// business carrying every attachment's full bytes just to render a list.
+type ExpenseAttachment struct {
+	ID             uuid.UUID
+	OrganisationID uuid.UUID
+	JournalID      uuid.UUID
+	Filename       string
+	ContentType    string
+	FileData       []byte
+	FileSizeBytes  int64
+	CreatedBy      uuid.UUID
+	CreatedAt      time.Time
+}
+
+type ExpenseAttachmentRepository interface {
+	Create(ctx context.Context, a *ExpenseAttachment) error
+	// ListByJournal never populates FileData (see ExpenseAttachment's own
+	// doc comment) — Get does, for the one-attachment download path.
+	ListByJournal(ctx context.Context, orgID, journalID uuid.UUID) ([]*ExpenseAttachment, error)
+	Get(ctx context.Context, orgID, id uuid.UUID) (*ExpenseAttachment, error)
+	Delete(ctx context.Context, orgID, id uuid.UUID) error
+}

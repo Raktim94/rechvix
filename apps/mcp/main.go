@@ -140,6 +140,7 @@ func run() error {
 	accountingSvc := accountingapp.NewService(pool, accountingpg.NewAccountRepo(pool), accountingpg.NewJournalRepo(pool),
 		accountingpg.NewJournalLineRepo(pool), accountingpg.NewFiscalPeriodRepo(pool), accountingpg.NewBankAccountRepo(pool),
 		accountingpg.NewReceiptRepo(pool), accountingpg.NewPaymentRepo(pool), accountingpg.NewReconciliationRepo(pool),
+		accountingpg.NewExpenseAttachmentRepo(pool),
 		permissionsChecker, auditRecorder)
 	reportingSvc := reportingapp.NewService(pool, reportingpg.NewRepo(pool), accountingSvc, permissionsChecker)
 

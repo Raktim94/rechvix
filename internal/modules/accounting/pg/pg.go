@@ -580,3 +580,72 @@ func (r *ReconciliationRepo) ListByBankAccount(ctx context.Context, orgID, bankA
 	}
 	return out, rows.Err()
 }
+
+// --- Expense attachments ---
+
+type ExpenseAttachmentRepo struct{ pool *database.Pool }
+
+func NewExpenseAttachmentRepo(pool *database.Pool) *ExpenseAttachmentRepo {
+	return &ExpenseAttachmentRepo{pool: pool}
+}
+
+func (r *ExpenseAttachmentRepo) Create(ctx context.Context, a *domain.ExpenseAttachment) error {
+	const q = `
+		INSERT INTO expense_attachments (id, organisation_id, journal_id, filename, content_type, file_data, file_size_bytes, created_by, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+	_, err := r.pool.Q(ctx).Exec(ctx, q, a.ID, a.OrganisationID, a.JournalID, a.Filename, a.ContentType, a.FileData, a.FileSizeBytes, a.CreatedBy, a.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("accounting: inserting expense attachment: %w", err)
+	}
+	return nil
+}
+
+// ListByJournal deliberately excludes file_data (see ExpenseAttachment's
+// own doc comment) — a list of a journal's attachments has no business
+// pulling every file's full bytes over the wire just to render filenames.
+func (r *ExpenseAttachmentRepo) ListByJournal(ctx context.Context, orgID, journalID uuid.UUID) ([]*domain.ExpenseAttachment, error) {
+	const q = `
+		SELECT id, organisation_id, journal_id, filename, content_type, file_size_bytes, created_by, created_at
+		FROM expense_attachments WHERE organisation_id = $1 AND journal_id = $2 ORDER BY created_at`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, journalID)
+	if err != nil {
+		return nil, fmt.Errorf("accounting: listing expense attachments: %w", err)
+	}
+	defer rows.Close()
+	var out []*domain.ExpenseAttachment
+	for rows.Next() {
+		var a domain.ExpenseAttachment
+		if err := rows.Scan(&a.ID, &a.OrganisationID, &a.JournalID, &a.Filename, &a.ContentType, &a.FileSizeBytes, &a.CreatedBy, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("accounting: scanning expense attachment: %w", err)
+		}
+		out = append(out, &a)
+	}
+	return out, rows.Err()
+}
+
+func (r *ExpenseAttachmentRepo) Get(ctx context.Context, orgID, id uuid.UUID) (*domain.ExpenseAttachment, error) {
+	const q = `
+		SELECT id, organisation_id, journal_id, filename, content_type, file_data, file_size_bytes, created_by, created_at
+		FROM expense_attachments WHERE organisation_id = $1 AND id = $2`
+	row := r.pool.Q(ctx).QueryRow(ctx, q, orgID, id)
+	var a domain.ExpenseAttachment
+	if err := row.Scan(&a.ID, &a.OrganisationID, &a.JournalID, &a.Filename, &a.ContentType, &a.FileData, &a.FileSizeBytes, &a.CreatedBy, &a.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("accounting: querying expense attachment: %w", err)
+	}
+	return &a, nil
+}
+
+func (r *ExpenseAttachmentRepo) Delete(ctx context.Context, orgID, id uuid.UUID) error {
+	const q = `DELETE FROM expense_attachments WHERE organisation_id = $1 AND id = $2`
+	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, orgID, id)
+	if err != nil {
+		return fmt.Errorf("accounting: deleting expense attachment: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}

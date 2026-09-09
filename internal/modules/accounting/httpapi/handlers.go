@@ -3,8 +3,10 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -42,6 +44,10 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/accounting/fiscal-periods/{id}/unlock", h.unlockPeriod)
 	r.Get("/accounting/bank-accounts", h.listBankAccounts)
 	r.Post("/accounting/bank-accounts", h.createBankAccount)
+	r.Post("/accounting/expenses/{journalId}/attachments", h.uploadExpenseAttachment)
+	r.Get("/accounting/expenses/{journalId}/attachments", h.listExpenseAttachments)
+	r.Get("/accounting/expense-attachments/{id}", h.downloadExpenseAttachment)
+	r.Delete("/accounting/expense-attachments/{id}", h.deleteExpenseAttachment)
 }
 
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -141,6 +147,99 @@ func (h *Handlers) listExpenses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"expenses": out})
+}
+
+// uploadExpenseAttachmentRequest carries the file as base64 JSON, same
+// wire shape as organisation/httpapi's legal-entity logo upload — no
+// multipart parsing needed for what's still just bytes-in-a-request-
+// body, and it composes with decodeJSON's existing DisallowUnknownFields
+// strictness the same way every other POST body here does.
+type uploadExpenseAttachmentRequest struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	DataBase64  string `json:"data_base64"`
+}
+
+func (h *Handlers) uploadExpenseAttachment(w http.ResponseWriter, r *http.Request) {
+	journalID, err := uuid.Parse(chi.URLParam(r, "journalId"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "journalId must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[uploadExpenseAttachmentRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	data, err := base64.StdEncoding.DecodeString(req.DataBase64)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_DATA", "data_base64 must be valid base64."))
+		return
+	}
+	att, err := h.svc.UploadExpenseAttachment(r.Context(), principal(r), app.UploadExpenseAttachmentParams{
+		JournalID: journalID, Filename: req.Filename, ContentType: req.ContentType, Data: data,
+	})
+	if err != nil {
+		var forbidden *permissions.ErrForbidden
+		if errors.As(err, &forbidden) {
+			httpx.WriteError(w, r, httpx.NewForbidden("FORBIDDEN", "You do not have permission to perform this action."))
+			return
+		}
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ATTACHMENT", err.Error()))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+		"ID": att.ID, "JournalID": att.JournalID, "Filename": att.Filename, "ContentType": att.ContentType,
+		"FileSizeBytes": att.FileSizeBytes, "CreatedAt": att.CreatedAt,
+	})
+}
+
+func (h *Handlers) listExpenseAttachments(w http.ResponseWriter, r *http.Request) {
+	journalID, err := uuid.Parse(chi.URLParam(r, "journalId"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "journalId must be a UUID."))
+		return
+	}
+	list, err := h.svc.ListExpenseAttachments(r.Context(), principal(r), journalID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"attachments": list})
+}
+
+// downloadExpenseAttachment streams the raw file back with its original
+// content type — same "just write the bytes" approach as sales/httpapi's
+// printDocument, not a JSON envelope, so a plain `<a href>` (no fetch/
+// blob dance) opens or downloads it directly.
+func (h *Handlers) downloadExpenseAttachment(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	att, err := h.svc.GetExpenseAttachment(r.Context(), principal(r), id)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", att.ContentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", att.Filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(att.FileData)
+}
+
+func (h *Handlers) deleteExpenseAttachment(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	if err := h.svc.DeleteExpenseAttachment(r.Context(), principal(r), id); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type postJournalLineRequest struct {

@@ -271,6 +271,7 @@ func run() error {
 		accountingpg.NewReceiptRepo(pool),
 		accountingpg.NewPaymentRepo(pool),
 		accountingpg.NewReconciliationRepo(pool),
+		accountingpg.NewExpenseAttachmentRepo(pool),
 		permissionsChecker,
 		auditRecorder,
 	)

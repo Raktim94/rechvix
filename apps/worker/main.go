@@ -100,6 +100,7 @@ func run() error {
 	accountingSvc := accountingapp.NewService(pool, accountingpg.NewAccountRepo(pool), accountingpg.NewJournalRepo(pool),
 		accountingpg.NewJournalLineRepo(pool), accountingpg.NewFiscalPeriodRepo(pool), accountingpg.NewBankAccountRepo(pool),
 		accountingpg.NewReceiptRepo(pool), accountingpg.NewPaymentRepo(pool), accountingpg.NewReconciliationRepo(pool),
+		accountingpg.NewExpenseAttachmentRepo(pool),
 		permissionsChecker, auditRecorder)
 	salesSvc := salesapp.NewService(pool, salespg.NewDocumentRepo(pool), salespg.NewDocumentLineRepo(pool),
 		inventorySvc, taxationSvc, catalogueSvc, contactsSvc, orgSvc, pricingSvc, numberingSvc, accountingSvc, outboxStore,
