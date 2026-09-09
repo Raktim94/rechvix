@@ -34,10 +34,93 @@ export interface ResolvedScanLine {
  * each row's debounce/dropdown state doesn't need to live in the parent
  * array (which would mean re-rendering and re-keying every row on every
  * keystroke in any one of them). */
+interface UnitOption {
+  ID: string;
+  Code: string;
+  Name: string;
+}
+
+/** The inline "this isn't in the catalogue yet" sub-form — deliberately
+ * a minimal subset of CataloguePage's own create-product fields (name,
+ * HSN, unit only), since the person reviewing a scanned bill is mid-way
+ * through creating a purchase, not doing full catalogue admin. Reuses
+ * the exact 2-call create chain CataloguePage's own createProduct
+ * mutation uses (product, then its first variant). */
+function CreateProductInline({
+  initialName,
+  onCreated,
+  onCancel,
+}: {
+  initialName: string;
+  onCreated: (product: ProductOption) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [hsn, setHsn] = useState("");
+  const [unitId, setUnitId] = useState("");
+
+  const units = useQuery({
+    queryKey: ["units"],
+    queryFn: () => api.getListField<UnitOption>("/catalogue/units", "units_of_measure"),
+  });
+
+  useEffect(() => {
+    if (!unitId && units.data?.[0]) setUnitId(units.data[0].ID);
+  }, [unitId, units.data]);
+
+  const create = useMutation({
+    mutationFn: async () => {
+      const product = await api.post<{ ID: string; Name: string; BaseUOMID: string }>("/catalogue/products", {
+        category_id: null,
+        brand_id: null,
+        base_uom_id: unitId,
+        name,
+        description: "",
+        hsn_sac_code: hsn,
+      });
+      await api.post("/catalogue/variants", {
+        product_id: product.ID,
+        sku_code: product.Name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24),
+        attributes: {},
+      });
+      return product;
+    },
+    onSuccess: (product) => onCreated({ ID: product.ID, Name: product.Name, BaseUOMID: product.BaseUOMID }),
+  });
+
+  return (
+    <div className={styles.createInline}>
+      <input className={ui.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Product name" />
+      <input className={ui.input} value={hsn} onChange={(e) => setHsn(e.target.value)} placeholder="HSN/SAC (optional)" />
+      <select className={ui.select} value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+        {(units.data ?? []).map((u) => (
+          <option key={u.ID} value={u.ID}>
+            {u.Name} ({u.Code})
+          </option>
+        ))}
+      </select>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button type="button" className={ui.btnPrimary} disabled={!name || !unitId || create.isPending} onClick={() => create.mutate()}>
+          {create.isPending ? "Creating…" : "Create"}
+        </button>
+        <button type="button" className={ui.btnGhost} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      {create.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)", margin: 0 }}>
+          {create.error instanceof ApiError ? create.error.message : "Could not create this product."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ProductMatchCell({ line, onMatch }: { line: ReviewLine; onMatch: (product: ProductOption | null) => void }) {
   const [query, setQuery] = useState(line.matched ? line.matched.Name : line.description);
   const [results, setResults] = useState<ProductOption[]>([]);
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (line.matched || query.trim().length < 2) {
@@ -54,6 +137,22 @@ function ProductMatchCell({ line, onMatch }: { line: ReviewLine; onMatch: (produ
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, line.matched]);
 
+  if (creating) {
+    return (
+      <div className={styles.productCell}>
+        <CreateProductInline
+          initialName={query}
+          onCancel={() => setCreating(false)}
+          onCreated={(product) => {
+            setCreating(false);
+            setQuery(product.Name);
+            onMatch(product);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.productCell}>
       <input
@@ -68,7 +167,7 @@ function ProductMatchCell({ line, onMatch }: { line: ReviewLine; onMatch: (produ
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder="Match to a catalogue product…"
       />
-      {open && results.length > 0 ? (
+      {open && (results.length > 0 || query.trim().length >= 2) ? (
         <ul className={styles.productDropdown} role="menu">
           {results.map((p) => (
             <li key={p.ID}>
@@ -85,6 +184,21 @@ function ProductMatchCell({ line, onMatch }: { line: ReviewLine; onMatch: (produ
               </button>
             </li>
           ))}
+          {query.trim().length >= 2 ? (
+            <li>
+              {/* Not in the catalogue yet — the previous version of this
+                  modal had no path forward here at all except cancelling
+                  the whole scan to go create the product elsewhere first. */}
+              <button
+                type="button"
+                className={styles.productDropdownItem}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setCreating(true)}
+              >
+                + Create "{query}" as a new product
+              </button>
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </div>
