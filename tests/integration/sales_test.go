@@ -608,7 +608,7 @@ func TestSales_Print_A4Invoice_RendersNonEmptyPDF(t *testing.T) {
 		t.Fatalf("BuildInvoiceData: %v", err)
 	}
 	for _, tpl := range []printing.Template{printing.TemplateA4GSTInvoice, printing.TemplateThermal80mm, printing.TemplateThermal58mm} {
-		pdfBytes, err := printing.RenderPDF(tpl, *data)
+		pdfBytes, err := printing.RenderPDF(tpl, printing.ThemeClassic, *data)
 		if err != nil {
 			t.Fatalf("RenderPDF(%s): %v", tpl, err)
 		}
@@ -732,7 +732,7 @@ func TestSales_Print_UsesLegalEntityInvoiceBranding(t *testing.T) {
 		t.Errorf("AuthorizedSignatoryName = %q, want %q", data.AuthorizedSignatoryName, "Priya Sharma (updated)")
 	}
 
-	pdfBytes, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, *data)
+	pdfBytes, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, printing.ThemeClassic, *data)
 	if err != nil {
 		t.Fatalf("RenderPDF: %v", err)
 	}
@@ -790,7 +790,7 @@ func TestSales_BuildInvoiceDataForShareLink_ImpersonatesCreatorScopedToOrg(t *te
 	if err != nil {
 		t.Fatalf("BuildInvoiceDataForShareLink (correct org): %v", err)
 	}
-	pdfBytes, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, *data)
+	pdfBytes, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, printing.ThemeClassic, *data)
 	if err != nil {
 		t.Fatalf("RenderPDF: %v", err)
 	}
