@@ -442,6 +442,16 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         title="Bulk import products"
         path="/catalogue/products/import"
         columns={["name", "hsn_sac_code (optional)", "base_uom_code", "sku_code (optional — generated from name if blank)"]}
+        // base_uom_code must be a unit that already exists for this org
+        // (catalogue.Service.ImportProducts looks it up by code, it
+        // doesn't create one) — use the org's own first unit rather than
+        // a hardcoded guess like "PCS" that might not exist here, so the
+        // downloaded sample actually imports cleanly as-is.
+        sampleRows={
+          units.data?.[0]
+            ? [{ name: "Amul Butter 500g", hsn_sac_code: "0405", base_uom_code: units.data[0].Code, sku_code: "AMUL-BTR-500" }]
+            : undefined
+        }
         onImported={() => void queryClient.invalidateQueries({ queryKey: ["products"] })}
       />
 

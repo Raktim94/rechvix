@@ -29,6 +29,34 @@ function formatFor(file: File): "csv" | "xlsx" | null {
   return null;
 }
 
+// Minimal RFC 4180 quoting — only wraps a field in quotes (doubling any
+// embedded quote) when it actually contains a comma, quote, or newline,
+// so the common case stays plain and readable if someone opens this in a
+// text editor instead of a spreadsheet app.
+function csvField(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function buildSampleCsv(headers: string[], rows: Record<string, string>[]): string {
+  const lines = [headers.map(csvField).join(",")];
+  for (const row of rows) {
+    lines.push(headers.map((h) => csvField(row[h] ?? "")).join(","));
+  }
+  return lines.join("\r\n") + "\r\n";
+}
+
+function downloadSampleCsv(filename: string, headers: string[], rows: Record<string, string>[]) {
+  const blob = new Blob([buildSampleCsv(headers, rows)], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** A collapsible "Import from CSV/Excel" panel — one component reused by
  * every bulk-import endpoint (internal/platform/importer's shared
  * dry-run + per-row-report design already made every module's import
@@ -38,7 +66,23 @@ function formatFor(file: File): "csv" | "xlsx" | null {
  * Flow: pick a file -> Preview (dry_run=true, shows the report, writes
  * nothing) -> Import (dry_run=false, actually commits). A row is never
  * silently skipped — every row's outcome is listed. */
-export function ImportPanel({ title, path, columns, onImported }: { title: string; path: string; columns: string[]; onImported: () => void }) {
+export function ImportPanel({
+  title,
+  path,
+  columns,
+  sampleRows,
+  onImported,
+}: {
+  title: string;
+  path: string;
+  columns: string[];
+  /** Raw column-key -> example-value rows for a downloadable sample CSV
+   * (header row derived from the first row's keys). Optional — a panel
+   * with no realistic example to offer (or no stable header set) can
+   * omit this and keep just the inline `columns` description. */
+  sampleRows?: Record<string, string>[];
+  onImported: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -81,6 +125,23 @@ export function ImportPanel({ title, path, columns, onImported }: { title: strin
         <div style={{ marginTop: 12 }}>
           <p className={ui.muted} style={{ marginBottom: 8 }}>
             Expected columns (first row is the header): <code>{columns.join(", ")}</code>
+            {sampleRows && sampleRows.length > 0
+              ? (() => {
+                  const rows = sampleRows;
+                  return (
+                    <>
+                      {" — "}
+                      <button
+                        type="button"
+                        style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--color-accent)", textDecoration: "underline", cursor: "pointer" }}
+                        onClick={() => downloadSampleCsv(`${path.split("/").pop()}-sample.csv`, Object.keys(rows[0] ?? {}), rows)}
+                      >
+                        download a sample CSV
+                      </button>
+                    </>
+                  );
+                })()
+              : null}
           </p>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <input
