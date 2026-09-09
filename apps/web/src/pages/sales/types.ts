@@ -61,6 +61,21 @@ export const EWB_ELIGIBLE_TYPES = new Set<DocumentType>(["TAX_INVOICE", "POS_INV
  * on finalize) — the set SalesDetailPage shows a PaymentPanel for. */
 export const PAYABLE_TYPES = new Set<DocumentType>(["TAX_INVOICE", "POS_INVOICE"]);
 
+/** Which target types a FINALIZED document of a given type can be
+ * converted into via POST /sales/documents/{id}/convert (sales.Service.
+ * ConvertDocument — backend has supported every source/target
+ * combination generically since it was added for the return/credit-note
+ * flow; this map is just which of those the "Convert to…" action on
+ * SalesDetailPage actually surfaces, mirroring the brief §5 lifecycle:
+ * quotation -> sales order -> invoice, or quotation/delivery challan
+ * straight to invoice). Omitted here = no convert action shown, not a
+ * backend restriction. */
+export const CONVERTIBLE_TARGETS: Partial<Record<DocumentType, DocumentType[]>> = {
+  QUOTATION: ["SALES_ORDER", "TAX_INVOICE"],
+  SALES_ORDER: ["TAX_INVOICE"],
+  DELIVERY_CHALLAN: ["TAX_INVOICE"],
+};
+
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   QUOTATION: "Quotation",
   PROFORMA_INVOICE: "Proforma invoice",

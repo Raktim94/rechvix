@@ -8,7 +8,7 @@ import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
-import { DOCUMENT_TYPE_LABELS, type DocumentStatus, type SalesDocument } from "./types";
+import { DOCUMENT_TYPE_LABELS, type DocumentStatus, type DocumentType, type SalesDocument } from "./types";
 
 /** Row-level counterpart to SalesDetailPage's "Share via WhatsApp" —
  * lets a counter operator send a finalized bill straight from the list
@@ -48,10 +48,12 @@ function statusTone(status: SalesDocument["Status"]) {
 }
 
 type StatusFilter = "ALL" | DocumentStatus;
+type TypeFilter = "ALL" | DocumentType;
 
 export function SalesListPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [type, setType] = useState<TypeFilter>("ALL");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
@@ -75,6 +77,7 @@ export function SalesListPage() {
   const q = query.trim().toLowerCase();
   const filtered = (documents.data ?? []).filter((d) => {
     if (status !== "ALL" && d.Status !== status) return false;
+    if (type !== "ALL" && d.DocumentType !== type) return false;
     if (from && d.IssueDate.slice(0, 10) < from) return false;
     if (to && d.IssueDate.slice(0, 10) > to) return false;
     if (q) {
@@ -97,6 +100,48 @@ export function SalesListPage() {
       </div>
 
       <div className={layout.panel}>
+        <div className={ui.toolbar} style={{ marginBottom: 8, gap: 8 }}>
+          {/* Finalized-but-not-yet-converted quotations/orders are exactly
+              what SalesDetailPage's new "Convert to…" action acts on —
+              these one-click filters are the fastest way to find them,
+              since the list has no server-side way to tell "still open"
+              apart from a finalized document simply not having a document
+              referencing it yet (not modeled client-side, so this is a
+              proxy: finalized quotations/orders are usually awaiting
+              conversion in practice). */}
+          <button
+            type="button"
+            className={ui.btnGhost}
+            onClick={() => {
+              setType("QUOTATION");
+              setStatus("FINALIZED");
+            }}
+          >
+            Open quotations
+          </button>
+          <button
+            type="button"
+            className={ui.btnGhost}
+            onClick={() => {
+              setType("SALES_ORDER");
+              setStatus("FINALIZED");
+            }}
+          >
+            Open orders
+          </button>
+          {status !== "ALL" || type !== "ALL" ? (
+            <button
+              type="button"
+              className={ui.btnGhost}
+              onClick={() => {
+                setStatus("ALL");
+                setType("ALL");
+              }}
+            >
+              Clear filters
+            </button>
+          ) : null}
+        </div>
         <div className={ui.toolbar} style={{ marginBottom: 12 }}>
           <input
             className={ui.input}
@@ -111,6 +156,14 @@ export function SalesListPage() {
             <option value="DRAFT">Draft</option>
             <option value="FINALIZED">Finalized</option>
             <option value="CANCELLED">Cancelled</option>
+          </select>
+          <select className={ui.select} aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value as TypeFilter)}>
+            <option value="ALL">All types</option>
+            {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
           <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             From

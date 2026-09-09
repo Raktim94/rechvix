@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { EInvoiceCard } from "../../components/EInvoiceCard";
 import { EwayBillCard } from "../../components/EwayBillCard";
@@ -16,14 +16,28 @@ import layout from "../DashboardPage.module.css";
 import { CancelDocumentModal } from "./CancelDocumentModal";
 import { CreateReturnModal } from "./CreateReturnModal";
 import styles from "./SalesDetailPage.module.css";
-import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, PAYABLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
+import { CONVERTIBLE_TARGETS, DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, PAYABLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
 
 export function SalesDetailPage({ id }: { id: string }) {
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const navigate = useNavigate();
   const doc = useQuery({
     queryKey: ["sales-document", id],
     queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[] }>(`/sales/documents/${id}`),
+  });
+
+  // Converts this FINALIZED document into a new DRAFT of targetType via
+  // the generic sales.Service.ConvertDocument (POST .../convert, no
+  // line_quantities = every line copied at full quantity) — the
+  // quotation -> sales order -> invoice path the backend has always
+  // supported but nothing in the UI ever exposed (previously the only
+  // caller was CreateReturnModal's return/credit-note flow). Lands on
+  // the new draft's own detail page, which itself offers "Continue
+  // billing" to edit/add lines before finalizing it.
+  const convert = useMutation({
+    mutationFn: (targetType: string) => api.post<SalesDocument>(`/sales/documents/${id}/convert`, { target_type: targetType }),
+    onSuccess: (target) => void navigate({ to: "/sales/$id", params: { id: target.ID } }),
   });
 
   const customer = useQuery({
@@ -83,6 +97,19 @@ export function SalesDetailPage({ id }: { id: string }) {
         ) : (
           <div className={styles.headerActions}>
             <PrintTemplateMenu documentId={document.ID} />
+            {document.Status === "FINALIZED"
+              ? (CONVERTIBLE_TARGETS[document.DocumentType] ?? []).map((target) => (
+                  <button
+                    key={target}
+                    type="button"
+                    className={ui.btnSecondary}
+                    disabled={convert.isPending}
+                    onClick={() => convert.mutate(target)}
+                  >
+                    {convert.isPending ? "Converting…" : `Convert to ${DOCUMENT_TYPE_LABELS[target].toLowerCase()}`}
+                  </button>
+                ))
+              : null}
             {document.Status === "FINALIZED" && PAYABLE_TYPES.has(document.DocumentType) ? (
               <button type="button" className={ui.btnSecondary} onClick={() => setReturnModalOpen(true)}>
                 Return / credit note
@@ -126,6 +153,11 @@ export function SalesDetailPage({ id }: { id: string }) {
       {shareViaWhatsApp.isError ? (
         <p role="alert" style={{ color: "var(--color-negative)" }}>
           {shareViaWhatsApp.error instanceof ApiError ? shareViaWhatsApp.error.message : "Could not create a share link."}
+        </p>
+      ) : null}
+      {convert.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)" }}>
+          {convert.error instanceof ApiError ? convert.error.message : "Could not convert this document."}
         </p>
       ) : null}
       {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}
