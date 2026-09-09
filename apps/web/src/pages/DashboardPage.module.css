@@ -2,23 +2,35 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  /* Long report/ledger tables shouldn't run edge-to-edge on a 27"
+     monitor — a measure cap keeps line lengths readable and the layout
+     centred, which is most of what separates a dense internal tool from
+     something that looks designed. */
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .heading {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .heading h1 {
+  font-family: var(--font-display);
   font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .subtitle {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+  margin-top: 4px;
 }
 
 .cardGrid {
@@ -55,7 +67,7 @@
 .panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
   padding: var(--space-5);
   transition: box-shadow 0.2s ease;
@@ -63,14 +75,19 @@
 
 .panel h2 {
   font-size: var(--text-md);
-  margin-bottom: var(--space-3);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: var(--space-4);
 }
 
 .emptyState {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-  padding: var(--space-5) 0;
+  padding: var(--space-6) var(--space-4);
   text-align: center;
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
 }
 
 .errorState {
@@ -81,8 +98,35 @@
   font-size: var(--text-sm);
 }
 
+/* A moving sheen rather than a flat grey block — the standard cue that
+   something is loading rather than empty/broken. Held still for anyone
+   who's asked the OS to reduce motion. */
 .skeleton {
   background: var(--color-surface-alt);
-  border-radius: var(--radius-md);
+  background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.45) 50%, transparent 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  border-radius: var(--radius-lg);
   height: 88px;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+:root[data-theme="dark"] .skeleton {
+  background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background-image: none;
+  }
 }

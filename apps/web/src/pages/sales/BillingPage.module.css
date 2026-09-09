@@ -164,6 +164,105 @@
   text-align: right;
 }
 
+/* The cart, as an invoice grid rather than a generic data table: the item
+   name leads (it's what the cashier and the customer are both talking
+   about), every figure column is right-aligned on tabular figures so the
+   rupee amounts stack into a readable column, and the running total sits
+   in the table's own <tfoot> where the eye already expects a subtotal on
+   a printed bill. */
+.lineGrid {
+  table-layout: auto;
+}
+
+.lineGrid td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.colNum {
+  width: 44px;
+  color: var(--color-text-faint);
+}
+
+.colRight {
+  text-align: right;
+}
+
+.colAction {
+  width: 44px;
+}
+
+.itemCell {
+  font-weight: 600;
+  color: var(--color-text);
+  min-width: 180px;
+}
+
+.hsnCell {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.amountCell {
+  font-weight: 600;
+}
+
+/* Right-aligning an <input> inside a right-aligned cell needs the input
+   itself pushed over too — text-align on the cell doesn't move a
+   replaced element. */
+.colRight input {
+  margin-left: auto;
+  display: block;
+}
+
+.removeButton {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.removeButton:hover:not(:disabled) {
+  background: var(--color-negative-soft);
+  color: var(--color-negative);
+}
+
+.removeButton:disabled {
+  opacity: 0.4;
+}
+
+.gridEmpty {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-6) var(--space-4) !important;
+}
+
+/* Panels that are visible but not yet usable (before a customer is
+   chosen) read as pending rather than broken — dimmed, not hidden, so
+   the shape of the bill is still on screen. */
+[data-inert="true"] {
+  opacity: 0.6;
+}
+
+.gridTotalRow td {
+  border-top: 2px solid var(--color-border-strong);
+  border-bottom: none;
+  background: var(--color-surface-alt);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
 /* The summary bar is the one number the counter and the customer are both
    watching while a sale builds — an elevated card with a bolder, larger
    grand total (not just a top border on plain text) makes it read as the
@@ -175,13 +274,15 @@
   gap: var(--space-4);
   margin-top: var(--space-4);
   padding: var(--space-4) var(--space-5);
-  background: var(--color-surface-alt);
   border-radius: var(--radius-lg);
+  color: var(--color-rail-text);
+  background: linear-gradient(120deg, var(--color-rail) 0%, var(--color-rail-raised) 100%);
+  box-shadow: var(--shadow-card);
 }
 
 .summaryCount {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-rail-text-muted);
   font-weight: 500;
 }
 
@@ -193,7 +294,7 @@
 
 .summaryTotal span {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-rail-text-muted);
 }
 
 .summaryTotal strong {
@@ -201,7 +302,8 @@
   font-variant-numeric: tabular-nums;
   font-size: var(--text-2xl);
   font-weight: 700;
-  color: var(--color-accent);
+  letter-spacing: -0.02em;
+  color: #ffffff;
 }
 
 .errorText {

@@ -3,7 +3,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import styles from "./AppShell.module.css";
 import { CommandPalette } from "./CommandPalette";
 import { Logo } from "./Logo";
-import { SearchIcon } from "./icons";
+import { PlusIcon, SearchIcon } from "./icons";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
@@ -124,18 +124,34 @@ export function AppShell({ children }: { children: ReactNode }) {
           </kbd>
         </button>
         <div className={styles.topbarSpacer} />
+        <div className={styles.primaryActions}>
+          <Link to="/sales/new" className={styles.actionPrimary}>
+            <span className={styles.actionPlus} aria-hidden="true">
+              +
+            </span>
+            <span className={styles.actionLabel}>Add sale</span>
+          </Link>
+          <Link to="/purchases" className={styles.actionSecondary}>
+            <span className={styles.actionPlus} aria-hidden="true">
+              +
+            </span>
+            <span className={styles.actionLabel}>Add purchase</span>
+          </Link>
+        </div>
         <div className={styles.userMenu} ref={createRef}>
-          <button type="button" className={styles.quickCreate} onClick={() => setCreateOpen((v) => !v)} aria-expanded={createOpen} aria-haspopup="menu">
-            + Quick create
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={() => setCreateOpen((v) => !v)}
+            aria-expanded={createOpen}
+            aria-haspopup="menu"
+            aria-label="Create something else"
+            title="Create something else"
+          >
+            <PlusIcon />
           </button>
           {createOpen ? (
             <div className={styles.userDropdown} role="menu">
-              <Link to="/sales/new" role="menuitem" onClick={() => setCreateOpen(false)}>
-                New sale
-              </Link>
-              <Link to="/purchases" role="menuitem" onClick={() => setCreateOpen(false)}>
-                New purchase
-              </Link>
               <Link to="/contacts" role="menuitem" onClick={() => setCreateOpen(false)}>
                 New contact
               </Link>
@@ -144,6 +160,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
               <Link to="/pricing" role="menuitem" onClick={() => setCreateOpen(false)}>
                 Set a price
+              </Link>
+              <Link to="/expenses" role="menuitem" onClick={() => setCreateOpen(false)}>
+                Record an expense
               </Link>
             </div>
           ) : null}

@@ -142,6 +142,14 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<BillingLookupResult[]>([]);
+  // A sales line carries only its ProductVariantID — there's no
+  // variant-by-id lookup endpoint, so the cart could only ever show each
+  // line's HSN/SAC code, i.e. a cashier mid-sale sees "84193200" where
+  // the customer sees "Paper Bundle". Every item added here came from a
+  // search result that DID carry the name, so remember it as we go.
+  // Lines restored from a held draft (added in an earlier session) fall
+  // back to the HSN code, same as before.
+  const [nameByVariant, setNameByVariant] = useState<Record<string, string>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
   const [priceListId, setPriceListId] = useState<string>("");
@@ -328,6 +336,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     } catch {
       return;
     }
+    setNameByVariant((cur) => ({ ...cur, [result.ProductVariantID]: result.ProductName }));
     addLine.mutate({
       productVariantId: result.ProductVariantID,
       unitId,
@@ -559,9 +568,14 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
         ) : null}
       </div>
 
-      {documentId ? (
-        <>
-          <div className={layout.panel}>
+      {/* The item search and the cart render from the moment this screen
+          opens, not only once a customer has been picked and "Start sale"
+          clicked — the shape of the bill you're about to write should be
+          visible immediately (and it's most of what made this screen read
+          as an empty page before). Both are inert until a draft exists;
+          the search input says so rather than silently doing nothing. */}
+      <>
+          <div className={layout.panel} data-inert={!documentId ? "true" : undefined}>
             <label htmlFor="product-search" className={styles.searchLabel}>
               Search or scan a product
             </label>
@@ -571,8 +585,9 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 id="product-search"
                 ref={searchInputRef}
                 className={`${ui.input} ${styles.searchInput}`}
-                placeholder="Type a product name, or scan a barcode…"
+                placeholder={documentId ? "Type a product name, or scan a barcode…" : "Pick a customer above to start billing…"}
                 value={productQuery}
+                disabled={!documentId}
                 onChange={(e) => setProductQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -616,42 +631,107 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
           <div className={layout.panel}>
             <h2>Items ({lines.length})</h2>
             {lines.length === 0 ? (
-              <p className={layout.emptyState}>No items yet — search above to add the first one.</p>
-            ) : (
               <div className={ui.tableScroll}>
-                <table className={ui.table}>
+                <table className={`${ui.table} ${styles.lineGrid}`}>
                   <thead>
                     <tr>
-                      <th scope="col">#</th>
+                      <th scope="col" className={styles.colNum}>
+                        #
+                      </th>
+                      <th scope="col">Item</th>
                       <th scope="col">HSN/SAC</th>
-                      <th scope="col">Qty</th>
-                      <th scope="col">Rate</th>
-                      <th scope="col">Disc.</th>
-                      <th scope="col">Total</th>
+                      <th scope="col" className={styles.colRight}>
+                        Qty
+                      </th>
+                      <th scope="col" className={styles.colRight}>
+                        Rate
+                      </th>
+                      <th scope="col" className={styles.colRight}>
+                        Discount
+                      </th>
+                      <th scope="col" className={styles.colRight}>
+                        Amount
+                      </th>
+                      <th scope="col" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colSpan={8} className={styles.gridEmpty}>
+                        {documentId ? "Scan a barcode or search above to add the first item." : "Pick a customer above, then scan or search to add items."}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className={ui.tableScroll}>
+                <table className={`${ui.table} ${styles.lineGrid}`}>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={styles.colNum}>
+                        #
+                      </th>
+                      <th scope="col">Item</th>
+                      <th scope="col">HSN/SAC</th>
+                      <th scope="col" className={styles.colRight}>
+                        Qty
+                      </th>
+                      <th scope="col" className={styles.colRight}>
+                        Rate
+                      </th>
+                      <th scope="col" className={styles.colRight}>
+                        Discount
+                      </th>
+                      <th scope="col" className={styles.colRight}>
+                        Amount
+                      </th>
                       <th scope="col" />
                     </tr>
                   </thead>
                   <tbody>
                     {lines.map((l) => (
                       <tr key={l.ID}>
-                        <td className="num">{l.LineNumber}</td>
-                        <td>{l.HSNSACCode}</td>
-                        <td className="num">
+                        <td className={`num ${styles.colNum}`}>{l.LineNumber}</td>
+                        <td className={styles.itemCell}>{nameByVariant[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
+                        <td className={styles.hsnCell}>{l.HSNSACCode || "—"}</td>
+                        <td className={`num ${styles.colRight}`}>
                           <EditableQty line={l} disabled={updateLine.isPending} onCommit={(quantity) => updateLine.mutate({ line: l, quantity })} />
                         </td>
-                        <td className="num">{formatMoney(l.UnitPrice)}</td>
-                        <td className="num">
+                        <td className={`num ${styles.colRight}`}>{formatMoney(l.UnitPrice)}</td>
+                        <td className={`num ${styles.colRight}`}>
                           <EditableDiscount line={l} disabled={updateLine.isPending} onCommit={(discount) => updateLine.mutate({ line: l, discount })} />
                         </td>
-                        <td className="num">{formatMoney(l.LineTotal)}</td>
-                        <td>
-                          <button type="button" className={ui.btnGhost} disabled={removeLine.isPending} onClick={() => removeLine.mutate(l.ID)} aria-label={`Remove line ${l.LineNumber}`}>
-                            Remove
+                        <td className={`num ${styles.colRight} ${styles.amountCell}`}>{formatMoney(l.LineTotal)}</td>
+                        <td className={styles.colAction}>
+                          <button
+                            type="button"
+                            className={styles.removeButton}
+                            disabled={removeLine.isPending}
+                            onClick={() => removeLine.mutate(l.ID)}
+                            aria-label={`Remove ${nameByVariant[l.ProductVariantID] ?? `line ${l.LineNumber}`}`}
+                            title="Remove this item"
+                          >
+                            ×
                           </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className={styles.gridTotalRow}>
+                      <td />
+                      <td>Total</td>
+                      <td />
+                      <td className={`num ${styles.colRight}`}>{lines.reduce((sum, l) => sum + Number(l.Quantity), 0)}</td>
+                      <td />
+                      <td />
+                      <td className={`num ${styles.colRight} ${styles.amountCell}`}>
+                        {formatMoney({ amount: String(runningSubtotal), currency: currencyCode })}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
@@ -698,7 +778,6 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             ) : null}
           </div>
         </>
-      ) : null}
 
       <QuickAddPartyModal
         open={quickAddOpen}

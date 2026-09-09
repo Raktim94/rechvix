@@ -36,11 +36,11 @@
 .btnPrimary {
   background: var(--color-accent);
   color: var(--color-on-accent);
-  box-shadow: 0 1px 2px rgba(22, 33, 28, 0.08), 0 1px 1px rgba(22, 33, 28, 0.04);
+  box-shadow: 0 1px 2px rgba(15, 110, 92, 0.24), 0 6px 16px -6px rgba(15, 110, 92, 0.38);
 }
 .btnPrimary:hover {
   background: var(--color-accent-hover);
-  box-shadow: var(--shadow-card-hover);
+  box-shadow: 0 2px 4px rgba(15, 110, 92, 0.26), 0 10px 22px -8px rgba(15, 110, 92, 0.48);
 }
 .btnPrimary:active {
   transform: translateY(1px);
@@ -159,12 +159,17 @@
   text-align: left;
   color: var(--color-text-muted);
   font-weight: 600;
-  font-size: var(--text-xs);
+  font-size: 0.6875rem;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-  padding: var(--space-3) var(--space-3);
+  letter-spacing: 0.06em;
+  padding: var(--space-3);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-alt);
+  /* Header stays put while a long ledger scrolls under it — on a
+     hundred-row report the column you're reading stops being a guess. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .table th:first-child {

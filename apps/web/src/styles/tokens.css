@@ -61,6 +61,21 @@
   --shadow-card-hover: 0 2px 4px rgba(22, 33, 28, 0.05), 0 16px 32px -12px rgba(22, 33, 28, 0.16);
   --shadow-popover: 0 12px 32px -4px rgba(22, 33, 28, 0.18), 0 4px 8px -2px rgba(22, 33, 28, 0.08);
 
+  /* The primary rail is deliberately dark in BOTH themes — a fixed dark
+     chrome around a light working surface is what separates "an app" from
+     "a web page", and it keeps the ledger content area the brightest thing
+     on screen, which is where the eye should land. Deep ink-green rather
+     than the generic navy every SMB billing tool ships, so the rail and
+     the emerald accent read as one palette instead of two. */
+  --color-rail: #0e1a16;
+  --color-rail-raised: #16241f;
+  --color-rail-border: #22332c;
+  --color-rail-text: #cfe0d7;
+  --color-rail-text-muted: #7d998b;
+  --color-rail-text-faint: #5f7a6c;
+  --color-rail-active: #29c191;
+  --color-rail-active-bg: rgba(41, 193, 145, 0.14);
+
   --font-display: "Space Grotesk", system-ui, sans-serif;
   --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
@@ -86,18 +101,18 @@
   --radius-lg: 14px;
   --radius-xl: 20px;
 
-  --nav-width: 248px;
+  --nav-width: 256px;
   --nav-width-collapsed: 64px;
-  --topbar-height: 60px;
+  --topbar-height: 64px;
 
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-bg: #101613;
-    --color-surface: #171f1c;
-    --color-surface-alt: #1e2723;
+    --color-bg: #151d1a;
+    --color-surface: #1b2421;
+    --color-surface-alt: #232d29;
     --color-border: #2b3632;
     --color-border-strong: #3c4a44;
     --color-text: #e9efe9;
@@ -128,9 +143,13 @@
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #101613;
-  --color-surface: #171f1c;
-  --color-surface-alt: #1e2723;
+  /* Lifted a step in dark mode so the fixed near-black rail still reads
+     as a separate, recessed layer instead of merging into the page —
+     checked against a real screenshot, where the two were previously
+     indistinguishable at the seam. */
+  --color-bg: #151d1a;
+  --color-surface: #1b2421;
+  --color-surface-alt: #232d29;
   --color-border: #2b3632;
   --color-border-strong: #3c4a44;
   --color-text: #e9efe9;

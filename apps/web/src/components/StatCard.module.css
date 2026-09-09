@@ -8,17 +8,43 @@
  * though, since the label text also says "outstanding"/"collected").
  */
 .card {
+  position: relative;
+  overflow: hidden;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-left: 3px solid var(--color-border-strong);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5);
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-width: 0;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+/* A very faint wash bleeding in from the polarity edge, so the card reads
+   as tinted by its own state rather than a white box with a colored
+   stripe bolted on. Kept under 5% so the tabular figures stay the
+   highest-contrast thing in the card. */
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, currentColor 0%, transparent 42%);
+  opacity: 0.035;
+  color: transparent;
+}
+
+.card[data-polarity="positive"]::after {
+  color: var(--color-positive);
+}
+.card[data-polarity="negative"]::after {
+  color: var(--color-negative);
+}
+.card[data-polarity="warning"]::after {
+  color: var(--color-warning);
 }
 
 @media (hover: hover) {
@@ -42,14 +68,16 @@
 
 .icon {
   flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--color-surface-alt);
   color: var(--color-text-muted);
+  position: relative;
+  z-index: 1;
 }
 
 .card[data-polarity="positive"] .icon {
@@ -68,24 +96,27 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 6px;
   min-width: 0;
   flex: 1;
+  position: relative;
+  z-index: 1;
 }
 
 .label {
-  font-size: var(--text-xs);
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 

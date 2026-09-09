@@ -181,3 +181,9 @@ export const SearchIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M11 19a8 8 0 100-16 8 8 0 000 16z M21 21l-4.35-4.35" />
   </Icon>
 );
+
+export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
