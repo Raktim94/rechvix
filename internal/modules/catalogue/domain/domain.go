@@ -147,10 +147,25 @@ type BrandRepository interface {
 
 type ProductRepository interface {
 	Create(ctx context.Context, p *Product) error
+	// Update overwrites every editable field (category/brand/unit/name/
+	// description/HSN) of an existing product, scoped by
+	// OrganisationID+ID — a full replace, not a partial patch, matching
+	// how the edit form always resends the complete set of fields it
+	// loaded. Does not touch Status; see SetStatus for that.
+	Update(ctx context.Context, p *Product) error
+	// SetStatus is the "delete"/"restore" a product actually does —
+	// products are never hard-deleted (they're referenced by historical
+	// sales/purchase lines and stock movements that must keep resolving),
+	// so "delete" flips Status to INACTIVE. Returns ErrNotFound if no row
+	// matches orgID+id.
+	SetStatus(ctx context.Context, orgID, id uuid.UUID, status Status) error
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Product, error)
 	ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]*Product, error)
 	// SearchByName does a trigram similarity search against the
 	// idx_products_name_trgm index (migrations/0008_catalogue.up.sql).
+	// Only ever returns ACTIVE products — this is the billing-counter/
+	// quick-add search path (sales.Service.BillingLookup), and a
+	// "deleted" (INACTIVE) product must not be addable to a new sale.
 	SearchByName(ctx context.Context, orgID uuid.UUID, query string, limit int) ([]*Product, error)
 }
 

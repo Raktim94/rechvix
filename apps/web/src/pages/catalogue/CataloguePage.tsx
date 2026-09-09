@@ -13,6 +13,7 @@ interface Product {
   BaseUOMID: string;
   CategoryID: string | null;
   BrandID: string | null;
+  Status: "ACTIVE" | "INACTIVE";
 }
 interface Unit {
   ID: string;
@@ -37,6 +38,15 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   // via /catalogue?new=1 — the form is right here, it just used to be
   // one unexplained click away for anyone arriving from elsewhere.
   const [showForm, setShowForm] = useState(openNewForm);
+  // Set while editing an existing product — the same form panel is
+  // reused, but submit calls updateProduct instead of createProduct and
+  // the create-only fields below (SKU/barcode/opening stock/GST rate)
+  // are hidden, since PUT /catalogue/products/{id} only covers the
+  // fields a product itself has (name/HSN/unit/category/brand).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
   const [name, setName] = useState("");
   const [hsn, setHsn] = useState("");
   const [unitId, setUnitId] = useState("");
@@ -163,6 +173,77 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
     },
   });
 
+  const updateProduct = useMutation({
+    mutationFn: () =>
+      api.put<Product>(`/catalogue/products/${editingId}`, {
+        category_id: categoryId || null,
+        brand_id: brandId || null,
+        base_uom_id: unitId,
+        name,
+        description: "",
+        hsn_sac_code: hsn,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
+      closeForm();
+    },
+  });
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setName("");
+    setHsn("");
+    setSkuCode("");
+    setCategoryId("");
+    setBrandId("");
+    setGstRate("");
+    setOpeningQty("");
+    setOpeningCost("");
+    setBarcode("");
+  }
+
+  function startEdit(p: Product) {
+    setEditingId(p.ID);
+    setName(p.Name);
+    setHsn(p.HSNSACCode);
+    setUnitId(p.BaseUOMID);
+    setCategoryId(p.CategoryID ?? "");
+    setBrandId(p.BrandID ?? "");
+    setShowForm(true);
+  }
+
+  // Products are never hard-deleted — "Delete" flips Status to INACTIVE
+  // (see catalogue.domain.ProductRepository.SetStatus's doc comment) so
+  // historical sales/purchase lines and stock movements keep resolving.
+  // "Restore" flips it back.
+  const setStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "ACTIVE" | "INACTIVE" }) =>
+      status === "INACTIVE" ? api.delete(`/catalogue/products/${id}`) : api.post(`/catalogue/products/${id}/restore`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
+      setConfirmingDeleteId(null);
+    },
+  });
+
+  const bulkDelete = useMutation({
+    mutationFn: (ids: string[]) => api.post("/catalogue/products/bulk-delete", { ids }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
+      setSelectedIds(new Set());
+      setConfirmingBulkDelete(false);
+    },
+  });
+
+  function toggleSelected(id: string) {
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <div className={layout.page}>
       <div className={layout.heading}>
@@ -170,13 +251,33 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           <h1>Catalogue</h1>
           <p className={layout.subtitle}>Products, sold as at least one variant each.</p>
         </div>
-        <button type="button" className={ui.btnPrimary} onClick={() => setShowForm((v) => !v)}>
+        <button
+          type="button"
+          className={ui.btnPrimary}
+          onClick={() => {
+            if (showForm && !editingId) closeForm();
+            else {
+              setEditingId(null);
+              setName("");
+              setHsn("");
+              setSkuCode("");
+              setCategoryId("");
+              setBrandId("");
+              setGstRate("");
+              setOpeningQty("");
+              setOpeningCost("");
+              setBarcode("");
+              setShowForm(true);
+            }
+          }}
+        >
           + New product
         </button>
       </div>
 
       {showForm ? (
         <div className={layout.panel}>
+          <h2 style={{ marginTop: 0 }}>{editingId ? "Edit product" : "New product"}</h2>
           {units.data && units.data.length === 0 ? (
             <div className={ui.formGrid} style={{ marginBottom: 16 }}>
               <div className={ui.field}>
@@ -221,30 +322,34 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                 ))}
               </select>
             </div>
-            <div className={ui.field}>
-              <label htmlFor="product-sku">SKU (optional)</label>
-              <input id="product-sku" className={ui.input} value={skuCode} onChange={(e) => setSkuCode(e.target.value)} />
-            </div>
-            <div className={ui.field}>
-              <label htmlFor="product-barcode">Barcode (optional)</label>
-              <input id="product-barcode" className={ui.input} value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Scan or type it here" />
-            </div>
-            <div className={ui.field}>
-              <label htmlFor="product-opening-qty">Opening stock (optional)</label>
-              <input
-                id="product-opening-qty"
-                className={ui.input}
-                inputMode="decimal"
-                value={openingQty}
-                onChange={(e) => setOpeningQty(e.target.value)}
-                placeholder="How many do you have right now?"
-              />
-            </div>
-            {Number(openingQty) > 0 ? (
-              <div className={ui.field}>
-                <label htmlFor="product-opening-cost">Cost per unit (optional)</label>
-                <input id="product-opening-cost" className={ui.input} inputMode="decimal" value={openingCost} onChange={(e) => setOpeningCost(e.target.value)} placeholder="0.00" />
-              </div>
+            {!editingId ? (
+              <>
+                <div className={ui.field}>
+                  <label htmlFor="product-sku">SKU (optional)</label>
+                  <input id="product-sku" className={ui.input} value={skuCode} onChange={(e) => setSkuCode(e.target.value)} />
+                </div>
+                <div className={ui.field}>
+                  <label htmlFor="product-barcode">Barcode (optional)</label>
+                  <input id="product-barcode" className={ui.input} value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Scan or type it here" />
+                </div>
+                <div className={ui.field}>
+                  <label htmlFor="product-opening-qty">Opening stock (optional)</label>
+                  <input
+                    id="product-opening-qty"
+                    className={ui.input}
+                    inputMode="decimal"
+                    value={openingQty}
+                    onChange={(e) => setOpeningQty(e.target.value)}
+                    placeholder="How many do you have right now?"
+                  />
+                </div>
+                {Number(openingQty) > 0 ? (
+                  <div className={ui.field}>
+                    <label htmlFor="product-opening-cost">Cost per unit (optional)</label>
+                    <input id="product-opening-cost" className={ui.input} inputMode="decimal" value={openingCost} onChange={(e) => setOpeningCost(e.target.value)} placeholder="0.00" />
+                  </div>
+                ) : null}
+              </>
             ) : null}
             <div className={ui.field}>
               <label htmlFor="product-category">Category (optional)</label>
@@ -300,18 +405,34 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
             </div>
           </div>
           <div className={ui.formActions} style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              className={ui.btnPrimary}
-              disabled={!name || !unitId || createProduct.isPending}
-              onClick={() => createProduct.mutate()}
-            >
-              Save product
-            </button>
+            {editingId ? (
+              <>
+                <button type="button" className={ui.btnPrimary} disabled={!name || !unitId || updateProduct.isPending} onClick={() => updateProduct.mutate()}>
+                  {updateProduct.isPending ? "Saving…" : "Save changes"}
+                </button>
+                <button type="button" className={ui.btnSecondary} onClick={closeForm}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={ui.btnPrimary}
+                disabled={!name || !unitId || createProduct.isPending}
+                onClick={() => createProduct.mutate()}
+              >
+                Save product
+              </button>
+            )}
           </div>
           {createProduct.isError ? (
             <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
               {createProduct.error instanceof ApiError ? createProduct.error.message : "Could not save this product."}
+            </p>
+          ) : null}
+          {updateProduct.isError ? (
+            <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+              {updateProduct.error instanceof ApiError ? updateProduct.error.message : "Could not save these changes."}
             </p>
           ) : null}
         </div>
@@ -342,28 +463,108 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         ) : products.data.length === 0 ? (
           <p className={layout.emptyState}>No products yet — add your first one above.</p>
         ) : (
-          <div className={ui.tableScroll}>
-            <table className={ui.table}>
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">HSN/SAC</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Brand</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.data.map((p) => (
-                  <tr key={p.ID}>
-                    <td>{p.Name}</td>
-                    <td>{p.HSNSACCode}</td>
-                    <td>{p.CategoryID ? (categoryNameById.get(p.CategoryID) ?? "—") : "—"}</td>
-                    <td>{p.BrandID ? (brandNameById.get(p.BrandID) ?? "—") : "—"}</td>
+          <>
+            {selectedIds.size > 0 ? (
+              <div className={ui.toolbar} style={{ marginBottom: 8, gap: 8 }}>
+                <span className={ui.muted}>{selectedIds.size} selected</span>
+                {confirmingBulkDelete ? (
+                  <>
+                    <span>Delete {selectedIds.size} product(s)?</span>
+                    <button type="button" className={ui.btnDanger} disabled={bulkDelete.isPending} onClick={() => bulkDelete.mutate([...selectedIds])}>
+                      {bulkDelete.isPending ? "Deleting…" : "Confirm delete"}
+                    </button>
+                    <button type="button" className={ui.btnGhost} onClick={() => setConfirmingBulkDelete(false)}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className={ui.btnSecondary} onClick={() => setConfirmingBulkDelete(true)}>
+                    Delete {selectedIds.size} product(s)
+                  </button>
+                )}
+                <button type="button" className={ui.btnGhost} onClick={() => setSelectedIds(new Set())}>
+                  Clear selection
+                </button>
+              </div>
+            ) : null}
+            {bulkDelete.isError ? (
+              <p role="alert" style={{ color: "var(--color-negative)", marginBottom: 8 }}>
+                {bulkDelete.error instanceof ApiError ? bulkDelete.error.message : "Could not delete these products."}
+              </p>
+            ) : null}
+            <div className={ui.tableScroll}>
+              <table className={ui.table}>
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all products"
+                        checked={selectedIds.size > 0 && selectedIds.size === products.data.length}
+                        onChange={(e) => setSelectedIds(e.target.checked ? new Set(products.data.map((p) => p.ID)) : new Set())}
+                      />
+                    </th>
+                    <th scope="col">Name</th>
+                    <th scope="col">HSN/SAC</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">Brand</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {products.data.map((p) => (
+                    <tr key={p.ID} style={p.Status === "INACTIVE" ? { opacity: 0.6 } : undefined}>
+                      <td>
+                        <input type="checkbox" aria-label={`Select ${p.Name}`} checked={selectedIds.has(p.ID)} onChange={() => toggleSelected(p.ID)} />
+                      </td>
+                      <td>{p.Name}</td>
+                      <td>{p.HSNSACCode}</td>
+                      <td>{p.CategoryID ? (categoryNameById.get(p.CategoryID) ?? "—") : "—"}</td>
+                      <td>{p.BrandID ? (brandNameById.get(p.BrandID) ?? "—") : "—"}</td>
+                      <td>
+                        <span className={ui.badge} data-tone={p.Status === "ACTIVE" ? "positive" : "neutral"}>
+                          {p.Status}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                          <button type="button" className={ui.btnGhost} onClick={() => startEdit(p)}>
+                            Edit
+                          </button>
+                          {p.Status === "ACTIVE" ? (
+                            confirmingDeleteId === p.ID ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className={ui.btnGhost}
+                                  disabled={setStatus.isPending}
+                                  onClick={() => setStatus.mutate({ id: p.ID, status: "INACTIVE" })}
+                                >
+                                  Confirm
+                                </button>
+                                <button type="button" className={ui.btnGhost} onClick={() => setConfirmingDeleteId(null)}>
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button type="button" className={ui.btnGhost} onClick={() => setConfirmingDeleteId(p.ID)}>
+                                Delete
+                              </button>
+                            )
+                          ) : (
+                            <button type="button" className={ui.btnGhost} disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: p.ID, status: "ACTIVE" })}>
+                              Restore
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

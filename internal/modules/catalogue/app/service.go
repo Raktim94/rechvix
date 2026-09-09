@@ -261,6 +261,90 @@ func (s *Service) CreateProduct(ctx context.Context, principal permissions.Princ
 	return prod, nil
 }
 
+// UpdateProductParams mirrors CreateProductParams — the edit form always
+// resends the full set of editable fields it loaded, so this is a full
+// replace, not a partial patch (same convention as ProductRepository.
+// Update itself).
+type UpdateProductParams struct {
+	CategoryID  *uuid.UUID
+	BrandID     *uuid.UUID
+	BaseUOMID   uuid.UUID
+	Name        string
+	Description string
+	HSNSACCode  string
+}
+
+func (s *Service) UpdateProduct(ctx context.Context, principal permissions.Principal, id uuid.UUID, p UpdateProductParams) (*domain.Product, error) {
+	if err := s.manage(ctx, principal); err != nil {
+		return nil, err
+	}
+	now := s.now()
+	prod := &domain.Product{
+		ID: id, OrganisationID: principal.OrganisationID, CategoryID: p.CategoryID, BrandID: p.BrandID,
+		BaseUOMID: p.BaseUOMID, Name: p.Name, Description: p.Description, HSNSACCode: p.HSNSACCode, UpdatedAt: now,
+	}
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.products.Update(ctx, prod); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "product.updated", EntityType: "product", EntityID: &id,
+			AfterState: map[string]any{"name": p.Name, "hsn_sac_code": p.HSNSACCode}, At: now,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetProduct(ctx, principal, id)
+}
+
+// SetProductStatus is what the catalogue UI's "Delete"/"Restore" actions
+// actually call — see ProductRepository.SetStatus's doc comment for why
+// this is a status flip, not a row delete.
+func (s *Service) SetProductStatus(ctx context.Context, principal permissions.Principal, id uuid.UUID, status domain.Status) error {
+	if err := s.manage(ctx, principal); err != nil {
+		return err
+	}
+	now := s.now()
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.products.SetStatus(ctx, principal.OrganisationID, id, status); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "product.status_changed", EntityType: "product", EntityID: &id,
+			AfterState: map[string]any{"status": string(status)}, At: now,
+		})
+	})
+}
+
+// BulkSetProductStatus applies SetProductStatus to every id in one
+// transaction (the multi-select "Delete N products" action) — all-or-
+// nothing, same as a single delete, so a bad id in the batch doesn't
+// leave the selection half-deleted.
+func (s *Service) BulkSetProductStatus(ctx context.Context, principal permissions.Principal, ids []uuid.UUID, status domain.Status) error {
+	if err := s.manage(ctx, principal); err != nil {
+		return err
+	}
+	now := s.now()
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		for _, id := range ids {
+			if err := s.products.SetStatus(ctx, principal.OrganisationID, id, status); err != nil {
+				return err
+			}
+			if err := s.audit.Record(ctx, audit.Entry{
+				OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+				Action: "product.status_changed", EntityType: "product", EntityID: &id,
+				AfterState: map[string]any{"status": string(status)}, At: now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *Service) GetProduct(ctx context.Context, principal permissions.Principal, id uuid.UUID) (*domain.Product, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err

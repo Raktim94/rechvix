@@ -247,6 +247,32 @@ func (r *ProductRepo) Create(ctx context.Context, p *domain.Product) error {
 	return nil
 }
 
+func (r *ProductRepo) Update(ctx context.Context, p *domain.Product) error {
+	const q = `
+		UPDATE products SET category_id = $3, brand_id = $4, base_uom_id = $5, name = $6, description = $7, hsn_sac_code = $8, updated_at = $9
+		WHERE organisation_id = $1 AND id = $2`
+	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, p.OrganisationID, p.ID, p.CategoryID, p.BrandID, p.BaseUOMID, p.Name, nullIfEmpty(p.Description), nullIfEmpty(p.HSNSACCode), p.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("catalogue: updating product: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *ProductRepo) SetStatus(ctx context.Context, orgID, id uuid.UUID, status domain.Status) error {
+	const q = `UPDATE products SET status = $3 WHERE organisation_id = $1 AND id = $2`
+	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, orgID, id, string(status))
+	if err != nil {
+		return fmt.Errorf("catalogue: setting product status: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func (r *ProductRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Product, error) {
 	const q = `
 		SELECT id, organisation_id, category_id, brand_id, base_uom_id, name, COALESCE(description, ''), COALESCE(hsn_sac_code, ''), status, created_at, updated_at
@@ -274,7 +300,7 @@ func (r *ProductRepo) SearchByName(ctx context.Context, orgID uuid.UUID, query s
 	const q = `
 		SELECT id, organisation_id, category_id, brand_id, base_uom_id, name, COALESCE(description, ''), COALESCE(hsn_sac_code, ''), status, created_at, updated_at
 		FROM products
-		WHERE organisation_id = $1 AND name % $2
+		WHERE organisation_id = $1 AND name % $2 AND status = 'ACTIVE'
 		ORDER BY similarity(name, $2) DESC
 		LIMIT $3`
 	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, query, limit)

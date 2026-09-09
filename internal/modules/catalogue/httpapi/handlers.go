@@ -33,6 +33,10 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/catalogue/products", h.listOrSearchProducts)
 	r.Post("/catalogue/products", h.createProduct)
 	r.Get("/catalogue/products/{id}", h.getProduct)
+	r.Put("/catalogue/products/{id}", h.updateProduct)
+	r.Delete("/catalogue/products/{id}", h.deleteProduct)
+	r.Post("/catalogue/products/{id}/restore", h.restoreProduct)
+	r.Post("/catalogue/products/bulk-delete", h.bulkDeleteProducts)
 	r.Get("/catalogue/products/{id}/variants", h.listVariants)
 	r.Post("/catalogue/variants", h.createVariant)
 	r.Post("/catalogue/barcodes", h.addBarcode)
@@ -242,6 +246,75 @@ func (h *Handlers) getProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, p)
+}
+
+func (h *Handlers) updateProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[createProductRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	p, err := h.svc.UpdateProduct(r.Context(), principal(r), id, app.UpdateProductParams{
+		CategoryID: req.CategoryID, BrandID: req.BrandID, BaseUOMID: req.BaseUOMID,
+		Name: req.Name, Description: req.Description, HSNSACCode: req.HSNSACCode,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, p)
+}
+
+func (h *Handlers) deleteProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	if err := h.svc.SetProductStatus(r.Context(), principal(r), id, domain.StatusInactive); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handlers) restoreProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	if err := h.svc.SetProductStatus(r.Context(), principal(r), id, domain.StatusActive); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type bulkDeleteProductsRequest struct {
+	IDs []uuid.UUID `json:"ids"`
+}
+
+func (h *Handlers) bulkDeleteProducts(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[bulkDeleteProductsRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	if len(req.IDs) == 0 {
+		httpx.WriteError(w, r, httpx.NewBadRequest("IDS_REQUIRED", "ids must contain at least one product id."))
+		return
+	}
+	if err := h.svc.BulkSetProductStatus(r.Context(), principal(r), req.IDs, domain.StatusInactive); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handlers) listVariants(w http.ResponseWriter, r *http.Request) {
