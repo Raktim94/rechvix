@@ -11,6 +11,7 @@ import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 import { CancelPurchaseModal } from "./CancelPurchaseModal";
+import { ImportAiMarkdownButton } from "./ImportAiMarkdownButton";
 import { PurchaseScanReviewModal, type ResolvedScanLine } from "./PurchaseScanReviewModal";
 
 type PurchaseStatus = "DRAFT" | "FINALIZED" | "CANCELLED";
@@ -456,6 +457,7 @@ export function PurchasesPage() {
           <button type="button" className={ui.btnSecondary} disabled={scanning} onClick={() => scanInputRef.current?.click()}>
             {scanning ? `Scanning… ${Math.round(scanProgress * 100)}%` : "Scan bill"}
           </button>
+          <ImportAiMarkdownButton />
           <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
             + New purchase
           </button>

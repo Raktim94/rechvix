@@ -5,6 +5,7 @@ import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
+import { ImportAiMarkdownButton } from "../purchases/ImportAiMarkdownButton";
 import { ScanBillButton } from "../purchases/ScanBillButton";
 
 interface Product {
@@ -276,8 +277,9 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         </button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
         <ScanBillButton />
+        <ImportAiMarkdownButton />
       </div>
 
       {showForm ? (
