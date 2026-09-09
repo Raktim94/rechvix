@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -513,17 +513,15 @@ function ScanningPanel() {
  */
 function ChangePasswordPanel() {
   const { logout } = useAuth();
-  const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const change = useMutation({
     mutationFn: () => api.post("/auth/change-password", { current_password: currentPassword, new_password: newPassword, confirm_password: confirmPassword }),
-    onSuccess: async () => {
-      await logout();
-      void navigate({ to: "/login" });
-    },
+    // logout() itself now navigates to /login (see AuthProvider) — this
+    // used to also call navigate() here because logout() didn't yet.
+    onSuccess: () => logout(),
   });
 
   const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
