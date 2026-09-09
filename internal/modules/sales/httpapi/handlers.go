@@ -53,6 +53,8 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/sales/documents", h.createDocument)
 	r.Get("/sales/documents/{id}", h.getDocument)
 	r.Post("/sales/documents/{id}/lines", h.addLine)
+	r.Put("/sales/documents/{id}/lines/{lineId}", h.updateLine)
+	r.Delete("/sales/documents/{id}/lines/{lineId}", h.deleteLine)
 	r.Post("/sales/documents/{id}/finalize", h.finalizeDocument)
 	r.Post("/sales/documents/{id}/convert", h.convertDocument)
 	r.Post("/sales/documents/{id}/cancel", h.cancelDocument)
@@ -246,6 +248,74 @@ func (h *Handlers) addLine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, line)
+}
+
+type updateLineRequest struct {
+	Quantity           string `json:"quantity"`
+	UnitPrice          string `json:"unit_price"`
+	LineDiscountAmount string `json:"line_discount_amount"`
+}
+
+func (h *Handlers) updateLine(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	lineID, err := uuid.Parse(chi.URLParam(r, "lineId"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "lineId must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[updateLineRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	qty, err := decimal.NewFromString(req.Quantity)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_QUANTITY", "quantity must be a decimal string."))
+		return
+	}
+	price, err := decimal.NewFromString(req.UnitPrice)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_UNIT_PRICE", "unit_price must be a decimal string."))
+		return
+	}
+	discount := decimal.Zero
+	if req.LineDiscountAmount != "" {
+		discount, err = decimal.NewFromString(req.LineDiscountAmount)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_DISCOUNT", "line_discount_amount must be a decimal string."))
+			return
+		}
+	}
+	line, err := h.svc.UpdateLine(r.Context(), principal(r), app.UpdateLineParams{
+		DocumentID: id, LineID: lineID, Quantity: qty, UnitPrice: price, LineDiscountAmount: discount,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, line)
+}
+
+func (h *Handlers) deleteLine(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	lineID, err := uuid.Parse(chi.URLParam(r, "lineId"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "lineId must be a UUID."))
+		return
+	}
+	if err := h.svc.DeleteLine(r.Context(), principal(r), id, lineID); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handlers) finalizeDocument(w http.ResponseWriter, r *http.Request) {

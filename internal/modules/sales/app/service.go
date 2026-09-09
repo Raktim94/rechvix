@@ -367,6 +367,116 @@ func (s *Service) AddLine(ctx context.Context, principal permissions.Principal, 
 	return line, nil
 }
 
+type UpdateLineParams struct {
+	DocumentID         uuid.UUID
+	LineID             uuid.UUID
+	Quantity           decimal.Decimal
+	UnitPrice          decimal.Decimal
+	LineDiscountAmount decimal.Decimal
+}
+
+// UpdateLine changes an existing line's quantity/price/discount on a
+// DRAFT document — the billing counter's "fix a quantity" action, which
+// had no path at all before this (see DocumentLineRepository's own doc
+// comment). Recomputes LineTotal itself rather than trusting a
+// caller-supplied total, same "server recalculates, never trusts a
+// client-sent total" rule AddLine already follows.
+func (s *Service) UpdateLine(ctx context.Context, principal permissions.Principal, p UpdateLineParams) (*domain.DocumentLine, error) {
+	if err := s.editDraft(ctx, principal); err != nil {
+		return nil, err
+	}
+	if p.LineDiscountAmount.IsPositive() {
+		if err := s.discountPerm(ctx, principal); err != nil {
+			return nil, err
+		}
+	}
+	if !p.Quantity.IsPositive() {
+		return nil, fmt.Errorf("sales: quantity must be positive")
+	}
+	var line *domain.DocumentLine
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		doc, err := s.documents.GetByID(ctx, principal.OrganisationID, p.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.Status != domain.StatusDraft {
+			return domain.ErrDocumentNotDraft
+		}
+		existing, err := s.lines.GetByID(ctx, principal.OrganisationID, p.LineID)
+		if err != nil {
+			return err
+		}
+		if existing.SalesDocumentID != p.DocumentID {
+			return domain.ErrNotFound
+		}
+		unitPrice, err := money.New(p.UnitPrice, doc.CurrencyCode)
+		if err != nil {
+			return fmt.Errorf("sales: %w", err)
+		}
+		discount, err := money.New(p.LineDiscountAmount, doc.CurrencyCode)
+		if err != nil {
+			return fmt.Errorf("sales: %w", err)
+		}
+		lineTotalDecimal := p.Quantity.Mul(p.UnitPrice).Sub(p.LineDiscountAmount)
+		lineTotal, err := money.New(lineTotalDecimal, doc.CurrencyCode)
+		if err != nil {
+			return fmt.Errorf("sales: %w", err)
+		}
+		existing.Quantity = p.Quantity
+		existing.UnitPrice = unitPrice
+		existing.LineDiscountAmount = discount
+		existing.LineTotal = lineTotal
+		if err := s.lines.Update(ctx, existing); err != nil {
+			return err
+		}
+		line = existing
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "sales_document_line.updated", EntityType: "sales_document_line", EntityID: &p.LineID,
+			AfterState: map[string]any{"document_id": p.DocumentID, "quantity": p.Quantity.String(), "unit_price": p.UnitPrice.String()}, At: s.now(),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return line, nil
+}
+
+// DeleteLine removes a line from a DRAFT document — the billing
+// counter's "remove an item scanned by mistake" action. Line numbers
+// are not renumbered after a delete (a DRAFT-only, display-order
+// concern, not worth the extra writes).
+func (s *Service) DeleteLine(ctx context.Context, principal permissions.Principal, documentID, lineID uuid.UUID) error {
+	if err := s.editDraft(ctx, principal); err != nil {
+		return err
+	}
+	now := s.now()
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		doc, err := s.documents.GetByID(ctx, principal.OrganisationID, documentID)
+		if err != nil {
+			return err
+		}
+		if doc.Status != domain.StatusDraft {
+			return domain.ErrDocumentNotDraft
+		}
+		existing, err := s.lines.GetByID(ctx, principal.OrganisationID, lineID)
+		if err != nil {
+			return err
+		}
+		if existing.SalesDocumentID != documentID {
+			return domain.ErrNotFound
+		}
+		if err := s.lines.Delete(ctx, principal.OrganisationID, lineID); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "sales_document_line.deleted", EntityType: "sales_document_line", EntityID: &lineID,
+			AfterState: map[string]any{"document_id": documentID}, At: now,
+		})
+	})
+}
+
 // FinalizeDocument transitions a DRAFT document to FINALIZED. In one
 // transaction: calculates and snapshots tax (taxation.Service via
 // gstindia), posts stock movements for StockAffecting document types

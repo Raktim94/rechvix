@@ -179,4 +179,13 @@ type DocumentRepository interface {
 type DocumentLineRepository interface {
 	Create(ctx context.Context, l *DocumentLine) error
 	ListByDocument(ctx context.Context, documentID uuid.UUID) ([]*DocumentLine, error)
+	// GetByID/Update/Delete only ever apply to a DRAFT document's line —
+	// the billing counter's own "fix a quantity" / "remove an item I
+	// scanned twice" actions, which had no path at all until these
+	// existed (a cashier had to abandon the whole draft and start over
+	// for even a one-line mistake). Service.UpdateLine/DeleteLine are
+	// what enforce the DRAFT-only rule; these are just plain CRUD.
+	GetByID(ctx context.Context, orgID, id uuid.UUID) (*DocumentLine, error)
+	Update(ctx context.Context, l *DocumentLine) error
+	Delete(ctx context.Context, orgID, id uuid.UUID) error
 }

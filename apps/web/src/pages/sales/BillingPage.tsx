@@ -33,6 +33,46 @@ interface PriceList {
   IsDefault: boolean;
 }
 
+/** One cart line's quantity, editable in place — committed on blur or
+ * Enter, reverted on Escape. Local, uncontrolled-feeling state so
+ * typing "5" doesn't fight the server round-trip on every keystroke;
+ * the line's real quantity (from the server) is what it resets to
+ * whenever the row itself changes underneath it. */
+function EditableQty({ line, onCommit, disabled }: { line: SalesDocumentLine; onCommit: (quantity: string) => void; disabled: boolean }) {
+  const [value, setValue] = useState(line.Quantity);
+  useEffect(() => setValue(line.Quantity), [line.Quantity, line.ID]);
+
+  function commit() {
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== line.Quantity && Number(trimmed) > 0) {
+      onCommit(trimmed);
+    } else {
+      setValue(line.Quantity); // invalid/unchanged — snap back rather than leaving a bad value showing
+    }
+  }
+
+  return (
+    <input
+      className={ui.input}
+      style={{ width: 70, textAlign: "right" }}
+      inputMode="decimal"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+        } else if (e.key === "Escape") {
+          setValue(line.Quantity);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
+
 /** The billing counter — brief's "exceptional attention" screen. A sale is
  * a real DRAFT sales_documents row from the moment the customer is picked
  * (not client-side-only state until some later "save"): every add-line
@@ -117,21 +157,32 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     enabled: !!customer && customer.ID !== resumeDocumentId,
   });
 
+  // Shared by the debounced-as-you-type search below AND the barcode-
+  // scan Enter handler, which can't just read productResults state — a
+  // scanner types its whole code and sends Enter fast enough that the
+  // 150ms debounce below often hasn't resolved yet, so Enter needs its
+  // own immediate, undebounced fetch rather than trusting whatever's
+  // currently in state.
+  async function fetchProductResults(query: string): Promise<BillingLookupResult[]> {
+    const params = new URLSearchParams({ q: query });
+    if (org.warehouse) params.set("warehouse_id", org.warehouse.ID);
+    if (priceListId) params.set("price_list_id", priceListId);
+    const res = await api.get<{ results: BillingLookupResult[] | null }>(`/sales/billing-lookup?${params.toString()}`);
+    return res.results ?? [];
+  }
+
   useEffect(() => {
     if (productQuery.trim().length < 2 || !documentId) {
       setProductResults([]);
       return;
     }
     const handle = setTimeout(() => {
-      const params = new URLSearchParams({ q: productQuery });
-      if (org.warehouse) params.set("warehouse_id", org.warehouse.ID);
-      if (priceListId) params.set("price_list_id", priceListId);
-      api
-        .get<{ results: BillingLookupResult[] | null }>(`/sales/billing-lookup?${params.toString()}`)
-        .then((res) => setProductResults(res.results ?? []))
+      fetchProductResults(productQuery)
+        .then(setProductResults)
         .catch(() => setProductResults([]));
     }, 150);
     return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productQuery, documentId, org.warehouse, priceListId]);
 
   const startSale = useMutation({
@@ -175,6 +226,48 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     },
   });
 
+  // Fixing a quantity, or removing an item scanned by mistake, used to
+  // mean abandoning the whole draft and starting over — there was no
+  // line-update/delete endpoint at all. Both now exist; keeps the
+  // line's own current price/discount unchanged, only quantity moves.
+  const updateLineQty = useMutation({
+    mutationFn: async (vars: { line: SalesDocumentLine; quantity: string }) =>
+      api.put(`/sales/documents/${documentId}/lines/${vars.line.ID}`, {
+        quantity: vars.quantity,
+        unit_price: vars.line.UnitPrice.amount,
+        line_discount_amount: vars.line.LineDiscountAmount.amount,
+      }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["sales-document", documentId] }),
+  });
+
+  const removeLine = useMutation({
+    mutationFn: (lineId: string) => api.delete(`/sales/documents/${documentId}/lines/${lineId}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["sales-document", documentId] }),
+  });
+
+  // The org's own generic customer for a walk-in/cash sale that doesn't
+  // warrant looking up or creating a real contact — reuses one shared
+  // "Walk-in Customer" party across every such sale (found by exact
+  // name, created once on first use) rather than the counter needing a
+  // real customer picked for every single quick sale.
+  const startWalkIn = useMutation({
+    mutationFn: async () => {
+      const matches = await api.getListField<Party>(`/contacts/parties?q=${encodeURIComponent("Walk-in Customer")}`, "parties");
+      const existing = matches.find((p) => p.LegalName.toLowerCase() === "walk-in customer");
+      if (existing) return existing;
+      return api.post<Party>("/contacts/parties", {
+        party_type: "CUSTOMER",
+        legal_name: "Walk-in Customer",
+        currency_code: org.organisation?.DefaultCurrencyCode || "INR",
+      });
+    },
+    onSuccess: (party) => {
+      setCustomer(party);
+      setCustomerQuery("");
+      setShowCustomerResults(false);
+    },
+  });
+
   const finalize = useMutation({
     mutationFn: () => api.post<SalesDocument>(`/sales/documents/${documentId}/finalize`),
     onSuccess: (d) => navigate({ to: "/sales/$id", params: { id: d.ID } }),
@@ -196,8 +289,45 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     });
   }
 
+  // A barcode scanner types the whole code then sends Enter itself —
+  // waiting for the debounced dropdown and a manual "Add" click on
+  // every single scan is exactly the friction a scanner is supposed to
+  // remove. Enter re-fetches immediately (not trusting productResults,
+  // which the 150ms debounce above may not have resolved yet) and adds
+  // straight away when there's exactly one match — an ambiguous name
+  // search with several results still falls through to the normal
+  // dropdown-and-click flow rather than guessing which one was meant.
+  const [scanning, setScanning] = useState(false);
+  async function handleSearchEnter() {
+    const query = productQuery.trim();
+    if (query.length < 2 || scanning) return;
+    setScanning(true);
+    try {
+      const results = await fetchProductResults(query);
+      setProductResults(results);
+      if (results.length === 1 && results[0]) {
+        await handleAddProduct(results[0]);
+      }
+    } catch {
+      // Leave whatever's already shown — same "don't blank the screen
+      // on a transient failure" as the debounced search's own catch.
+    } finally {
+      setScanning(false);
+    }
+  }
+
   const lines = doc.data?.lines ?? [];
   const grandTotal = doc.data?.document.GrandTotalAmount;
+  // GrandTotalAmount is only ever computed at finalize (tax calculation
+  // happens then, not per-line) — a DRAFT document's own total is
+  // always null. Without this, the counter showed nothing at all for
+  // "how much does this add up to so far" while still adding items,
+  // which is the one number a cashier and a customer both actually
+  // want to see mid-sale. Sum of line totals only (pre-tax) — never
+  // presented as the final amount, which is what "Grand total" alone
+  // (once it exists, post-finalize) still means.
+  const runningSubtotal = lines.reduce((sum, l) => sum + Number(l.LineTotal.amount), 0);
+  const currencyCode = grandTotal?.currency ?? doc.data?.document.CurrencyCode ?? "INR";
 
   // Counter shortcuts (brief §18): F2 product search, F3 customer search,
   // Ctrl+Enter finalize — the three real actions this screen actually
@@ -347,6 +477,9 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 <button type="button" className={ui.btnSecondary} onClick={() => setQuickAddOpen(true)}>
                   + New
                 </button>
+                <button type="button" className={ui.btnSecondary} disabled={startWalkIn.isPending} onClick={() => startWalkIn.mutate()} title="Skip picking a customer — for a quick retail sale">
+                  {startWalkIn.isPending ? "…" : "Walk-in / Cash sale"}
+                </button>
               </div>
             )}
           </div>
@@ -365,6 +498,11 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
         {startSale.isError ? (
           <p className={styles.errorText} role="alert">
             {startSale.error instanceof ApiError ? startSale.error.message : "Could not start this sale."}
+          </p>
+        ) : null}
+        {startWalkIn.isError ? (
+          <p className={styles.errorText} role="alert">
+            {startWalkIn.error instanceof ApiError ? startWalkIn.error.message : "Could not start a walk-in sale."}
           </p>
         ) : null}
         {org.isError ? (
@@ -387,6 +525,12 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
               placeholder="Type a product name, or scan a barcode…"
               value={productQuery}
               onChange={(e) => setProductQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleSearchEnter();
+                }
+              }}
               autoComplete="off"
             />
             {productResults.length > 0 ? (
@@ -428,6 +572,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                       <th scope="col">Qty</th>
                       <th scope="col">Rate</th>
                       <th scope="col">Total</th>
+                      <th scope="col" />
                     </tr>
                   </thead>
                   <tbody>
@@ -435,9 +580,16 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                       <tr key={l.ID}>
                         <td className="num">{l.LineNumber}</td>
                         <td>{l.HSNSACCode}</td>
-                        <td className="num">{l.Quantity}</td>
+                        <td className="num">
+                          <EditableQty line={l} disabled={updateLineQty.isPending} onCommit={(quantity) => updateLineQty.mutate({ line: l, quantity })} />
+                        </td>
                         <td className="num">{formatMoney(l.UnitPrice)}</td>
                         <td className="num">{formatMoney(l.LineTotal)}</td>
+                        <td>
+                          <button type="button" className={ui.btnGhost} disabled={removeLine.isPending} onClick={() => removeLine.mutate(l.ID)} aria-label={`Remove line ${l.LineNumber}`}>
+                            Remove
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -445,8 +597,8 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
               </div>
             )}
             <div className={styles.totalRow}>
-              <span>Grand total</span>
-              <span className="num">{grandTotal ? formatMoney(grandTotal) : "—"}</span>
+              <span>{grandTotal ? "Grand total" : "Subtotal (tax added on finalize)"}</span>
+              <span className="num">{grandTotal ? formatMoney(grandTotal) : formatMoney({ amount: String(runningSubtotal), currency: currencyCode })}</span>
             </div>
             <div className={ui.formActions}>
               <button type="button" className={ui.btnSecondary} onClick={() => navigate({ to: "/sales" })}>
@@ -468,6 +620,16 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             {finalize.isError ? (
               <p className={styles.errorText} role="alert">
                 {finalize.error instanceof ApiError ? finalize.error.message : "Could not finalize this sale."}
+              </p>
+            ) : null}
+            {updateLineQty.isError ? (
+              <p className={styles.errorText} role="alert">
+                {updateLineQty.error instanceof ApiError ? updateLineQty.error.message : "Could not update that quantity."}
+              </p>
+            ) : null}
+            {removeLine.isError ? (
+              <p className={styles.errorText} role="alert">
+                {removeLine.error instanceof ApiError ? removeLine.error.message : "Could not remove that item."}
               </p>
             ) : null}
           </div>

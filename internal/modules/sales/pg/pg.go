@@ -211,6 +211,52 @@ func (r *DocumentLineRepo) ListByDocument(ctx context.Context, documentID uuid.U
 	return out, rows.Err()
 }
 
+func (r *DocumentLineRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.DocumentLine, error) {
+	const q = `
+		SELECT l.id, l.organisation_id, l.sales_document_id, l.line_number, l.product_variant_id, l.unit_id,
+			l.quantity, l.unit_price_amount, l.line_discount_amount, l.hsn_sac_code, l.line_total_amount,
+			COALESCE(l.batch_code, ''), COALESCE(l.serial_code, ''), l.created_at, d.currency_code
+		FROM sales_document_lines l
+		JOIN sales_documents d ON d.id = l.sales_document_id
+		WHERE l.organisation_id = $1 AND l.id = $2`
+	row := r.pool.Q(ctx).QueryRow(ctx, q, orgID, id)
+	l, err := scanLine(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("sales: querying sales_document_line: %w", err)
+	}
+	return l, nil
+}
+
+func (r *DocumentLineRepo) Update(ctx context.Context, l *domain.DocumentLine) error {
+	const q = `
+		UPDATE sales_document_lines
+		SET quantity = $3, unit_price_amount = $4, line_discount_amount = $5, line_total_amount = $6
+		WHERE organisation_id = $1 AND id = $2`
+	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, l.OrganisationID, l.ID, l.Quantity, l.UnitPrice.Decimal(), l.LineDiscountAmount.Decimal(), l.LineTotal.Decimal())
+	if err != nil {
+		return fmt.Errorf("sales: updating sales_document_line: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *DocumentLineRepo) Delete(ctx context.Context, orgID, id uuid.UUID) error {
+	const q = `DELETE FROM sales_document_lines WHERE organisation_id = $1 AND id = $2`
+	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, orgID, id)
+	if err != nil {
+		return fmt.Errorf("sales: deleting sales_document_line: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func scanLine(row scannable) (*domain.DocumentLine, error) {
 	var l domain.DocumentLine
 	var unitPriceAmount, discountAmount, lineTotalAmount decimal.Decimal
