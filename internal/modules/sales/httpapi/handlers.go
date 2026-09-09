@@ -317,7 +317,14 @@ func (h *Handlers) cancelDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 // printDocument renders a finalized document to PDF. ?template= selects
-// the layout (brief §19); defaults to the A4 GST invoice.
+// the layout (brief §19); defaults to the A4 GST invoice. ?theme= selects
+// the visual design (font/color/border treatment, orthogonal to
+// template); defaults to the original look (ThemeClassic) so an existing
+// bookmarked/saved print URL with no ?theme= renders exactly as before
+// themes existed. An unrecognized theme value also falls back to
+// ThemeClassic (printing.styleFor's own default case) rather than
+// erroring — same "never block the invoice a shop owner needs right now"
+// principle as enrichWithEWayBill below.
 func (h *Handlers) printDocument(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -328,13 +335,17 @@ func (h *Handlers) printDocument(w http.ResponseWriter, r *http.Request) {
 	if tpl == "" {
 		tpl = printing.TemplateA4GSTInvoice
 	}
+	theme := printing.Theme(r.URL.Query().Get("theme"))
+	if theme == "" {
+		theme = printing.ThemeClassic
+	}
 	data, err := h.svc.BuildInvoiceData(r.Context(), principal(r), id)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
 	h.enrichWithEWayBill(r.Context(), principal(r).OrganisationID, id, data)
-	pdfBytes, err := printing.RenderPDF(tpl, *data)
+	pdfBytes, err := printing.RenderPDF(tpl, theme, *data)
 	if err != nil {
 		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "RENDER_FAILED", Message: "Could not render the document.", Cause: err})
 		return

@@ -467,7 +467,7 @@ func run() error {
 				if err != nil {
 					return nil, "", "", err
 				}
-				pdf, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, *data)
+				pdf, err := printing.RenderPDF(printing.TemplateA4GSTInvoice, printing.ThemeClassic, *data)
 				if err != nil {
 					return nil, "", "", err
 				}
