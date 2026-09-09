@@ -4,10 +4,37 @@ import { useState } from "react";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
+import { formatMoney, isZeroMoney, type Money } from "../../lib/money";
 import type { Party, PartyType } from "../../lib/partyTypes";
 import layout from "../DashboardPage.module.css";
 
 type TypeFilter = "ALL" | PartyType;
+
+interface AgeingBucket {
+  Total: Money;
+}
+
+/** The one fact a shop owner scanning this list actually wants — who owes
+ * what — without a click into each contact. Reuses the same per-party
+ * ageing endpoint BillingPage and ContactDetailPage already call (no new
+ * backend surface); react-query dedupes/caches by partyId, so revisiting a
+ * contact already seen here is instant. Same warning-tone-for-outstanding
+ * convention as the dashboard's own stat cards, not a flat "always green"
+ * read — an outstanding balance is a thing to watch, not a trophy. */
+function PartyBalanceCell({ partyId }: { partyId: string }) {
+  const ageing = useQuery({
+    queryKey: ["party-ageing", partyId],
+    queryFn: () => api.get<AgeingBucket>(`/accounting/parties/${partyId}/ageing`),
+  });
+  if (ageing.isPending) return <span className={ui.muted}>…</span>;
+  if (ageing.isError || !ageing.data) return <span className={ui.muted}>—</span>;
+  const zero = isZeroMoney(ageing.data.Total);
+  return (
+    <span className={ui.badge} data-tone={zero ? "neutral" : "warning"}>
+      {formatMoney(ageing.data.Total)}
+    </span>
+  );
+}
 
 export function ContactsPage() {
   const queryClient = useQueryClient();
@@ -157,6 +184,7 @@ export function ContactsPage() {
                   <th scope="col">Type</th>
                   <th scope="col">Phone</th>
                   <th scope="col">Email</th>
+                  <th scope="col">Balance</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,6 +202,9 @@ export function ContactsPage() {
                     </td>
                     <td>{p.Phone}</td>
                     <td>{p.Email}</td>
+                    <td className="num">
+                      <PartyBalanceCell partyId={p.ID} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

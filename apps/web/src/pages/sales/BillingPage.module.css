@@ -78,42 +78,130 @@
   margin-bottom: var(--space-2);
 }
 
-.productList {
-  list-style: none;
-  margin: var(--space-3) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+.searchInputWrap {
+  position: relative;
 }
 
-.productRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3);
+.searchInputIcon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--color-text-faint);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding-left: calc(var(--space-3) * 2 + 18px);
+  font-size: var(--text-md);
+}
+
+/* A compact, columnar result list — deliberately table-shaped (aligned
+   stock/price columns) rather than the free-flowing card row it replaced,
+   so scanning several matches for the right stock level or price reads
+   at a glance instead of requiring re-parsing each row's prose. */
+.resultsTable {
+  margin-top: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
-.productRow > div:first-child {
-  flex: 1 1 auto;
+.resultsHeader,
+.resultRow {
+  display: grid;
+  grid-template-columns: 1fr 88px 120px 88px;
+  gap: var(--space-3);
+  align-items: center;
 }
 
-.productPrice {
+.resultsHeader {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-alt);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+}
+
+.resultsHeaderNum {
+  text-align: right;
+}
+
+.resultRow {
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  transition: background 0.1s ease;
+}
+
+.resultRow:hover {
+  background: var(--color-surface-alt);
+}
+
+.resultName {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.resultName span {
+  font-size: var(--text-xs);
+}
+
+.resultRow > [data-tone] {
+  justify-self: end;
+}
+
+.resultPrice {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  text-align: right;
 }
 
-.totalRow {
+/* The summary bar is the one number the counter and the customer are both
+   watching while a sale builds — an elevated card with a bolder, larger
+   grand total (not just a top border on plain text) makes it read as the
+   answer to "how much so far", not one more table row. */
+.summaryBar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  font-size: var(--text-lg);
-  font-weight: 600;
-  padding: var(--space-4) 0;
-  border-top: 1px solid var(--color-border);
-  margin-top: var(--space-3);
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-lg);
+}
+
+.summaryCount {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.summaryTotal {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.summaryTotal span {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.summaryTotal strong {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-accent);
 }
 
 .errorText {

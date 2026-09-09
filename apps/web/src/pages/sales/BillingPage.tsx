@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
+import { SearchIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
@@ -66,6 +67,51 @@ function EditableQty({ line, onCommit, disabled }: { line: SalesDocumentLine; on
           (e.target as HTMLInputElement).blur();
         } else if (e.key === "Escape") {
           setValue(line.Quantity);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
+
+/** Same commit-on-blur/Enter, revert-on-Escape shape as EditableQty above,
+ * for the one other per-line field the API already accepts on the same PUT
+ * (line_discount_amount) but the table never exposed a way to actually
+ * edit — a discount used to mean deleting the line and re-adding it at a
+ * lower price, which just corrupts the "what was this item's real price"
+ * record instead of recording an actual discount. Blank reads as "0", not
+ * "unset" — there's no separate not-discounted state to preserve. */
+function EditableDiscount({ line, onCommit, disabled }: { line: SalesDocumentLine; onCommit: (discount: string) => void; disabled: boolean }) {
+  const [value, setValue] = useState(line.LineDiscountAmount.amount);
+  useEffect(() => setValue(line.LineDiscountAmount.amount), [line.LineDiscountAmount.amount, line.ID]);
+
+  function commit() {
+    const trimmed = value.trim();
+    const normalized = trimmed === "" ? "0" : trimmed;
+    if (normalized !== line.LineDiscountAmount.amount && Number(normalized) >= 0) {
+      onCommit(normalized);
+    } else {
+      setValue(line.LineDiscountAmount.amount);
+    }
+  }
+
+  return (
+    <input
+      className={ui.input}
+      style={{ width: 84, textAlign: "right" }}
+      inputMode="decimal"
+      placeholder="0"
+      value={value === "0" ? "" : value}
+      disabled={disabled}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+        } else if (e.key === "Escape") {
+          setValue(line.LineDiscountAmount.amount);
           (e.target as HTMLInputElement).blur();
         }
       }}
@@ -226,16 +272,17 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     },
   });
 
-  // Fixing a quantity, or removing an item scanned by mistake, used to
-  // mean abandoning the whole draft and starting over — there was no
-  // line-update/delete endpoint at all. Both now exist; keeps the
-  // line's own current price/discount unchanged, only quantity moves.
-  const updateLineQty = useMutation({
-    mutationFn: async (vars: { line: SalesDocumentLine; quantity: string }) =>
+  // Fixing a quantity or discount, or removing an item scanned by mistake,
+  // used to mean abandoning the whole draft and starting over — there was
+  // no line-update/delete endpoint at all. Both now exist; whichever of
+  // quantity/discount isn't being changed is resent as-is so the other
+  // never silently resets.
+  const updateLine = useMutation({
+    mutationFn: async (vars: { line: SalesDocumentLine; quantity?: string; discount?: string }) =>
       api.put(`/sales/documents/${documentId}/lines/${vars.line.ID}`, {
-        quantity: vars.quantity,
+        quantity: vars.quantity ?? vars.line.Quantity,
         unit_price: vars.line.UnitPrice.amount,
-        line_discount_amount: vars.line.LineDiscountAmount.amount,
+        line_discount_amount: vars.discount ?? vars.line.LineDiscountAmount.amount,
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["sales-document", documentId] }),
   });
@@ -518,43 +565,51 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             <label htmlFor="product-search" className={styles.searchLabel}>
               Search or scan a product
             </label>
-            <input
-              id="product-search"
-              ref={searchInputRef}
-              className={ui.input}
-              placeholder="Type a product name, or scan a barcode…"
-              value={productQuery}
-              onChange={(e) => setProductQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void handleSearchEnter();
-                }
-              }}
-              autoComplete="off"
-            />
+            <div className={styles.searchInputWrap}>
+              <SearchIcon className={styles.searchInputIcon} aria-hidden="true" />
+              <input
+                id="product-search"
+                ref={searchInputRef}
+                className={`${ui.input} ${styles.searchInput}`}
+                placeholder="Type a product name, or scan a barcode…"
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleSearchEnter();
+                  }
+                }}
+                autoComplete="off"
+              />
+            </div>
             {productResults.length > 0 ? (
-              <ul className={styles.productList}>
-                {productResults.map((r) => (
-                  <li key={r.ProductVariantID} className={styles.productRow}>
-                    <div>
-                      <strong>{r.ProductName}</strong>
-                      <div className={ui.muted}>
-                        SKU {r.SKUCode} · In stock: {r.QuantityAvailable || "0"}
+              <div className={styles.resultsTable}>
+                <div className={styles.resultsHeader}>
+                  <span>Item</span>
+                  <span className={styles.resultsHeaderNum}>Stock</span>
+                  <span className={styles.resultsHeaderNum}>Price</span>
+                  <span />
+                </div>
+                {productResults.map((r) => {
+                  const stock = Number(r.QuantityAvailable || "0");
+                  return (
+                    <div key={r.ProductVariantID} className={styles.resultRow}>
+                      <div className={styles.resultName}>
+                        <strong>{r.ProductName}</strong>
+                        <span className={ui.muted}>SKU {r.SKUCode || "—"}</span>
                       </div>
+                      <span className={ui.badge} data-tone={stock <= 0 ? "negative" : stock < 5 ? "warning" : "neutral"}>
+                        {r.QuantityAvailable || "0"}
+                      </span>
+                      <span className={styles.resultPrice}>{r.UnitPrice ? formatMoney(r.UnitPrice) : "—"}</span>
+                      <button type="button" className={ui.btnPrimary} disabled={addLine.isPending} onClick={() => handleAddProduct(r)}>
+                        Add
+                      </button>
                     </div>
-                    <div className={styles.productPrice}>{r.UnitPrice ? formatMoney(r.UnitPrice) : "—"}</div>
-                    <button
-                      type="button"
-                      className={ui.btnPrimary}
-                      disabled={addLine.isPending}
-                      onClick={() => handleAddProduct(r)}
-                    >
-                      Add
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                  );
+                })}
+              </div>
             ) : null}
           </div>
 
@@ -571,6 +626,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                       <th scope="col">HSN/SAC</th>
                       <th scope="col">Qty</th>
                       <th scope="col">Rate</th>
+                      <th scope="col">Disc.</th>
                       <th scope="col">Total</th>
                       <th scope="col" />
                     </tr>
@@ -581,9 +637,12 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                         <td className="num">{l.LineNumber}</td>
                         <td>{l.HSNSACCode}</td>
                         <td className="num">
-                          <EditableQty line={l} disabled={updateLineQty.isPending} onCommit={(quantity) => updateLineQty.mutate({ line: l, quantity })} />
+                          <EditableQty line={l} disabled={updateLine.isPending} onCommit={(quantity) => updateLine.mutate({ line: l, quantity })} />
                         </td>
                         <td className="num">{formatMoney(l.UnitPrice)}</td>
+                        <td className="num">
+                          <EditableDiscount line={l} disabled={updateLine.isPending} onCommit={(discount) => updateLine.mutate({ line: l, discount })} />
+                        </td>
                         <td className="num">{formatMoney(l.LineTotal)}</td>
                         <td>
                           <button type="button" className={ui.btnGhost} disabled={removeLine.isPending} onClick={() => removeLine.mutate(l.ID)} aria-label={`Remove line ${l.LineNumber}`}>
@@ -596,9 +655,14 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 </table>
               </div>
             )}
-            <div className={styles.totalRow}>
-              <span>{grandTotal ? "Grand total" : "Subtotal (tax added on finalize)"}</span>
-              <span className="num">{grandTotal ? formatMoney(grandTotal) : formatMoney({ amount: String(runningSubtotal), currency: currencyCode })}</span>
+            <div className={styles.summaryBar}>
+              <span className={styles.summaryCount}>
+                {lines.length} item{lines.length === 1 ? "" : "s"}
+              </span>
+              <div className={styles.summaryTotal}>
+                <span>{grandTotal ? "Grand total" : "Subtotal · tax added on finalize"}</span>
+                <strong className="num">{grandTotal ? formatMoney(grandTotal) : formatMoney({ amount: String(runningSubtotal), currency: currencyCode })}</strong>
+              </div>
             </div>
             <div className={ui.formActions}>
               <button type="button" className={ui.btnSecondary} onClick={() => navigate({ to: "/sales" })}>
@@ -622,9 +686,9 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 {finalize.error instanceof ApiError ? finalize.error.message : "Could not finalize this sale."}
               </p>
             ) : null}
-            {updateLineQty.isError ? (
+            {updateLine.isError ? (
               <p className={styles.errorText} role="alert">
-                {updateLineQty.error instanceof ApiError ? updateLineQty.error.message : "Could not update that quantity."}
+                {updateLine.error instanceof ApiError ? updateLine.error.message : "Could not update that line."}
               </p>
             ) : null}
             {removeLine.isError ? (
