@@ -97,6 +97,15 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       setNewUnitName("");
     },
   });
+
+  const addDefaultUnits = useMutation({
+    mutationFn: () => api.post<{ units_of_measure: Unit[] }>("/catalogue/units/ensure-default", {}),
+    onSuccess: (res) => {
+      void queryClient.invalidateQueries({ queryKey: ["units"] });
+      const first = res.units_of_measure[0];
+      if (first) setUnitId(first.ID);
+    },
+  });
   const createCategory = useMutation({
     mutationFn: () => api.post<Category>("/catalogue/categories", { name: newCategoryName, parent_id: null }),
     onSuccess: (c) => {
@@ -286,23 +295,36 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         <div className={layout.panel}>
           <h2 style={{ marginTop: 0 }}>{editingId ? "Edit product" : "New product"}</h2>
           {units.data && units.data.length === 0 ? (
-            <div className={ui.formGrid} style={{ marginBottom: 16 }}>
-              <div className={ui.field}>
-                <label htmlFor="new-unit-code">First, add a unit of measure — code (e.g. PCS)</label>
-                <input id="new-unit-code" className={ui.input} value={newUnitCode} onChange={(e) => setNewUnitCode(e.target.value)} />
-              </div>
-              <div className={ui.field}>
-                <label htmlFor="new-unit-name">Unit name (e.g. Pieces)</label>
-                <input id="new-unit-name" className={ui.input} value={newUnitName} onChange={(e) => setNewUnitName(e.target.value)} />
-              </div>
-              <button
-                type="button"
-                className={ui.btnSecondary}
-                disabled={!newUnitCode || !newUnitName || createUnit.isPending}
-                onClick={() => createUnit.mutate()}
-              >
-                Add unit
+            <div style={{ marginBottom: 16 }}>
+              <p className={ui.muted} style={{ marginBottom: 8 }}>
+                You don't have any units of measure yet — a product (and any bulk CSV import) needs at least one.
+              </p>
+              <button type="button" className={ui.btnPrimary} disabled={addDefaultUnits.isPending} onClick={() => addDefaultUnits.mutate()} style={{ marginBottom: 12 }}>
+                {addDefaultUnits.isPending ? "Adding…" : "Add common units (PCS, KG, LTR, BOX, and more)"}
               </button>
+              {addDefaultUnits.isError ? (
+                <p role="alert" style={{ color: "var(--color-negative)", marginBottom: 12 }}>
+                  {addDefaultUnits.error instanceof ApiError ? addDefaultUnits.error.message : "Could not add default units."}
+                </p>
+              ) : null}
+              <div className={ui.formGrid}>
+                <div className={ui.field}>
+                  <label htmlFor="new-unit-code">Or add just one — code (e.g. PCS)</label>
+                  <input id="new-unit-code" className={ui.input} value={newUnitCode} onChange={(e) => setNewUnitCode(e.target.value)} />
+                </div>
+                <div className={ui.field}>
+                  <label htmlFor="new-unit-name">Unit name (e.g. Pieces)</label>
+                  <input id="new-unit-name" className={ui.input} value={newUnitName} onChange={(e) => setNewUnitName(e.target.value)} />
+                </div>
+                <button
+                  type="button"
+                  className={ui.btnSecondary}
+                  disabled={!newUnitCode || !newUnitName || createUnit.isPending}
+                  onClick={() => createUnit.mutate()}
+                >
+                  Add unit
+                </button>
+              </div>
             </div>
           ) : null}
           <div className={ui.formGrid}>
@@ -448,15 +470,26 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       <ImportPanel
         title="Bulk import products"
         path="/catalogue/products/import"
-        columns={["name", "hsn_sac_code (optional)", "base_uom_code", "sku_code (optional — generated from name if blank)"]}
+        columns={[
+          "name",
+          "hsn_sac_code (optional)",
+          "base_uom_code",
+          "sku_code (optional — generated from name if blank)",
+          "price (optional — sets this product's price on your default price list)",
+          "gst_rate (optional — sets the GST% for this HSN/SAC code)",
+        ]}
         // base_uom_code must be a unit that already exists for this org
         // (catalogue.Service.ImportProducts looks it up by code, it
         // doesn't create one) — use the org's own first unit rather than
         // a hardcoded guess like "PCS" that might not exist here, so the
-        // downloaded sample actually imports cleanly as-is.
+        // downloaded sample actually imports cleanly as-is. price/
+        // gst_rate are the two fields the single "New product" form
+        // already lets you set inline but bulk import didn't -- without
+        // them an imported product isn't actually sellable until someone
+        // visits Pricing/GST separately for every single row.
         sampleRows={
           units.data?.[0]
-            ? [{ name: "Amul Butter 500g", hsn_sac_code: "0405", base_uom_code: units.data[0].Code, sku_code: "AMUL-BTR-500" }]
+            ? [{ name: "Amul Butter 500g", hsn_sac_code: "0405", base_uom_code: units.data[0].Code, sku_code: "AMUL-BTR-500", price: "55.00", gst_rate: "5" }]
             : undefined
         }
         onImported={() => void queryClient.invalidateQueries({ queryKey: ["products"] })}

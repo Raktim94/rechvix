@@ -7,21 +7,45 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"rechvix/internal/modules/catalogue/domain"
 	"rechvix/internal/platform/importer"
 	"rechvix/internal/platform/permissions"
 )
 
+// pendingPriceTax is a committed row whose price and/or gst_rate columns
+// still need setting — collected during the transaction (which has the
+// variant id), applied AFTER it commits (see ImportProducts' own doc
+// comment for why setting them can't happen inside the same
+// transaction: SetPriceHook/SetTaxRateHook call into pricing/gstindia's
+// own Service methods, which open their OWN top-level transaction via
+// the same database.Pool.RunScoped this method is already inside —
+// pgx has no ambient-transaction detection, so nesting would silently
+// open a second, independent connection/transaction instead of
+// participating in this one, breaking atomicity and (under READ
+// COMMITTED) visibility of the not-yet-committed product/variant rows).
+type pendingPriceTax struct {
+	rowNumber  int
+	variantID  uuid.UUID
+	unitID     uuid.UUID
+	hsnSacCode string
+	price      *decimal.Decimal
+	gstRate    *decimal.Decimal
+}
+
 // ImportProducts bulk-creates products from parsed spreadsheet rows
 // (brief §53). Expected columns (case-sensitive header match): name,
 // hsn_sac_code (optional), base_uom_code (must already exist for this
 // organisation — create units first), sku_code (optional — generated
 // from name when blank, same slug scheme CataloguePage's manual "add
-// product" flow already uses client-side). Every row gets an outcome in
-// the returned Report — a malformed row is recorded as an error, never
-// silently skipped. Duplicate detection is by exact, case-insensitive
-// product name within the organisation.
+// product" flow already uses client-side), price (optional, plain
+// decimal, sets this variant's price on the organisation's default
+// price list), gst_rate (optional, plain decimal percentage, sets a
+// TAXABLE tax_rate_master row for the row's HSN/SAC code). Every row
+// gets an outcome in the returned Report — a malformed row is recorded
+// as an error, never silently skipped. Duplicate detection is by exact,
+// case-insensitive product name within the organisation.
 //
 // Every committed product also gets a real ProductVariant — a product
 // with zero variants is invisible everywhere else in the app (billing
@@ -31,6 +55,15 @@ import (
 // wiring the first real UI onto this endpoint (docs/TODO.md Stage 14),
 // not a change made for its own sake.
 //
+// price/gst_rate are best-effort, NOT part of what makes a row commit
+// or fail: the product+variant is the row's real content, price/tax are
+// a convenience on top. If SetPriceHook/SetTaxRateHook aren't wired
+// (nil) or either fails for a specific row (e.g. no price list exists
+// yet), that row still shows COMMITTED, just with a note in its Message
+// explaining what wasn't set and needs finishing manually on the
+// Pricing/GST pages — never a silent, invisible gap between "the CSV
+// said this had a price" and "this product still has none."
+//
 // dryRun=true validates and reports without writing anything — the
 // caller can show the report to a user before committing.
 func (s *Service) ImportProducts(ctx context.Context, principal permissions.Principal, rows []importer.Row, dryRun bool) (importer.Report, error) {
@@ -38,6 +71,7 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 		return importer.Report{}, err
 	}
 	b := importer.NewBuilder(dryRun)
+	var pending []pendingPriceTax
 
 	var existingNames map[string]bool
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
@@ -87,6 +121,17 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 				continue
 			}
 
+			price, err := parseOptionalDecimal(row.Fields["price"])
+			if err != nil {
+				b.Error(row.Number, "price %q is not a valid number", row.Fields["price"])
+				continue
+			}
+			gstRate, err := parseOptionalDecimal(row.Fields["gst_rate"])
+			if err != nil {
+				b.Error(row.Number, "gst_rate %q is not a valid number", row.Fields["gst_rate"])
+				continue
+			}
+
 			skuCode, err := s.resolveImportSKU(ctx, principal.OrganisationID, requestedSKU, name, claimedSKUs)
 			if err != nil {
 				b.Error(row.Number, "could not assign a SKU: %s", err.Error())
@@ -121,14 +166,57 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 			}
 			existingNames[key] = true
 			claimedSKUs[skuCode] = true
-			b.Committed(row.Number)
+
+			if price != nil || gstRate != nil {
+				pending = append(pending, pendingPriceTax{rowNumber: row.Number, variantID: variantID, unitID: uomID, hsnSacCode: hsnSac, price: price, gstRate: gstRate})
+			} else {
+				b.Committed(row.Number)
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		return importer.Report{}, err
 	}
+
+	// Only reached once the transaction above has actually committed —
+	// see pendingPriceTax's own doc comment for why this can't run
+	// inside it.
+	for _, pp := range pending {
+		var notes []string
+		if pp.price != nil {
+			if s.setPriceHook == nil {
+				notes = append(notes, "price was not set (no price list configured)")
+			} else if err := s.setPriceHook(ctx, principal, pp.variantID, pp.unitID, *pp.price); err != nil {
+				notes = append(notes, fmt.Sprintf("price could not be set: %s", err.Error()))
+			}
+		}
+		if pp.gstRate != nil {
+			if s.setTaxRateHook == nil {
+				notes = append(notes, "gst_rate was not set")
+			} else if err := s.setTaxRateHook(ctx, principal, pp.hsnSacCode, *pp.gstRate); err != nil {
+				notes = append(notes, fmt.Sprintf("gst_rate could not be set: %s", err.Error()))
+			}
+		}
+		b.Committed(pp.rowNumber, notes...)
+	}
+
 	return b.Report(), nil
+}
+
+// parseOptionalDecimal returns nil for an empty/whitespace-only field
+// (the column was simply left blank — not every row needs a price or
+// tax rate), or an error for anything present but not a valid decimal.
+func parseOptionalDecimal(raw string) (*decimal.Decimal, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	d, err := decimal.NewFromString(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
 }
 
 // resolveImportSKU returns requestedSKU if set (still checked for

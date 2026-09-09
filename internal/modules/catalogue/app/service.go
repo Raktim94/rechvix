@@ -18,6 +18,18 @@ import (
 	"rechvix/internal/platform/permissions"
 )
 
+// SetPriceHookFunc/SetTaxRateHookFunc are the layering-safe wiring
+// docs/adr/0003-accounting-integration-point.md's point 6 describes,
+// same pattern as identity's WithPostBootstrapHook and notifications'
+// WithDocumentRenderer (apps/server/main.go): catalogue can't import
+// pricing or gstindia directly (they depend on catalogue, not the other
+// way around), but the composition root has both, so it wires these in
+// as closures. Only ImportProducts (bulk CSV/XLSX import) calls them —
+// see its own doc comment for why a price/tax-rate failure there is
+// non-fatal to the row.
+type SetPriceHookFunc func(ctx context.Context, principal permissions.Principal, variantID, unitID uuid.UUID, amount decimal.Decimal) error
+type SetTaxRateHookFunc func(ctx context.Context, principal permissions.Principal, hsnSacCode string, gstRate decimal.Decimal) error
+
 type Service struct {
 	pool            database.Runner
 	units           domain.UnitOfMeasureRepository
@@ -30,6 +42,22 @@ type Service struct {
 	permissions     *permissions.Checker
 	audit           audit.Recorder
 	now             func() time.Time
+	setPriceHook    SetPriceHookFunc
+	setTaxRateHook  SetTaxRateHookFunc
+}
+
+// WithPriceHook/WithTaxRateHook wire the optional cross-module hooks
+// above — nil-guarded everywhere they're called, so a composition that
+// doesn't set them just means ImportProducts never attempts to set a
+// price/tax rate (the price/gst_rate CSV columns are simply ignored,
+// same as before these hooks existed), not an error.
+func (s *Service) WithPriceHook(f SetPriceHookFunc) *Service {
+	s.setPriceHook = f
+	return s
+}
+func (s *Service) WithTaxRateHook(f SetTaxRateHookFunc) *Service {
+	s.setTaxRateHook = f
+	return s
 }
 
 func NewService(
@@ -90,6 +118,65 @@ func (s *Service) CreateUnitOfMeasure(ctx context.Context, principal permissions
 		return nil, err
 	}
 	return u, nil
+}
+
+// defaultUnits is a starter set of common units of measure — without
+// this, every fresh organisation has ZERO units, and nothing (creating
+// a product, bulk CSV import, the billing counter) can proceed until
+// someone manually adds at least one first. Deliberately small and
+// generic (not India-GST-specific unit-quantity codes) since this is
+// just a convenience starting point, fully editable/deletable
+// afterward like any other unit.
+var defaultUnits = []CreateUnitOfMeasureParams{
+	{Code: "PCS", Name: "Pieces"},
+	{Code: "KG", Name: "Kilogram"},
+	{Code: "GM", Name: "Gram"},
+	{Code: "LTR", Name: "Litre"},
+	{Code: "ML", Name: "Millilitre"},
+	{Code: "MTR", Name: "Metre"},
+	{Code: "BOX", Name: "Box"},
+	{Code: "DZN", Name: "Dozen"},
+	{Code: "PKT", Name: "Packet"},
+	{Code: "BAG", Name: "Bag"},
+}
+
+// EnsureDefaultUnits idempotently seeds orgID's units of measure with
+// defaultUnits, if it doesn't already have any — same "second call is a
+// silent no-op" contract as accounting.Service.EnsureDefaultChartOfAccounts,
+// which this mirrors. Called once from the post-bootstrap hook for every
+// new organisation going forward, and exposed as its own endpoint for an
+// organisation that predates this (a one-click fix, not silently applied
+// behind their back).
+func (s *Service) EnsureDefaultUnits(ctx context.Context, principal permissions.Principal) error {
+	if err := s.manage(ctx, principal); err != nil {
+		return err
+	}
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		existing, err := s.units.ListByOrganisation(ctx, principal.OrganisationID)
+		if err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			return nil
+		}
+		now := s.now()
+		for _, du := range defaultUnits {
+			id, err := uuid.NewV7()
+			if err != nil {
+				return fmt.Errorf("catalogue: generating unit_of_measure id: %w", err)
+			}
+			if err := s.units.Create(ctx, &domain.UnitOfMeasure{
+				ID: id, OrganisationID: principal.OrganisationID, Code: du.Code, Name: du.Name, CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				return fmt.Errorf("catalogue: seeding unit %s: %w", du.Code, err)
+			}
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "catalogue.default_units_seeded", EntityType: "organisation", EntityID: &principal.OrganisationID,
+			AfterState: map[string]any{"unit_count": len(defaultUnits)}, At: now,
+		})
+	})
 }
 
 func (s *Service) ListUnitsOfMeasure(ctx context.Context, principal permissions.Principal) ([]*domain.UnitOfMeasure, error) {

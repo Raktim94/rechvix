@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	accountingapp "rechvix/internal/modules/accounting/app"
 	accountinghttp "rechvix/internal/modules/accounting/httpapi"
@@ -45,6 +46,7 @@ import (
 	portalv1 "rechvix/internal/modules/ewaybill/portal/v1"
 	"rechvix/internal/modules/gstindia"
 	gstindiaapp "rechvix/internal/modules/gstindia/app"
+	gstindiadomain "rechvix/internal/modules/gstindia/domain"
 	gstindiahttp "rechvix/internal/modules/gstindia/httpapi"
 	gstindiapg "rechvix/internal/modules/gstindia/pg"
 	identityapp "rechvix/internal/modules/identity/app"
@@ -89,6 +91,7 @@ import (
 	"rechvix/internal/platform/database"
 	httpx "rechvix/internal/platform/http"
 	"rechvix/internal/platform/logging"
+	"rechvix/internal/platform/money"
 	"rechvix/internal/platform/numbering"
 	"rechvix/internal/platform/observability"
 	"rechvix/internal/platform/outbox"
@@ -280,6 +283,42 @@ func run() error {
 
 	gstRateRepo := gstindiapg.NewTaxRateRepo(pool)
 	gstindiaSvc := gstindiaapp.NewService(pool, gstRateRepo, gstindiapg.NewStateRepo(pool), permissionsChecker, auditRecorder)
+
+	// catalogue.Service.ImportProducts' optional price/gst_rate CSV
+	// columns — see SetPriceHookFunc/SetTaxRateHookFunc's own doc
+	// comment on why these are wired here rather than catalogue
+	// importing pricing/gstindia directly.
+	catalogueSvc.WithPriceHook(func(ctx context.Context, principal permissions.Principal, variantID, unitID uuid.UUID, amount decimal.Decimal) error {
+		priceLists, err := pricingSvc.ListPriceLists(ctx, principal)
+		if err != nil {
+			return err
+		}
+		if len(priceLists) == 0 {
+			return fmt.Errorf("no price list exists yet — create one on the Pricing page first")
+		}
+		target := priceLists[0]
+		for _, pl := range priceLists {
+			if pl.IsDefault {
+				target = pl
+				break
+			}
+		}
+		_, err = pricingSvc.SetPrice(ctx, principal, pricingapp.SetPriceParams{
+			PriceListID: target.ID, ProductVariantID: variantID, UnitID: unitID,
+			Price: money.MustNew(amount, target.CurrencyCode),
+		})
+		return err
+	})
+	catalogueSvc.WithTaxRateHook(func(ctx context.Context, principal permissions.Principal, hsnSacCode string, gstRate decimal.Decimal) error {
+		if hsnSacCode == "" {
+			return fmt.Errorf("no HSN/SAC code on this row to attach a tax rate to")
+		}
+		_, err := gstindiaSvc.CreateRate(ctx, principal, gstindiaapp.CreateRateParams{
+			HSNSACCode: hsnSacCode, Classification: gstindiadomain.ClassificationTaxable,
+			GSTRate: gstRate, CessRate: decimal.Zero, ValidFrom: time.Now(),
+		})
+		return err
+	})
 	// gstindia.Engine is the TaxEngine implementation taxationSvc drives —
 	// taxation has no HTTP surface of its own (it's a cross-module
 	// library, not an end-user-facing API — docs/architecture.md §5), so
@@ -442,7 +481,14 @@ func run() error {
 				// calling POST /accounting/accounts/ensure-default-chart
 				// themselves would be.
 				owner := permissions.Principal{UserID: actorUserID, OrganisationID: orgID}
-				return accountingSvc.EnsureDefaultChartOfAccounts(ctx, owner, orgID)
+				if err := accountingSvc.EnsureDefaultChartOfAccounts(ctx, owner, orgID); err != nil {
+					return err
+				}
+				// Same reasoning as the chart of accounts just above — a
+				// fresh organisation with zero units of measure can't
+				// create a product, bulk-import a CSV, or bill anything
+				// until someone manually adds a unit first.
+				return catalogueSvc.EnsureDefaultUnits(ctx, owner)
 			})
 		identityHandlers.Mount(r, bootstrapEnabled)
 		// Share-link redemption is deliberately UNAUTHENTICATED (brief

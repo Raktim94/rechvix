@@ -13,6 +13,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -139,8 +140,12 @@ func (b *Builder) Duplicate(rowNumber int, format string, args ...any) {
 	b.results = append(b.results, RowResult{RowNumber: rowNumber, Outcome: OutcomeDuplicate, Message: fmt.Sprintf(format, args...)})
 }
 
-func (b *Builder) Committed(rowNumber int) {
-	b.results = append(b.results, RowResult{RowNumber: rowNumber, Outcome: OutcomeCommitted})
+// Committed's optional message is for a NON-fatal note about the
+// otherwise-successfully-committed row (e.g. catalogue's product import
+// noting that a price or tax rate from the same row couldn't be set) —
+// the row still counts as COMMITTED, this is not an error/duplicate.
+func (b *Builder) Committed(rowNumber int, message ...string) {
+	b.results = append(b.results, RowResult{RowNumber: rowNumber, Outcome: OutcomeCommitted, Message: strings.Join(message, "; ")})
 }
 
 func (b *Builder) Valid(rowNumber int) {
@@ -148,6 +153,12 @@ func (b *Builder) Valid(rowNumber int) {
 }
 
 func (b *Builder) Report() Report {
+	// Sorted by row number rather than left in append order — a caller
+	// that has to defer some rows' Committed() call until after other
+	// work finishes (catalogue's product import, setting price/tax
+	// after its own transaction commits) would otherwise report rows
+	// out of the order a spreadsheet user expects to see them in.
+	sort.SliceStable(b.results, func(i, j int) bool { return b.results[i].RowNumber < b.results[j].RowNumber })
 	rep := Report{DryRun: b.dryRun, Total: len(b.results), Results: b.results}
 	for _, r := range b.results {
 		switch r.Outcome {

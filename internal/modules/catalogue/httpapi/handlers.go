@@ -24,6 +24,7 @@ func NewHandlers(svc *app.Service) *Handlers { return &Handlers{svc: svc} }
 
 func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/catalogue/units", h.listUnits)
+	r.Post("/catalogue/units/ensure-default", h.ensureDefaultUnits)
 	r.Post("/catalogue/units", h.createUnit)
 	r.Post("/catalogue/unit-conversions", h.createUnitConversion)
 	r.Get("/catalogue/categories", h.listCategories)
@@ -76,6 +77,19 @@ func principal(r *http.Request) permissions.Principal {
 // --- Units of measure ---
 
 func (h *Handlers) listUnits(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.ListUnitsOfMeasure(r.Context(), principal(r))
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"units_of_measure": list})
+}
+
+func (h *Handlers) ensureDefaultUnits(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.EnsureDefaultUnits(r.Context(), principal(r)); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
 	list, err := h.svc.ListUnitsOfMeasure(r.Context(), principal(r))
 	if err != nil {
 		writeServiceError(w, r, err)
