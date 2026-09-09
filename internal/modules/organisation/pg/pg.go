@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/shopspring/decimal"
 
 	"rechvix/internal/modules/organisation/domain"
 	"rechvix/internal/platform/database"
@@ -45,18 +46,20 @@ func (r *OrganisationRepo) Create(ctx context.Context, o *domain.Organisation) e
 
 func (r *OrganisationRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Organisation, error) {
 	const q = `
-		SELECT id, name, default_currency_code, default_timezone, ewaybill_mode, status, created_at, updated_at
+		SELECT id, name, default_currency_code, default_timezone, ewaybill_mode, ewaybill_threshold_override, status, created_at, updated_at
 		FROM organisations WHERE id = $1`
 	row := r.pool.Q(ctx).QueryRow(ctx, q, id)
 	var o domain.Organisation
 	var status string
-	if err := row.Scan(&o.ID, &o.Name, &o.DefaultCurrencyCode, &o.DefaultTimezone, &o.EWayBillMode, &status, &o.CreatedAt, &o.UpdatedAt); err != nil {
+	var threshold *decimal.Decimal
+	if err := row.Scan(&o.ID, &o.Name, &o.DefaultCurrencyCode, &o.DefaultTimezone, &o.EWayBillMode, &threshold, &status, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("organisation: querying organisation: %w", err)
 	}
 	o.Status = domain.Status(status)
+	o.EWayBillThresholdOverride = threshold
 	return &o, nil
 }
 
@@ -65,6 +68,18 @@ func (r *OrganisationRepo) UpdateEWayBillMode(ctx context.Context, id uuid.UUID,
 	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, id, mode)
 	if err != nil {
 		return fmt.Errorf("organisation: updating ewaybill_mode: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *OrganisationRepo) UpdateEWayBillThreshold(ctx context.Context, id uuid.UUID, value *decimal.Decimal) error {
+	const q = `UPDATE organisations SET ewaybill_threshold_override = $2, updated_at = now() WHERE id = $1`
+	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, id, value)
+	if err != nil {
+		return fmt.Errorf("organisation: updating ewaybill_threshold_override: %w", err)
 	}
 	if rowsAffected == 0 {
 		return domain.ErrNotFound

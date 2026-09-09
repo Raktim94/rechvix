@@ -293,6 +293,30 @@ func (s *Service) EvaluateEligibility(ctx context.Context, orgID, salesDocumentI
 	if err != nil {
 		return nil, fmt.Errorf("ewaybill: loading eligibility rules: %w", err)
 	}
+	// A per-organisation threshold override (Organisation.
+	// EWayBillThresholdOverride) replaces every candidate rule's
+	// MinConsignmentValue before Evaluate picks the one applicable to
+	// this invoice's state/date — state selection and validity windows
+	// are untouched, only the value threshold changes. Evaluate itself
+	// stays pure (docs/architecture.md §9b) — the substitution happens
+	// here, at the call site, not inside the eligibility package. s.
+	// organisation is nil-guarded (see the Service struct's own doc
+	// comment) so this degrades to "no override" if the organisation
+	// module wasn't wired in for this composition.
+	if s.organisation != nil {
+		org, err := s.organisation.GetOrganisationForOtherModule(ctx, orgID)
+		if err != nil {
+			return nil, fmt.Errorf("ewaybill: loading organisation for threshold override: %w", err)
+		}
+		if org.EWayBillThresholdOverride != nil {
+			overridden := make([]eligibility.Rule, len(rules))
+			for i, rule := range rules {
+				rule.MinConsignmentValue = *org.EWayBillThresholdOverride
+				overridden[i] = rule
+			}
+			rules = overridden
+		}
+	}
 	req, missing := eligibility.Evaluate(rules, bill, s.now())
 
 	status := domain.StatusNotRequired

@@ -36,6 +36,20 @@ function EWayBillModeSection() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["organisation"] }),
   });
 
+  const [thresholdInput, setThresholdInput] = useState<string | null>(null);
+  const effectiveThreshold = thresholdInput ?? org.data?.EWayBillThresholdOverride ?? "";
+
+  const setThreshold = useMutation({
+    // null clears the override (back to the national/state default the
+    // ewaybill.eligibility engine would otherwise pick) -- an empty
+    // input field means "clear", not "zero".
+    mutationFn: (value: string) => api.put("/organisation/ewaybill-threshold", { value: value.trim() === "" ? null : value.trim() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organisation"] });
+      setThresholdInput(null);
+    },
+  });
+
   return (
     <div className={layout.panel}>
       <h2>e-Way Bill</h2>
@@ -76,6 +90,36 @@ function EWayBillModeSection() {
           <a href={portalUrl.data.url} target="_blank" rel="noopener noreferrer">
             {portalUrl.data.url}
           </a>
+        </p>
+      ) : null}
+
+      <hr style={{ margin: "16px 0", border: "none", borderTop: "1px solid var(--color-border)" }} />
+      <h3 style={{ marginTop: 0 }}>e-Way Bill threshold</h3>
+      <p className={layout.subtitle} style={{ marginBottom: 12 }}>
+        An invoice needs an e-Way Bill once its consignment value crosses this amount.{" "}
+        {org.data?.EWayBillThresholdOverride ? "Overriding the national default." : "Currently using the national default (₹50,000, unless a state-specific rule applies)."}
+      </p>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          className={ui.input}
+          style={{ maxWidth: 200 }}
+          inputMode="decimal"
+          placeholder="e.g. 50000"
+          value={effectiveThreshold}
+          onChange={(e) => setThresholdInput(e.target.value)}
+        />
+        <button type="button" className={ui.btnPrimary} disabled={setThreshold.isPending} onClick={() => setThreshold.mutate(effectiveThreshold)}>
+          {setThreshold.isPending ? "Saving…" : "Save"}
+        </button>
+        {org.data?.EWayBillThresholdOverride ? (
+          <button type="button" className={ui.btnSecondary} disabled={setThreshold.isPending} onClick={() => setThreshold.mutate("")}>
+            Use national default instead
+          </button>
+        ) : null}
+      </div>
+      {setThreshold.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+          {setThreshold.error instanceof ApiError ? setThreshold.error.message : "Could not save this threshold."}
         </p>
       ) : null}
     </div>

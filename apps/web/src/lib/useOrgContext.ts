@@ -43,6 +43,7 @@ export interface Organisation {
   Name: string;
   DefaultCurrencyCode: string;
   EWayBillMode: "FREE_PORTAL" | "AUTOMATIC_API";
+  EWayBillThresholdOverride: string | null;
 }
 
 /** Every screen that creates a document (Sales, Purchases, ...) needs a

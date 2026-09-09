@@ -1,0 +1,11 @@
+-- Per-organisation e-Way Bill consignment-value threshold override.
+-- ewaybill_eligibility_rules (migrations/0028) is deliberately global
+-- reference data (see its own seed-row comment) — a business that wants
+-- to apply a stricter/looser threshold than the national default (e.g.
+-- to match a state-specific rule this schema hasn't modeled yet, or as
+-- a deliberate internal policy) has had no way to do that. NULL (the
+-- default) means "use whatever the eligibility engine would otherwise
+-- select" — this column never replaces the rules table, it's read at
+-- eligibility-evaluation time by ewaybill.Service to override just the
+-- MinConsignmentValue of the rule the engine already picked.
+ALTER TABLE organisations ADD COLUMN ewaybill_threshold_override numeric(20, 6);

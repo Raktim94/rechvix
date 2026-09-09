@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 type Status string
@@ -26,9 +27,17 @@ type Organisation struct {
 	// — "FREE_PORTAL" (default, no paid API required) or "AUTOMATIC_API"
 	// (the optional Stage 8 EWayBillProvider path).
 	EWayBillMode string
-	Status       Status
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// EWayBillThresholdOverride, when set, replaces the consignment-value
+	// threshold the eligibility engine (ewaybill/eligibility.Evaluate)
+	// would otherwise pick from the global ewaybill_eligibility_rules
+	// table (migrations/0028) — nil means "use the national/state rule
+	// as-is", the same as before this field existed. See
+	// migrations/0039_ewaybill_threshold_override for why this is an
+	// override, not a replacement for that rules table.
+	EWayBillThresholdOverride *decimal.Decimal
+	Status                    Status
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
 }
 
 type LegalEntity struct {
@@ -121,6 +130,10 @@ type OrganisationRepository interface {
 	Create(ctx context.Context, o *Organisation) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Organisation, error)
 	UpdateEWayBillMode(ctx context.Context, id uuid.UUID, mode string) error
+	// UpdateEWayBillThreshold sets or clears (nil) the organisation's
+	// e-Way Bill threshold override — see Organisation.
+	// EWayBillThresholdOverride's doc comment.
+	UpdateEWayBillThreshold(ctx context.Context, id uuid.UUID, value *decimal.Decimal) error
 	// Exists reports whether any organisation has been provisioned yet —
 	// the composition root uses this to auto-close the bootstrap endpoint
 	// once first-run setup has happened, on top of the ENABLE_BOOTSTRAP

@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"rechvix/internal/modules/organisation/app"
 	"rechvix/internal/modules/organisation/domain"
@@ -37,6 +38,7 @@ func NewHandlers(svc *app.Service) *Handlers {
 func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/organisation", h.getOrganisation)
 	r.Put("/organisation/ewaybill-mode", h.setEWayBillMode)
+	r.Put("/organisation/ewaybill-threshold", h.setEWayBillThreshold)
 	r.Get("/legal-entities", h.listLegalEntities)
 	r.Post("/legal-entities", h.createLegalEntity)
 	r.Put("/legal-entities/{id}/gst", h.updateLegalEntityGST)
@@ -103,6 +105,47 @@ func (h *Handlers) setEWayBillMode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_MODE", "mode must be FREE_PORTAL or AUTOMATIC_API."))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, org)
+}
+
+// setEWayBillThresholdRequest.Value is a *string, not decimal.Decimal
+// directly, so an explicit `null` in the request body means "clear the
+// override" (Go's json.Unmarshal leaves a nil pointer alone) while an
+// absent field vs. present-but-null both decode the same way here —
+// the frontend always sends the field explicitly either way.
+type setEWayBillThresholdRequest struct {
+	Value *string `json:"value"`
+}
+
+func (h *Handlers) setEWayBillThreshold(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[setEWayBillThresholdRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	var value *decimal.Decimal
+	if req.Value != nil {
+		d, err := decimal.NewFromString(*req.Value)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_VALUE", "value must be a decimal string, or null to clear the override."))
+			return
+		}
+		value = &d
+	}
+	org, err := h.svc.SetEWayBillThreshold(r.Context(), principal(r), value)
+	if err != nil {
+		var forbidden *permissions.ErrForbidden
+		if errors.As(err, &forbidden) {
+			httpx.WriteError(w, r, httpx.NewForbidden("FORBIDDEN", "You do not have permission to perform this action."))
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_THRESHOLD", "value must not be negative."))
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, org)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"rechvix/internal/modules/organisation/domain"
 	"rechvix/internal/platform/audit"
@@ -248,6 +249,31 @@ func (s *Service) SetEWayBillMode(ctx context.Context, principal permissions.Pri
 	return result, err
 }
 
+// SetEWayBillThreshold sets (or clears, passing nil) the organisation's
+// e-Way Bill consignment-value threshold override — see Organisation.
+// EWayBillThresholdOverride's doc comment. Same "settings.manage, not
+// settings.view" reasoning as SetEWayBillMode: this changes which
+// invoices actually require an e-Way Bill, not just a display
+// preference.
+func (s *Service) SetEWayBillThreshold(ctx context.Context, principal permissions.Principal, value *decimal.Decimal) (*domain.Organisation, error) {
+	if value != nil && value.IsNegative() {
+		return nil, fmt.Errorf("organisation: ewaybill_threshold_override must not be negative")
+	}
+	if err := s.permissions.Require(ctx, principal, "settings.manage", permissions.Scope{}); err != nil {
+		return nil, err
+	}
+	var result *domain.Organisation
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.organisations.UpdateEWayBillThreshold(ctx, principal.OrganisationID, value); err != nil {
+			return err
+		}
+		var err error
+		result, err = s.organisations.GetByID(ctx, principal.OrganisationID)
+		return err
+	})
+	return result, err
+}
+
 // GetLegalEntityForOtherModule is a cross-module read (added Stage 5b) —
 // sales.FinalizeDocument needs the supplier-side GSTIN/state code, and
 // should authorize on ITS OWN "sales.finalize" check, not require the
@@ -286,6 +312,17 @@ func (s *Service) GetLegalEntityForOtherModule(ctx context.Context, orgID, id uu
 // the full reasoning, not repeated here.
 func (s *Service) GetBranchForOtherModule(ctx context.Context, orgID, id uuid.UUID) (*domain.Branch, error) {
 	return s.branches.GetByID(ctx, orgID, id)
+}
+
+// GetOrganisationForOtherModule is GetLegalEntityForOtherModule's
+// identical pattern for Organisation itself — ewaybill.Service.
+// EvaluateEligibility needs EWayBillThresholdOverride to apply a
+// per-organisation threshold override on top of the global eligibility
+// rules. Same no-permission-check, no-own-transaction, nested-
+// transaction-safe rationale as GetLegalEntityForOtherModule's own doc
+// comment above.
+func (s *Service) GetOrganisationForOtherModule(ctx context.Context, orgID uuid.UUID) (*domain.Organisation, error) {
+	return s.organisations.GetByID(ctx, orgID)
 }
 
 type CreateLegalEntityParams struct {
