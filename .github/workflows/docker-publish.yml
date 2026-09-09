@@ -21,6 +21,7 @@ on:
     paths:
       - "apps/server/**"
       - "apps/worker/**"
+      - "apps/web/**"
       - "internal/**"
       - "migrations/**"
       - "go.mod"
