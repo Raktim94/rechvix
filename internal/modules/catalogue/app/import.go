@@ -42,10 +42,18 @@ type pendingPriceTax struct {
 // product" flow already uses client-side), price (optional, plain
 // decimal, sets this variant's price on the organisation's default
 // price list), gst_rate (optional, plain decimal percentage, sets a
-// TAXABLE tax_rate_master row for the row's HSN/SAC code). Every row
-// gets an outcome in the returned Report — a malformed row is recorded
-// as an error, never silently skipped. Duplicate detection is by exact,
-// case-insensitive product name within the organisation.
+// TAXABLE tax_rate_master row for the row's HSN/SAC code),
+// category_name (optional, auto-created if it doesn't already exist for
+// this organisation — same as clicking "Add" inline on the manual form),
+// brand_name (optional, same auto-create behaviour), barcode (optional,
+// must be unique for this organisation, checked against both existing
+// rows in the database and earlier rows in this same file). Opening
+// stock is deliberately NOT an import column — it's edited afterwards
+// on the Inventory page, same path a manually-added product already
+// uses. Every row gets an outcome in the returned Report — a malformed
+// row is recorded as an error, never silently skipped. Duplicate
+// detection is by exact, case-insensitive product name within the
+// organisation.
 //
 // Every committed product also gets a real ProductVariant — a product
 // with zero variants is invisible everywhere else in the app (billing
@@ -93,18 +101,49 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 			unitByCode[strings.ToUpper(u.Code)] = u.ID
 		}
 
+		// Unlike base_uom_code (which must already exist — a unit affects
+		// stock/pricing math too broadly to guess), category_name and
+		// brand_name are auto-created on first use, same as clicking
+		// "Add" inline on the manual New Product form — a plain lookup
+		// table with no downstream implications from getting one wrong.
+		// Keyed lowercase so "Snacks" and "snacks" resolve to the same
+		// row instead of creating a near-duplicate.
+		categories, err := s.categories.ListByOrganisation(ctx, principal.OrganisationID)
+		if err != nil {
+			return err
+		}
+		categoryIDByName := make(map[string]uuid.UUID, len(categories))
+		for _, c := range categories {
+			categoryIDByName[strings.ToLower(strings.TrimSpace(c.Name))] = c.ID
+		}
+		brands, err := s.brands.ListByOrganisation(ctx, principal.OrganisationID)
+		if err != nil {
+			return err
+		}
+		brandIDByName := make(map[string]uuid.UUID, len(brands))
+		for _, br := range brands {
+			brandIDByName[strings.ToLower(strings.TrimSpace(br.Name))] = br.ID
+		}
+
 		// Tracks SKUs this batch has already claimed, so two rows in the
 		// SAME file that'd otherwise generate the same slug don't both
 		// try to claim it — a real, in-process race the per-candidate
 		// GetBySKU lookup below can't see on its own, since dry_run never
 		// writes anything for GetBySKU to find.
 		claimedSKUs := make(map[string]bool)
+		// Same idea for barcode, checked against the row's raw value
+		// (case-sensitive, matching the UNIQUE(organisation_id, barcode)
+		// constraint) rather than a slug.
+		claimedBarcodes := make(map[string]bool)
 
 		for _, row := range rows {
 			name := strings.TrimSpace(row.Fields["name"])
 			hsnSac := strings.TrimSpace(row.Fields["hsn_sac_code"])
 			uomCode := strings.ToUpper(strings.TrimSpace(row.Fields["base_uom_code"]))
 			requestedSKU := strings.ToUpper(strings.TrimSpace(row.Fields["sku_code"]))
+			categoryName := strings.TrimSpace(row.Fields["category_name"])
+			brandName := strings.TrimSpace(row.Fields["brand_name"])
+			barcode := strings.TrimSpace(row.Fields["barcode"])
 
 			if name == "" {
 				b.Error(row.Number, "name is required")
@@ -132,6 +171,19 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 				continue
 			}
 
+			if barcode != "" {
+				if claimedBarcodes[barcode] {
+					b.Error(row.Number, "barcode %q is used by another row in this file", barcode)
+					continue
+				}
+				if _, err := s.barcodes.GetByBarcode(ctx, principal.OrganisationID, barcode); err == nil {
+					b.Error(row.Number, "barcode %q is already in use", barcode)
+					continue
+				} else if !errors.Is(err, domain.ErrNotFound) {
+					return err
+				}
+			}
+
 			skuCode, err := s.resolveImportSKU(ctx, principal.OrganisationID, requestedSKU, name, claimedSKUs)
 			if err != nil {
 				b.Error(row.Number, "could not assign a SKU: %s", err.Error())
@@ -142,15 +194,52 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 				b.Valid(row.Number)
 				existingNames[key] = true // a later row in the same file with the same name is still a duplicate
 				claimedSKUs[skuCode] = true
+				if barcode != "" {
+					claimedBarcodes[barcode] = true
+				}
 				continue
+			}
+
+			now := s.now()
+
+			var categoryID *uuid.UUID
+			if categoryName != "" {
+				ckey := strings.ToLower(categoryName)
+				catID, ok := categoryIDByName[ckey]
+				if !ok {
+					catID, err = uuid.NewV7()
+					if err != nil {
+						return err
+					}
+					if err := s.categories.Create(ctx, &domain.Category{ID: catID, OrganisationID: principal.OrganisationID, Name: categoryName, CreatedAt: now, UpdatedAt: now}); err != nil {
+						return err
+					}
+					categoryIDByName[ckey] = catID
+				}
+				categoryID = &catID
+			}
+			var brandID *uuid.UUID
+			if brandName != "" {
+				bkey := strings.ToLower(brandName)
+				brID, ok := brandIDByName[bkey]
+				if !ok {
+					brID, err = uuid.NewV7()
+					if err != nil {
+						return err
+					}
+					if err := s.brands.Create(ctx, &domain.Brand{ID: brID, OrganisationID: principal.OrganisationID, Name: brandName, CreatedAt: now, UpdatedAt: now}); err != nil {
+						return err
+					}
+					brandIDByName[bkey] = brID
+				}
+				brandID = &brID
 			}
 
 			id, err := uuid.NewV7()
 			if err != nil {
 				return err
 			}
-			now := s.now()
-			p := &domain.Product{ID: id, OrganisationID: principal.OrganisationID, BaseUOMID: uomID,
+			p := &domain.Product{ID: id, OrganisationID: principal.OrganisationID, CategoryID: categoryID, BrandID: brandID, BaseUOMID: uomID,
 				Name: name, HSNSACCode: hsnSac, Status: domain.StatusActive, CreatedAt: now, UpdatedAt: now}
 			if err := s.products.Create(ctx, p); err != nil {
 				return err
@@ -163,6 +252,16 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 				SKUCode: skuCode, Attributes: map[string]any{}, Status: domain.StatusActive, CreatedAt: now, UpdatedAt: now}
 			if err := s.variants.Create(ctx, v); err != nil {
 				return err
+			}
+			if barcode != "" {
+				barcodeID, err := uuid.NewV7()
+				if err != nil {
+					return err
+				}
+				if err := s.barcodes.Create(ctx, &domain.Barcode{ID: barcodeID, OrganisationID: principal.OrganisationID, VariantID: variantID, UnitID: uomID, Barcode: barcode, CreatedAt: now}); err != nil {
+					return err
+				}
+				claimedBarcodes[barcode] = true
 			}
 			existingNames[key] = true
 			claimedSKUs[skuCode] = true

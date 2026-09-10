@@ -222,6 +222,118 @@ func slugifyForTest(name string) string {
 	return s
 }
 
+// TestCatalogue_ImportProducts_CategoryBrandBarcode proves the
+// category_name/brand_name/barcode columns: an existing category is
+// reused by case-insensitive name match rather than duplicated, a new
+// brand named identically on two rows in the SAME file is created only
+// once and shared, and a barcode collision — whether against an
+// existing product or another row in this same file — fails just that
+// row instead of aborting the whole import.
+func TestCatalogue_ImportProducts_CategoryBrandBarcode(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestCatalogueServiceForImport(t)
+	principal := bootstrapOwnerPrincipal(t, ctx)
+
+	if _, err := svc.CreateUnitOfMeasure(ctx, principal, catalogueapp.CreateUnitOfMeasureParams{Code: "PCS", Name: "Pieces"}); err != nil {
+		t.Fatalf("CreateUnitOfMeasure: %v", err)
+	}
+	unique := uuid.NewString()[:8]
+
+	existingCategory, err := svc.CreateCategory(ctx, principal, "Snacks "+unique, nil)
+	if err != nil {
+		t.Fatalf("CreateCategory (pre-existing): %v", err)
+	}
+
+	preexisting, err := svc.CreateProduct(ctx, principal, catalogueapp.CreateProductParams{
+		Name: "Some Other Product " + unique, BaseUOMID: mustGetUnitID(t, ctx, svc, principal, "PCS"),
+	})
+	if err != nil {
+		t.Fatalf("CreateProduct (pre-existing): %v", err)
+	}
+	preexistingVariant, err := svc.CreateVariant(ctx, principal, catalogueapp.CreateVariantParams{ProductID: preexisting.ID, SKUCode: "PRE-EXIST-" + unique})
+	if err != nil {
+		t.Fatalf("CreateVariant (pre-existing): %v", err)
+	}
+	takenBarcode := "TAKEN-" + unique
+	if _, err := svc.AddBarcode(ctx, principal, catalogueapp.AddBarcodeParams{
+		VariantID: preexistingVariant.ID, UnitID: mustGetUnitID(t, ctx, svc, principal, "PCS"), Barcode: takenBarcode,
+	}); err != nil {
+		t.Fatalf("AddBarcode (pre-existing): %v", err)
+	}
+
+	newBrand := "Crunchy Co " + unique
+	nameA := "Chips A " + unique
+	nameB := "Chips B " + unique
+	nameC := "Chips C " + unique
+	barcodeA := "NEW-A-" + unique
+	barcodeB := "NEW-B-" + unique
+
+	rows := []importer.Row{
+		// reuses the pre-existing category by name (mixed case), creates
+		// the brand fresh.
+		{Number: 1, Fields: map[string]string{"name": nameA, "base_uom_code": "PCS", "category_name": strings.ToUpper("Snacks " + unique), "brand_name": newBrand, "barcode": barcodeA}},
+		// same new brand name as row 1 — must resolve to the SAME brand,
+		// not a second one.
+		{Number: 2, Fields: map[string]string{"name": nameB, "base_uom_code": "PCS", "brand_name": newBrand, "barcode": barcodeB}},
+		// barcode collides with another row in THIS file (row 1's).
+		{Number: 3, Fields: map[string]string{"name": nameC, "base_uom_code": "PCS", "barcode": barcodeA}},
+		// barcode collides with the pre-existing product's barcode.
+		{Number: 4, Fields: map[string]string{"name": "Chips D " + unique, "base_uom_code": "PCS", "barcode": takenBarcode}},
+	}
+
+	report, err := svc.ImportProducts(ctx, principal, rows, false)
+	if err != nil {
+		t.Fatalf("ImportProducts: %v", err)
+	}
+	if report.Committed != 2 || report.Errors != 2 {
+		t.Fatalf("report = %+v, want Committed=2 Errors=2", report)
+	}
+
+	list, err := svc.ListProducts(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListProducts: %v", err)
+	}
+	var productA, productB *cataloguedomain.Product
+	for _, p := range list {
+		switch p.Name {
+		case nameA:
+			productA = p
+		case nameB:
+			productB = p
+		}
+	}
+	if productA == nil || productB == nil {
+		t.Fatalf("expected both %q and %q to have been imported", nameA, nameB)
+	}
+	if productA.CategoryID == nil || *productA.CategoryID != existingCategory.ID {
+		t.Fatalf("product %q CategoryID = %v, want the pre-existing category %s (reused by name, not duplicated)", nameA, productA.CategoryID, existingCategory.ID)
+	}
+	if productA.BrandID == nil || productB.BrandID == nil || *productA.BrandID != *productB.BrandID {
+		t.Fatalf("products %q and %q have different BrandID (%v, %v) — the shared brand_name should resolve to one brand", nameA, nameB, productA.BrandID, productB.BrandID)
+	}
+
+	brands, err := svc.ListBrands(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListBrands: %v", err)
+	}
+	brandCount := 0
+	for _, br := range brands {
+		if br.Name == newBrand {
+			brandCount++
+		}
+	}
+	if brandCount != 1 {
+		t.Fatalf("brand %q exists %d times, want exactly 1 (two rows sharing the same brand_name must not create it twice)", newBrand, brandCount)
+	}
+
+	if _, err := svc.LookupBarcode(ctx, principal, barcodeA); err != nil {
+		t.Fatalf("LookupBarcode(%q): %v", barcodeA, err)
+	}
+	if _, err := svc.LookupBarcode(ctx, principal, barcodeB); err != nil {
+		t.Fatalf("LookupBarcode(%q): %v", barcodeB, err)
+	}
+}
+
 func TestContacts_ImportParties_ValidatesDedupesAndCommits(t *testing.T) {
 	ctx := context.Background()
 	svc := contactsapp.NewService(

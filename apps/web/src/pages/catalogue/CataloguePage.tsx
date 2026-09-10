@@ -477,19 +477,37 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           "sku_code (optional — generated from name if blank)",
           "price (optional — sets this product's price on your default price list)",
           "gst_rate (optional — sets the GST% for this HSN/SAC code)",
+          "category_name (optional — created automatically if it doesn't exist yet)",
+          "brand_name (optional — created automatically if it doesn't exist yet)",
+          "barcode (optional — must be unique)",
         ]}
         // base_uom_code must be a unit that already exists for this org
         // (catalogue.Service.ImportProducts looks it up by code, it
         // doesn't create one) — use the org's own first unit rather than
         // a hardcoded guess like "PCS" that might not exist here, so the
         // downloaded sample actually imports cleanly as-is. price/
-        // gst_rate are the two fields the single "New product" form
-        // already lets you set inline but bulk import didn't -- without
-        // them an imported product isn't actually sellable until someone
-        // visits Pricing/GST separately for every single row.
+        // gst_rate/category_name/brand_name/barcode are every field the
+        // single "New product" form lets you set inline, now all
+        // available in bulk too — every one of them optional, so a
+        // minimal 3-column file (name/hsn_sac_code/base_uom_code) still
+        // imports cleanly. Opening stock is deliberately NOT a column
+        // here: it's edited afterward on the Inventory page, same as a
+        // manually-added product with no starting quantity.
         sampleRows={
           units.data?.[0]
-            ? [{ name: "Amul Butter 500g", hsn_sac_code: "0405", base_uom_code: units.data[0].Code, sku_code: "AMUL-BTR-500", price: "55.00", gst_rate: "5" }]
+            ? [
+                {
+                  name: "Amul Butter 500g",
+                  hsn_sac_code: "0405",
+                  base_uom_code: units.data[0].Code,
+                  sku_code: "AMUL-BTR-500",
+                  price: "55.00",
+                  gst_rate: "5",
+                  category_name: "Dairy",
+                  brand_name: "Amul",
+                  barcode: "8901234567890",
+                },
+              ]
             : undefined
         }
         onImported={() => void queryClient.invalidateQueries({ queryKey: ["products"] })}
