@@ -13,6 +13,7 @@ import (
 
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	cataloguepg "rechvix/internal/modules/catalogue/pg"
+	identityapp "rechvix/internal/modules/identity/app"
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	inventorydomain "rechvix/internal/modules/inventory/domain"
 	inventorypg "rechvix/internal/modules/inventory/pg"
@@ -25,7 +26,7 @@ func decimalPtr(d decimal.Decimal) *decimal.Decimal { return &d }
 
 func newTestInventoryService(t *testing.T) *inventoryapp.Service {
 	t.Helper()
-	return inventoryapp.NewService(
+	svc := inventoryapp.NewService(
 		sharedPool,
 		inventorypg.NewStockMovementRepo(sharedPool),
 		inventorypg.NewStockBalanceRepo(sharedPool),
@@ -42,6 +43,28 @@ func newTestInventoryService(t *testing.T) *inventoryapp.Service {
 		permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool),
 		audit.NewPGRecorder(sharedPool),
 	)
+	// Same resolver apps/server/main.go wires in — every principal-gated
+	// write (RecordOpeningStock/RecordAdjustment/RecordTransfer/Reserve/
+	// SetStockPolicy) fails closed without it, see
+	// inventoryapp.WarehouseLegalEntityFunc's own doc comment.
+	orgSvc := newTestOrgService(t)
+	svc.WithWarehouseLegalEntityResolver(func(ctx context.Context, orgID, warehouseID uuid.UUID) (uuid.UUID, error) {
+		var legalEntityID uuid.UUID
+		err := sharedPool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+			warehouse, err := orgSvc.GetWarehouseForOtherModule(ctx, orgID, warehouseID)
+			if err != nil {
+				return err
+			}
+			branch, err := orgSvc.GetBranchForOtherModule(ctx, orgID, warehouse.BranchID)
+			if err != nil {
+				return err
+			}
+			legalEntityID = branch.LegalEntityID
+			return nil
+		})
+		return legalEntityID, err
+	})
+	return svc
 }
 
 // inventoryFixture is what a movement/transfer/reservation test needs:
@@ -528,5 +551,107 @@ func TestInventory_RLS_BlocksCrossOrganisationBalanceAndMovementReads(t *testing
 	balAsA, err := svc.GetBalance(ctx, fxA.Principal, fxA.WarehouseID, fxA.VariantID)
 	if err != nil || !balAsA.QuantityOnHand.Equal(mustDecimal(t, "10")) {
 		t.Fatalf("GetBalance as A for its own stock: bal=%v err=%v, want 10/nil", balAsA, err)
+	}
+}
+
+// TestInventory_CompanyScopedAccess covers the write-action gap this
+// session closed: RecordOpeningStock/RecordAdjustment previously stayed
+// unscoped (Require(..., Scope{})) even after ListDocuments/company
+// filtering landed, meaning a company-restricted member could view stock
+// but never adjust it, even in their own granted company — see
+// inventory/app.Service.manage/adjustPerm's own doc comments for the
+// fix (resolving the target warehouse's company via the
+// WarehouseLegalEntityFunc hook apps/server's composition root wires
+// in, same as newTestInventoryService above does for these tests).
+func TestInventory_CompanyScopedAccess(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestInventoryService(t)
+	fx := setupInventoryFixture(t, ctx) // company A, via bootstrap
+	orgSvc := newTestOrgService(t)
+	identitySvc, _ := newTestIdentityService(t)
+
+	var legalEntityA uuid.UUID
+	err := sharedPool.RunScoped(ctx, fx.Principal.OrganisationID, func(ctx context.Context) error {
+		branchA, err := orgSvc.GetBranchForOtherModule(ctx, fx.Principal.OrganisationID, fx.BranchID)
+		if err != nil {
+			return err
+		}
+		legalEntityA = branchA.LegalEntityID
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("GetBranchForOtherModule (company A): %v", err)
+	}
+
+	unique := uuid.NewString()[:8]
+	companyB, err := orgSvc.CreateLegalEntity(ctx, fx.Principal, orgapp.CreateLegalEntityParams{
+		LegalName: "Inventory Company B " + unique, CountryCode: "IN", BaseCurrencyCode: "INR",
+		GSTIN: "27EEEEE0000E1Z5", GSTStateCode: "27",
+	})
+	if err != nil {
+		t.Fatalf("CreateLegalEntity (company B): %v", err)
+	}
+	branchB, err := orgSvc.CreateBranch(ctx, fx.Principal, orgapp.CreateBranchParams{
+		LegalEntityID: companyB.ID, Code: "IVB-" + unique, Name: "Company B Branch",
+	})
+	if err != nil {
+		t.Fatalf("CreateBranch (company B): %v", err)
+	}
+	warehouseB, err := orgSvc.CreateWarehouse(ctx, fx.Principal, orgapp.CreateWarehouseParams{
+		BranchID: branchB.ID, Code: "IVWB-" + unique, Name: "Company B Warehouse",
+	})
+	if err != nil {
+		t.Fatalf("CreateWarehouse (company B): %v", err)
+	}
+
+	memberID, err := identitySvc.CreateTeamMember(ctx, fx.Principal, identityapp.CreateTeamMemberParams{
+		FullName: "Inventory Restricted Member", Email: "inv-restricted-" + unique + "@example.com", Password: "another very long password 99",
+		LegalEntityIDs: []uuid.UUID{legalEntityA}, // company A only
+	})
+	if err != nil {
+		t.Fatalf("CreateTeamMember: %v", err)
+	}
+	restricted := permissions.Principal{UserID: memberID, OrganisationID: fx.Principal.OrganisationID}
+
+	// Opening stock in the member's OWN company's warehouse must
+	// succeed — this is exactly the "restricted but still functional in
+	// their own company" gap that was previously broken.
+	if _, err := svc.RecordOpeningStock(ctx, restricted, inventoryapp.RecordMovementParams{
+		WarehouseID: fx.WarehouseID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "20"), UnitCost: decimalPtr(mustDecimal(t, "10")),
+	}); err != nil {
+		t.Fatalf("RecordOpeningStock in own company's warehouse (restricted member): %v", err)
+	}
+	// An adjustment in the same warehouse must also succeed.
+	if _, _, err := svc.RecordAdjustment(ctx, restricted, inventoryapp.RecordAdjustmentParams{
+		WarehouseID: fx.WarehouseID, Reason: "recount",
+		Lines: []inventoryapp.AdjustmentLineParams{{ProductVariantID: fx.VariantID, UnitID: fx.PCS, Quantity: mustDecimal(t, "1"), MovementType: inventorydomain.MovementAdjustmentIn}},
+	}); err != nil {
+		t.Fatalf("RecordAdjustment in own company's warehouse (restricted member): %v", err)
+	}
+
+	// The same actions against company B's warehouse must be rejected —
+	// the fix grants full function within the member's OWN company, not
+	// every company in the organisation.
+	if _, err := svc.RecordOpeningStock(ctx, restricted, inventoryapp.RecordMovementParams{
+		WarehouseID: warehouseB.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "20"), UnitCost: decimalPtr(mustDecimal(t, "10")),
+	}); err == nil {
+		t.Fatal("RecordOpeningStock in company B's warehouse succeeded for a member restricted to company A — should have failed closed")
+	}
+	if _, _, err := svc.RecordAdjustment(ctx, restricted, inventoryapp.RecordAdjustmentParams{
+		WarehouseID: warehouseB.ID, Reason: "recount",
+		Lines: []inventoryapp.AdjustmentLineParams{{ProductVariantID: fx.VariantID, UnitID: fx.PCS, Quantity: mustDecimal(t, "1"), MovementType: inventorydomain.MovementAdjustmentIn}},
+	}); err == nil {
+		t.Fatal("RecordAdjustment in company B's warehouse succeeded for a member restricted to company A — should have failed closed")
+	}
+
+	// A transfer FROM the member's own warehouse INTO company B's must
+	// also be rejected — RecordTransfer checks both sides, not just the
+	// source (see its own doc comment).
+	if _, err := svc.RecordTransfer(ctx, restricted, inventoryapp.RecordTransferParams{
+		FromWarehouseID: fx.WarehouseID, ToWarehouseID: warehouseB.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS, Quantity: mustDecimal(t, "1"),
+	}); err == nil {
+		t.Fatal("RecordTransfer into company B's warehouse succeeded for a member restricted to company A — should have failed closed")
 	}
 }

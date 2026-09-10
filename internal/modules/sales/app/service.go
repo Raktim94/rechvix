@@ -108,34 +108,42 @@ func NewService(
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.HasAny(ctx, principal, "sales.view")
 }
-// create checks sales.create scoped to the specific company the new
-// document will belong to — a company-restricted user creating a
-// document under a company they don't hold sales.create for is exactly
-// the highest-risk gap company-scoped access exists to close, so this
-// (unlike view above and editDraft/finalizePerm/discountPerm below,
-// which are coarse "at all" gates) takes the scope explicitly rather
-// than an empty one.
-//
-// KNOWN GAP, documented not silent: editDraft/finalizePerm/discountPerm
-// below are STILL coarse Require(..., Scope{}) checks, unconverted —
-// meaning a company-restricted user currently cannot finalize, edit, or
-// discount ANY sales document (even their own company's), only view and
-// create ones. Properly scoping those needs each call site to first
-// resolve the target document's LegalEntityID before checking (most
-// don't have it on hand until after their own DB fetch) — real,
-// meaningful additional work deliberately left for a follow-up rather
-// than rushed through here alongside the view/list/create fix.
+// create/editDraft/finalizePerm/discountPerm all check their permission
+// scoped to the SPECIFIC company the target document belongs to (create:
+// the new document's; the other three: an existing document's, resolved
+// via documentLegalEntity by the caller before checking) — every one of
+// these is exactly the same class of highest-risk gap: a company-
+// restricted user acting on a document under a company they don't hold
+// this permission for.
 func (s *Service) create(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID) error {
 	return s.permissions.Require(ctx, principal, "sales.create", permissions.Scope{LegalEntityID: &legalEntityID})
 }
-func (s *Service) editDraft(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "sales.edit_draft", permissions.Scope{})
+func (s *Service) editDraft(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID) error {
+	return s.permissions.Require(ctx, principal, "sales.edit_draft", permissions.Scope{LegalEntityID: &legalEntityID})
 }
-func (s *Service) finalizePerm(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "sales.finalize", permissions.Scope{})
+func (s *Service) finalizePerm(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID) error {
+	return s.permissions.Require(ctx, principal, "sales.finalize", permissions.Scope{LegalEntityID: &legalEntityID})
 }
-func (s *Service) discountPerm(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "sales.discount", permissions.Scope{})
+func (s *Service) discountPerm(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID) error {
+	return s.permissions.Require(ctx, principal, "sales.discount", permissions.Scope{LegalEntityID: &legalEntityID})
+}
+
+// documentLegalEntity fetches just a sales document's LegalEntityID, in
+// its own RunScoped — used to build a company-scoped Scope before the
+// caller's own RunScoped opens (never nested — see
+// purchases/app.Service.manageForBranch's identical note for the
+// hazard this avoids).
+func (s *Service) documentLegalEntity(ctx context.Context, orgID, documentID uuid.UUID) (uuid.UUID, error) {
+	var legalEntityID uuid.UUID
+	err := s.pool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+		doc, err := s.documents.GetByID(ctx, orgID, documentID)
+		if err != nil {
+			return err
+		}
+		legalEntityID = doc.LegalEntityID
+		return nil
+	})
+	return legalEntityID, err
 }
 
 func documentPrefix(t domain.DocumentType) string {
@@ -259,6 +267,12 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 	return d, nil
 }
 
+// GetDocument's check is two-tier: view (HasAny — cheap, fails closed
+// before touching the database for a caller who holds sales.view
+// nowhere at all), THEN — once the document's own company is known — a
+// properly Scope{LegalEntityID}'d Require, so a caller restricted to
+// company A can't read a company B document's full detail by ID even
+// though the coarse view gate alone would have let them.
 func (s *Service) GetDocument(ctx context.Context, principal permissions.Principal, id uuid.UUID) (*domain.Document, []*domain.DocumentLine, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, nil, err
@@ -275,6 +289,9 @@ func (s *Service) GetDocument(ctx context.Context, principal permissions.Princip
 		return err
 	})
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.permissions.Require(ctx, principal, "sales.view", permissions.Scope{LegalEntityID: &doc.LegalEntityID}); err != nil {
 		return nil, nil, err
 	}
 	return doc, lines, nil
@@ -349,11 +366,15 @@ type AddLineParams struct {
 // avoids a nested RunScoped call entirely rather than relying on it being
 // merely harmless.
 func (s *Service) AddLine(ctx context.Context, principal permissions.Principal, p AddLineParams) (*domain.DocumentLine, error) {
-	if err := s.editDraft(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, p.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.editDraft(ctx, principal, legalEntityID); err != nil {
 		return nil, err
 	}
 	if p.LineDiscountAmount.IsPositive() {
-		if err := s.discountPerm(ctx, principal); err != nil {
+		if err := s.discountPerm(ctx, principal, legalEntityID); err != nil {
 			return nil, err
 		}
 	}
@@ -429,11 +450,15 @@ type UpdateLineParams struct {
 // caller-supplied total, same "server recalculates, never trusts a
 // client-sent total" rule AddLine already follows.
 func (s *Service) UpdateLine(ctx context.Context, principal permissions.Principal, p UpdateLineParams) (*domain.DocumentLine, error) {
-	if err := s.editDraft(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, p.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.editDraft(ctx, principal, legalEntityID); err != nil {
 		return nil, err
 	}
 	if p.LineDiscountAmount.IsPositive() {
-		if err := s.discountPerm(ctx, principal); err != nil {
+		if err := s.discountPerm(ctx, principal, legalEntityID); err != nil {
 			return nil, err
 		}
 	}
@@ -441,7 +466,7 @@ func (s *Service) UpdateLine(ctx context.Context, principal permissions.Principa
 		return nil, fmt.Errorf("sales: quantity must be positive")
 	}
 	var line *domain.DocumentLine
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		doc, err := s.documents.GetByID(ctx, principal.OrganisationID, p.DocumentID)
 		if err != nil {
 			return err
@@ -494,7 +519,11 @@ func (s *Service) UpdateLine(ctx context.Context, principal permissions.Principa
 // are not renumbered after a delete (a DRAFT-only, display-order
 // concern, not worth the extra writes).
 func (s *Service) DeleteLine(ctx context.Context, principal permissions.Principal, documentID, lineID uuid.UUID) error {
-	if err := s.editDraft(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, documentID)
+	if err != nil {
+		return err
+	}
+	if err := s.editDraft(ctx, principal, legalEntityID); err != nil {
 		return err
 	}
 	now := s.now()
@@ -533,12 +562,16 @@ func (s *Service) DeleteLine(ctx context.Context, principal permissions.Principa
 // totals. If any step fails, nothing partial is left FINALIZED (brief
 // §32).
 func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*domain.Document, error) {
-	if err := s.finalizePerm(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.finalizePerm(ctx, principal, legalEntityID); err != nil {
 		return nil, err
 	}
 	now := s.now()
 	var doc *domain.Document
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		doc, err = s.documents.GetByID(ctx, principal.OrganisationID, documentID)
 		if err != nil {
@@ -802,12 +835,16 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 // (httpapi/frontend) surfaces that as a warning before cancelling, not
 // as something this method resolves on its own.
 func (s *Service) CancelDocument(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*domain.Document, error) {
-	if err := s.finalizePerm(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.finalizePerm(ctx, principal, legalEntityID); err != nil {
 		return nil, err
 	}
 	now := s.now()
 	var doc *domain.Document
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		doc, err = s.documents.GetByID(ctx, principal.OrganisationID, documentID)
 		if err != nil {

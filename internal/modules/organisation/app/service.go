@@ -321,6 +321,16 @@ func (s *Service) GetBranchForOtherModule(ctx context.Context, orgID, id uuid.UU
 	return s.branches.GetByID(ctx, orgID, id)
 }
 
+// GetWarehouseForOtherModule is GetLegalEntityForOtherModule's identical
+// pattern, for warehouses — see that method's own doc comment for the
+// full reasoning, not repeated here. Used by inventory/app.Service (via
+// the WarehouseLegalEntityFunc hook apps/server's composition root wires
+// in — inventory has no direct dependency on this module) to resolve a
+// warehouse's own company for its scoped permission checks.
+func (s *Service) GetWarehouseForOtherModule(ctx context.Context, orgID, id uuid.UUID) (*domain.Warehouse, error) {
+	return s.warehouses.GetByID(ctx, orgID, id)
+}
+
 // GetOrganisationForOtherModule is GetLegalEntityForOtherModule's
 // identical pattern for Organisation itself — ewaybill.Service.
 // EvaluateEligibility needs EWayBillThresholdOverride to apply a

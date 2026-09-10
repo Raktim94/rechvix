@@ -263,6 +263,29 @@ func run() error {
 		permissionsChecker,
 		auditRecorder,
 	)
+	// inventory.Service.manage/adjustPerm/transferPerm need to resolve a
+	// warehouse's own company (see WarehouseLegalEntityFunc's own doc
+	// comment for why inventory doesn't just import organisation
+	// directly) — two sequential RunScoped-wrapped lookups
+	// (GetWarehouseForOtherModule, then GetBranchForOtherModule), never
+	// nested inside whatever transaction the caller is already in, same
+	// reasoning as purchases/app.Service.branchLegalEntity.
+	inventorySvc.WithWarehouseLegalEntityResolver(func(ctx context.Context, orgID, warehouseID uuid.UUID) (uuid.UUID, error) {
+		var legalEntityID uuid.UUID
+		err := pool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+			warehouse, err := orgSvc.GetWarehouseForOtherModule(ctx, orgID, warehouseID)
+			if err != nil {
+				return err
+			}
+			branch, err := orgSvc.GetBranchForOtherModule(ctx, orgID, warehouse.BranchID)
+			if err != nil {
+				return err
+			}
+			legalEntityID = branch.LegalEntityID
+			return nil
+		})
+		return legalEntityID, err
+	})
 
 	accountingSvc := accountingapp.NewService(
 		pool,

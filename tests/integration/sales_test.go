@@ -930,10 +930,41 @@ func TestSales_CompanyScopedAccess(t *testing.T) {
 	// The same call under company A (their own, granted company) must
 	// still succeed — this isn't a blanket "sales.create is broken" bug,
 	// only company B specifically is forbidden.
-	if _, err := salesSvc.CreateDocument(ctx, restricted, salesapp.CreateDocumentParams{
+	docA2, err := salesSvc.CreateDocument(ctx, restricted, salesapp.CreateDocumentParams{
 		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
 		DocumentType: salesdomain.DocQuotation, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
-	}); err != nil {
+		PricingMode: taxdomain.PricingExclusive,
+	})
+	if err != nil {
 		t.Fatalf("CreateDocument under company A (granted): %v", err)
+	}
+
+	// The write-action gap this session closed: AddLine/FinalizeDocument
+	// on the restricted member's OWN company must now succeed (they
+	// previously could create and view but never finalize/edit, even
+	// their own company's documents — see sales/app.Service.editDraft/
+	// finalizePerm's own doc comments for the fix).
+	if _, err := salesSvc.AddLine(ctx, restricted, salesapp.AddLineParams{
+		DocumentID: docA2.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, "100"),
+	}); err != nil {
+		t.Fatalf("AddLine on own company's document (restricted member): %v", err)
+	}
+	if _, err := salesSvc.FinalizeDocument(ctx, restricted, docA2.ID); err != nil {
+		t.Fatalf("FinalizeDocument on own company's document (restricted member): %v", err)
+	}
+
+	// The same actions against company B's document (docB, not theirs)
+	// must still be rejected — the fix above closes the gap for a
+	// restricted member's OWN company, it does not accidentally grant
+	// them company B too.
+	if _, err := salesSvc.AddLine(ctx, restricted, salesapp.AddLineParams{
+		DocumentID: docB.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, "100"),
+	}); err == nil {
+		t.Fatal("AddLine on company B's document succeeded for a member restricted to company A — should have failed closed")
+	}
+	if _, err := salesSvc.FinalizeDocument(ctx, restricted, docB.ID); err == nil {
+		t.Fatal("FinalizeDocument on company B's document succeeded for a member restricted to company A — should have failed closed")
 	}
 }

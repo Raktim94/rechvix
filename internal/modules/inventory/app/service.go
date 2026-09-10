@@ -23,24 +23,54 @@ import (
 	"rechvix/internal/platform/permissions"
 )
 
+// WarehouseLegalEntityFunc resolves a warehouse's own company — the
+// layering-safe wiring pattern catalogue/app.Service's SetPriceHookFunc
+// doc comment describes (same as identity's WithPostBootstrapHook and
+// notifications' WithDocumentRenderer, apps/server/main.go): inventory
+// can't import organisation directly (organisation doesn't depend on
+// inventory, but adding the reverse edge here for one lookup isn't worth
+// a new hard dependency when every other cross-module need in this
+// codebase already goes through a hook), but the composition root has
+// both, so it wires this in as a closure over
+// organisation.Service.GetWarehouseForOtherModule +
+// GetBranchForOtherModule. Unlike catalogue's price/tax hooks (nil means
+// "skip, not an error" — a convenience, not a security boundary), a nil
+// WarehouseLegalEntityFunc here must FAIL CLOSED (see manage/adjustPerm/
+// transferPerm below) — silently treating "can't resolve which company
+// this warehouse belongs to" as "allow the action anyway" would defeat
+// the point of company-scoped access entirely. Only reachable from
+// apps/server (the real HTTP API with real principals); apps/worker and
+// apps/mcp never call the principal-gated methods that need it (worker
+// only calls RecordMovementForOtherModule, which bypasses permission
+// checks by design; the AI toolset only calls GetBalance, a view-gated
+// read), so leaving it unset there is correct, not an oversight.
+type WarehouseLegalEntityFunc func(ctx context.Context, orgID, warehouseID uuid.UUID) (uuid.UUID, error)
+
 type Service struct {
-	pool            database.Runner
-	movements       domain.StockMovementRepository
-	balances        domain.StockBalanceRepository
-	reservations    domain.StockReservationRepository
-	batches         domain.StockBatchRepository
-	costLots        domain.StockCostLotRepository
-	serials         domain.SerialNumberRepository
-	policies        domain.StockPolicyRepository
-	transfers       domain.StockTransferRepository
-	adjustments     domain.StockAdjustmentRepository
-	variants        cataloguedomain.ProductVariantRepository
-	products        cataloguedomain.ProductRepository
-	unitConversions cataloguedomain.UnitConversionRepository
-	costing         domain.CostingStrategy
-	permissions     *permissions.Checker
-	audit           audit.Recorder
-	now             func() time.Time
+	pool                 database.Runner
+	movements            domain.StockMovementRepository
+	balances             domain.StockBalanceRepository
+	reservations         domain.StockReservationRepository
+	batches              domain.StockBatchRepository
+	costLots             domain.StockCostLotRepository
+	serials              domain.SerialNumberRepository
+	policies             domain.StockPolicyRepository
+	transfers            domain.StockTransferRepository
+	adjustments          domain.StockAdjustmentRepository
+	variants             cataloguedomain.ProductVariantRepository
+	products             cataloguedomain.ProductRepository
+	unitConversions      cataloguedomain.UnitConversionRepository
+	costing              domain.CostingStrategy
+	permissions          *permissions.Checker
+	audit                audit.Recorder
+	now                  func() time.Time
+	warehouseLegalEntity WarehouseLegalEntityFunc
+}
+
+// WithWarehouseLegalEntityResolver wires WarehouseLegalEntityFunc above.
+func (s *Service) WithWarehouseLegalEntityResolver(f WarehouseLegalEntityFunc) *Service {
+	s.warehouseLegalEntity = f
+	return s
 }
 
 func NewService(
@@ -71,22 +101,45 @@ func NewService(
 // view is a coarse "can see stock at all" gate — see
 // sales/app.Service.view's identical rationale/doc comment for why this
 // is Checker.HasAny, not Require. manage/adjustPerm/transferPerm below
-// are the same KNOWN GAP as sales' editDraft/finalizePerm/discountPerm:
-// still unscoped Require checks, unconverted — a company-restricted
-// user can currently VIEW stock (via GetBalance/ListMovements/
-// ListCostLots/ListLowStock, all gated by this view check) but not
-// adjust/transfer/manage it, left for the same follow-up.
+// are properly scoped instead, via warehouseLegalEntity below — a
+// company-restricted user can adjust/transfer/manage stock in their own
+// granted companies' warehouses, not just view them.
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.HasAny(ctx, principal, "inventory.view")
 }
-func (s *Service) manage(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "inventory.manage", permissions.Scope{})
+
+// warehouseLegalEntityOf resolves warehouseID's company via the wired
+// WarehouseLegalEntityFunc, failing closed (a real error, never a
+// silent "unrestricted") when no resolver is wired — see
+// WarehouseLegalEntityFunc's own doc comment for why this specific hook
+// must never silently skip the check.
+func (s *Service) warehouseLegalEntityOf(ctx context.Context, orgID, warehouseID uuid.UUID) (uuid.UUID, error) {
+	if s.warehouseLegalEntity == nil {
+		return uuid.UUID{}, fmt.Errorf("inventory: cannot resolve warehouse %s's company — no WarehouseLegalEntityFunc wired", warehouseID)
+	}
+	return s.warehouseLegalEntity(ctx, orgID, warehouseID)
 }
-func (s *Service) adjustPerm(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "inventory.adjust", permissions.Scope{})
+
+func (s *Service) manage(ctx context.Context, principal permissions.Principal, warehouseID uuid.UUID) error {
+	legalEntityID, err := s.warehouseLegalEntityOf(ctx, principal.OrganisationID, warehouseID)
+	if err != nil {
+		return err
+	}
+	return s.permissions.Require(ctx, principal, "inventory.manage", permissions.Scope{LegalEntityID: &legalEntityID})
 }
-func (s *Service) transferPerm(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "inventory.transfer", permissions.Scope{})
+func (s *Service) adjustPerm(ctx context.Context, principal permissions.Principal, warehouseID uuid.UUID) error {
+	legalEntityID, err := s.warehouseLegalEntityOf(ctx, principal.OrganisationID, warehouseID)
+	if err != nil {
+		return err
+	}
+	return s.permissions.Require(ctx, principal, "inventory.adjust", permissions.Scope{LegalEntityID: &legalEntityID})
+}
+func (s *Service) transferPerm(ctx context.Context, principal permissions.Principal, warehouseID uuid.UUID) error {
+	legalEntityID, err := s.warehouseLegalEntityOf(ctx, principal.OrganisationID, warehouseID)
+	if err != nil {
+		return err
+	}
+	return s.permissions.Require(ctx, principal, "inventory.transfer", permissions.Scope{LegalEntityID: &legalEntityID})
 }
 
 // RecordMovementParams describes one movement to post. Quantity is always
@@ -337,7 +390,7 @@ func (s *Service) resolveSerial(ctx context.Context, orgID, variantID, warehouse
 // --- Public, permission-checked entry points ---
 
 func (s *Service) RecordOpeningStock(ctx context.Context, principal permissions.Principal, p RecordMovementParams) (*domain.StockMovement, error) {
-	if err := s.manage(ctx, principal); err != nil {
+	if err := s.manage(ctx, principal, p.WarehouseID); err != nil {
 		return nil, err
 	}
 	p.MovementType = domain.MovementOpening
@@ -379,7 +432,7 @@ func isAdjustmentMovementType(t domain.MovementType) bool {
 }
 
 func (s *Service) RecordAdjustment(ctx context.Context, principal permissions.Principal, p RecordAdjustmentParams) (*domain.StockAdjustment, []*domain.StockMovement, error) {
-	if err := s.adjustPerm(ctx, principal); err != nil {
+	if err := s.adjustPerm(ctx, principal, p.WarehouseID); err != nil {
 		return nil, nil, err
 	}
 	if len(p.Lines) == 0 {
@@ -434,9 +487,20 @@ type RecordTransferParams struct {
 	Notes            string
 }
 
+// RecordTransfer checks inventory.transfer scoped to BOTH warehouses'
+// companies (not just one) — a transfer moves stock out of one
+// warehouse and into another, and nothing here stops the two from
+// belonging to different companies (an unusual but not rejected case),
+// so a company-restricted caller must hold the permission for wherever
+// stock is leaving AND wherever it's landing, not just one side.
 func (s *Service) RecordTransfer(ctx context.Context, principal permissions.Principal, p RecordTransferParams) (*domain.StockTransfer, error) {
-	if err := s.transferPerm(ctx, principal); err != nil {
+	if err := s.transferPerm(ctx, principal, p.FromWarehouseID); err != nil {
 		return nil, err
+	}
+	if p.ToWarehouseID != p.FromWarehouseID {
+		if err := s.transferPerm(ctx, principal, p.ToWarehouseID); err != nil {
+			return nil, err
+		}
 	}
 	if p.FromWarehouseID == p.ToWarehouseID {
 		return nil, fmt.Errorf("inventory: cannot transfer a warehouse to itself")
@@ -490,7 +554,7 @@ type ReserveParams struct {
 // concurrent reservations against the last unit of stock must not both
 // succeed.
 func (s *Service) Reserve(ctx context.Context, principal permissions.Principal, p ReserveParams) (*domain.StockReservation, error) {
-	if err := s.manage(ctx, principal); err != nil {
+	if err := s.manage(ctx, principal, p.WarehouseID); err != nil {
 		return nil, err
 	}
 	if !p.Quantity.IsPositive() {
@@ -529,7 +593,7 @@ func (s *Service) Reserve(ctx context.Context, principal permissions.Principal, 
 }
 
 func (s *Service) ReleaseReservation(ctx context.Context, principal permissions.Principal, reservationID, warehouseID, variantID uuid.UUID) error {
-	if err := s.manage(ctx, principal); err != nil {
+	if err := s.manage(ctx, principal, warehouseID); err != nil {
 		return err
 	}
 	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
@@ -610,7 +674,7 @@ func (s *Service) ListLowStock(ctx context.Context, principal permissions.Princi
 }
 
 func (s *Service) SetStockPolicy(ctx context.Context, principal permissions.Principal, p domain.StockPolicy) error {
-	if err := s.manage(ctx, principal); err != nil {
+	if err := s.manage(ctx, principal, p.WarehouseID); err != nil {
 		return err
 	}
 	p.OrganisationID = principal.OrganisationID

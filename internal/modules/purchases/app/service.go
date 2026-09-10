@@ -79,33 +79,41 @@ func NewService(
 // define its own parallel set.
 // view is a coarse "can see purchase documents at all" gate — see
 // sales/app.Service.view's identical rationale/doc comment for why this
-// is Checker.HasAny, not Require, and for the same KNOWN GAP note
-// (finalizePerm below is still an unscoped Require, unconverted).
+// is Checker.HasAny, not Require. The per-document restriction is
+// enforced separately, in GetDocument/AddLine/FinalizeDocument/
+// CancelDocument below, each via documentLegalEntity.
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.HasAny(ctx, principal, "purchase.view")
 }
-func (s *Service) manage(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "purchase.create", permissions.Scope{})
+
+// manage/manageForBranch/finalizePerm all check their permission scoped
+// to a specific company: manage takes an already-known
+// legalEntityID (used by AddLine, which already resolved the parent
+// document's company via documentLegalEntity); manageForBranch resolves
+// it from a branchID first (document-create time, when only the branch
+// is known yet); finalizePerm likewise takes an already-known
+// legalEntityID. purchase_documents has no legal_entity_id of its own
+// (only branch_id), so branchLegalEntity is the one place that hop
+// happens, reused by both manageForBranch and documentLegalEntity below
+// rather than duplicated.
+func (s *Service) manage(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID) error {
+	return s.permissions.Require(ctx, principal, "purchase.create", permissions.Scope{LegalEntityID: &legalEntityID})
 }
 
-// manageForBranch is manage's company-scoped variant, used at
-// document-create time — see sales/app.Service.create's identical
-// rationale (the highest-risk gap company-scoped access exists to
-// close). purchase_documents has no legal_entity_id of its own, so this
-// resolves it from branchID first, in its OWN short RunScoped (deliberately
-// separate from, and sequenced BEFORE, CreateDocument's own write
-// transaction — nesting a second RunScoped inside an already-open one
-// opens a second, independent connection/transaction rather than
-// participating in the outer one, the same hazard
+// branchLegalEntity resolves a branch's own company, in its own
+// RunScoped (deliberately separate from, and sequenced BEFORE, the
+// caller's own write transaction — nesting a second RunScoped inside an
+// already-open one opens a second, independent connection/transaction
+// instead of participating in the outer one, the same hazard
 // catalogue/app.Service.ImportProducts' pendingPriceTax doc comment
-// documents for the identical reason). permissions.Checker.Require
-// self-scopes its own grants lookup the same way, so calling it here
-// (after this method's own RunScoped has already returned) keeps every
-// step sequential, never nested.
-func (s *Service) manageForBranch(ctx context.Context, principal permissions.Principal, branchID uuid.UUID) error {
+// documents for the identical reason). permissions.Checker.Require/
+// HasAny self-scope their own grants lookup the same way, so calling
+// either after this method's own RunScoped has already returned keeps
+// every step sequential, never nested.
+func (s *Service) branchLegalEntity(ctx context.Context, orgID, branchID uuid.UUID) (uuid.UUID, error) {
 	var legalEntityID uuid.UUID
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		branch, err := s.organisation.GetBranchForOtherModule(ctx, principal.OrganisationID, branchID)
+	err := s.pool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+		branch, err := s.organisation.GetBranchForOtherModule(ctx, orgID, branchID)
 		if err != nil {
 			return err
 		}
@@ -113,12 +121,40 @@ func (s *Service) manageForBranch(ctx context.Context, principal permissions.Pri
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("purchases: resolving branch's company: %w", err)
+		return uuid.UUID{}, fmt.Errorf("purchases: resolving branch's company: %w", err)
+	}
+	return legalEntityID, nil
+}
+
+// documentLegalEntity is branchLegalEntity's document-level counterpart
+// — resolves a purchase document's own branch first, then that branch's
+// company. Two sequential RunScoped calls (the document lookup, then
+// branchLegalEntity's own), never nested, same reasoning.
+func (s *Service) documentLegalEntity(ctx context.Context, orgID, documentID uuid.UUID) (uuid.UUID, error) {
+	var branchID uuid.UUID
+	err := s.pool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+		doc, err := s.documents.GetByID(ctx, orgID, documentID)
+		if err != nil {
+			return err
+		}
+		branchID = doc.BranchID
+		return nil
+	})
+	if err != nil {
+		return uuid.UUID{}, err
+	}
+	return s.branchLegalEntity(ctx, orgID, branchID)
+}
+
+func (s *Service) manageForBranch(ctx context.Context, principal permissions.Principal, branchID uuid.UUID) error {
+	legalEntityID, err := s.branchLegalEntity(ctx, principal.OrganisationID, branchID)
+	if err != nil {
+		return err
 	}
 	return s.permissions.Require(ctx, principal, "purchase.create", permissions.Scope{LegalEntityID: &legalEntityID})
 }
-func (s *Service) finalizePerm(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "purchase.finalize", permissions.Scope{})
+func (s *Service) finalizePerm(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID) error {
+	return s.permissions.Require(ctx, principal, "purchase.finalize", permissions.Scope{LegalEntityID: &legalEntityID})
 }
 
 type CreateDocumentParams struct {
@@ -194,6 +230,11 @@ func documentPrefix(t domain.DocumentType) string {
 	}
 }
 
+// GetDocument's check is two-tier — see sales/app.Service.GetDocument's
+// identical doc comment for the full rationale (cheap coarse view gate
+// first, then a Scope{LegalEntityID}'d Require once the document's own
+// company is known, so a restricted caller can't read another
+// company's document detail by id).
 func (s *Service) GetDocument(ctx context.Context, principal permissions.Principal, id uuid.UUID) (*domain.Document, []*domain.DocumentLine, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, nil, err
@@ -210,6 +251,13 @@ func (s *Service) GetDocument(ctx context.Context, principal permissions.Princip
 		return err
 	})
 	if err != nil {
+		return nil, nil, err
+	}
+	legalEntityID, err := s.branchLegalEntity(ctx, principal.OrganisationID, doc.BranchID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.permissions.Require(ctx, principal, "purchase.view", permissions.Scope{LegalEntityID: &legalEntityID}); err != nil {
 		return nil, nil, err
 	}
 	return doc, lines, nil
@@ -252,7 +300,11 @@ type AddLineParams struct {
 // this with ErrDocumentNotDraft — correction after finalize is a new
 // document (return/debit note), never an edit to this one.
 func (s *Service) AddLine(ctx context.Context, principal permissions.Principal, p AddLineParams) (*domain.DocumentLine, error) {
-	if err := s.manage(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, p.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.manage(ctx, principal, legalEntityID); err != nil {
 		return nil, err
 	}
 	_, product, err := s.catalogue.GetVariantWithProduct(ctx, principal, p.ProductVariantID)
@@ -313,12 +365,16 @@ func (s *Service) AddLine(ctx context.Context, principal permissions.Principal, 
 // the document's finalized state and its stock effect commit or roll
 // back together, never independently.
 func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*domain.Document, error) {
-	if err := s.finalizePerm(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.finalizePerm(ctx, principal, legalEntityID); err != nil {
 		return nil, err
 	}
 	now := s.now()
 	var doc *domain.Document
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		doc, err = s.documents.GetByID(ctx, principal.OrganisationID, documentID)
 		if err != nil {
@@ -496,12 +552,16 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 // own totals. Uses purchases.finalize — the same permission that let
 // this document be finalized is what's needed to undo that.
 func (s *Service) CancelDocument(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*domain.Document, error) {
-	if err := s.finalizePerm(ctx, principal); err != nil {
+	legalEntityID, err := s.documentLegalEntity(ctx, principal.OrganisationID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.finalizePerm(ctx, principal, legalEntityID); err != nil {
 		return nil, err
 	}
 	now := s.now()
 	var doc *domain.Document
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		doc, err = s.documents.GetByID(ctx, principal.OrganisationID, documentID)
 		if err != nil {
