@@ -316,7 +316,10 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       setSelectedIds(new Set());
       setConfirmingBulkDelete(false);
       setConfirmingDeleteId(null);
-      setLastDeleteResult(result);
+      // Defensive: a bucket that stayed empty can come back as JSON null
+      // rather than [] (a nil Go slice's JSON shape) — never trust it's
+      // an array without checking.
+      setLastDeleteResult({ hard_deleted: result.hard_deleted ?? [], deactivated: result.deactivated ?? [] });
     },
   });
 

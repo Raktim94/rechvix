@@ -5,6 +5,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import "./styles/global.css";
 import { router } from "./router";
 import { AuthProvider } from "./auth/AuthProvider";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
 const queryClient = new QueryClient({
@@ -21,12 +22,14 @@ if (!rootEl) throw new Error("#root element not found");
 
 createRoot(rootEl).render(
   <StrictMode>
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <RouterProvider router={router} />
-        </AuthProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <RouterProvider router={router} />
+          </AuthProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

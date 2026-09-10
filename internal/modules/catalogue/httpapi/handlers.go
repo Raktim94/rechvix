@@ -361,9 +361,23 @@ func (h *Handlers) bulkDeleteProducts(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
+	// DeleteOutcome's slices are nil (not empty) whenever every id landed
+	// in the other bucket — a Go nil slice marshals to JSON `null`, which
+	// broke CataloguePage.tsx's `.length` reads on whichever field stayed
+	// empty (e.g. deleting only ever-unused products left `deactivated`
+	// as literal `null`). Normalize both to `[]` so the wire shape is
+	// always an array, never null.
+	hardDeleted := result.HardDeleted
+	if hardDeleted == nil {
+		hardDeleted = []uuid.UUID{}
+	}
+	deactivated := result.Deactivated
+	if deactivated == nil {
+		deactivated = []uuid.UUID{}
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"hard_deleted": result.HardDeleted,
-		"deactivated":  result.Deactivated,
+		"hard_deleted": hardDeleted,
+		"deactivated":  deactivated,
 	})
 }
 
