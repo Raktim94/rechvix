@@ -297,7 +297,8 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           {units.data && units.data.length === 0 ? (
             <div style={{ marginBottom: 16 }}>
               <p className={ui.muted} style={{ marginBottom: 8 }}>
-                You don't have any units of measure yet — a product (and any bulk CSV import) needs at least one.
+                You don't have any units of measure yet — this form needs at least one to save a product. (Bulk CSV
+                import doesn't need this step — it creates whatever unit code each row asks for automatically.)
               </p>
               <button type="button" className={ui.btnPrimary} disabled={addDefaultUnits.isPending} onClick={() => addDefaultUnits.mutate()} style={{ marginBottom: 12 }}>
                 {addDefaultUnits.isPending ? "Adding…" : "Add common units (PCS, KG, LTR, BOX, and more)"}
@@ -350,6 +351,38 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                   </option>
                 ))}
               </select>
+              {units.data && units.data.length > 0 ? (
+                // Same inline "add without leaving the form" pattern as
+                // Category/Brand below — previously a new unit could only
+                // be added here while the org had ZERO units at all (the
+                // onboarding block above), so anyone who already had e.g.
+                // PCS but now also needed KG had to go to Settings first.
+                <div style={{ display: "flex", gap: 6, marginTop: 6, minWidth: 0 }}>
+                  <input
+                    className={ui.input}
+                    style={{ flex: "1 1 auto", minWidth: 0 }}
+                    placeholder="New unit code (e.g. KG)"
+                    value={newUnitCode}
+                    onChange={(e) => setNewUnitCode(e.target.value)}
+                  />
+                  <input
+                    className={ui.input}
+                    style={{ flex: "1 1 auto", minWidth: 0 }}
+                    placeholder="Unit name (e.g. Kilograms)"
+                    value={newUnitName}
+                    onChange={(e) => setNewUnitName(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className={ui.btnSecondary}
+                    style={{ flex: "0 0 auto" }}
+                    disabled={!newUnitCode || !newUnitName || createUnit.isPending}
+                    onClick={() => createUnit.mutate()}
+                  >
+                    Add
+                  </button>
+                </div>
+              ) : null}
             </div>
             {!editingId ? (
               <>
@@ -473,7 +506,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         columns={[
           "name",
           "hsn_sac_code (optional)",
-          "base_uom_code",
+          "base_uom_code (created automatically if it doesn't exist yet)",
           "sku_code (optional — generated from name if blank)",
           "price (optional — sets this product's price on your default price list)",
           "gst_rate (optional — sets the GST% for this HSN/SAC code)",
@@ -481,35 +514,33 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           "brand_name (optional — created automatically if it doesn't exist yet)",
           "barcode (optional — must be unique)",
         ]}
-        // base_uom_code must be a unit that already exists for this org
-        // (catalogue.Service.ImportProducts looks it up by code, it
-        // doesn't create one) — use the org's own first unit rather than
-        // a hardcoded guess like "PCS" that might not exist here, so the
-        // downloaded sample actually imports cleanly as-is. price/
-        // gst_rate/category_name/brand_name/barcode are every field the
-        // single "New product" form lets you set inline, now all
-        // available in bulk too — every one of them optional, so a
-        // minimal 3-column file (name/hsn_sac_code/base_uom_code) still
-        // imports cleanly. Opening stock is deliberately NOT a column
-        // here: it's edited afterward on the Inventory page, same as a
-        // manually-added product with no starting quantity.
-        sampleRows={
-          units.data?.[0]
-            ? [
-                {
-                  name: "Amul Butter 500g",
-                  hsn_sac_code: "0405",
-                  base_uom_code: units.data[0].Code,
-                  sku_code: "AMUL-BTR-500",
-                  price: "55.00",
-                  gst_rate: "5",
-                  category_name: "Dairy",
-                  brand_name: "Amul",
-                  barcode: "8901234567890",
-                },
-              ]
-            : undefined
-        }
+        // base_uom_code no longer needs to already exist —
+        // catalogue.Service.ImportProducts auto-creates a unit from the
+        // code if nothing matches (same as category_name/brand_name) —
+        // so the sample always shows a real, working example (the org's
+        // own first unit if it has one, otherwise a plain "PCS" that'll
+        // be created on import) instead of only appearing once a unit
+        // already exists. price/gst_rate/category_name/brand_name/
+        // barcode are every field the single "New product" form lets you
+        // set inline, now all available in bulk too — every one of them
+        // optional, so a minimal 3-column file (name/hsn_sac_code/
+        // base_uom_code) still imports cleanly. Opening stock is
+        // deliberately NOT a column here: it's edited afterward on the
+        // Inventory page, same as a manually-added product with no
+        // starting quantity.
+        sampleRows={[
+          {
+            name: "Amul Butter 500g",
+            hsn_sac_code: "0405",
+            base_uom_code: units.data?.[0]?.Code ?? "PCS",
+            sku_code: "AMUL-BTR-500",
+            price: "55.00",
+            gst_rate: "5",
+            category_name: "Dairy",
+            brand_name: "Amul",
+            barcode: "8901234567890",
+          },
+        ]}
         onImported={() => void queryClient.invalidateQueries({ queryKey: ["products"] })}
       />
 

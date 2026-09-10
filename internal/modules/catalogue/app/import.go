@@ -36,24 +36,28 @@ type pendingPriceTax struct {
 
 // ImportProducts bulk-creates products from parsed spreadsheet rows
 // (brief §53). Expected columns (case-sensitive header match): name,
-// hsn_sac_code (optional), base_uom_code (must already exist for this
-// organisation — create units first), sku_code (optional — generated
-// from name when blank, same slug scheme CataloguePage's manual "add
-// product" flow already uses client-side), price (optional, plain
-// decimal, sets this variant's price on the organisation's default
-// price list), gst_rate (optional, plain decimal percentage, sets a
-// TAXABLE tax_rate_master row for the row's HSN/SAC code),
-// category_name (optional, auto-created if it doesn't already exist for
-// this organisation — same as clicking "Add" inline on the manual form),
-// brand_name (optional, same auto-create behaviour), barcode (optional,
-// must be unique for this organisation, checked against both existing
-// rows in the database and earlier rows in this same file). Opening
-// stock is deliberately NOT an import column — it's edited afterwards
-// on the Inventory page, same path a manually-added product already
-// uses. Every row gets an outcome in the returned Report — a malformed
-// row is recorded as an error, never silently skipped. Duplicate
-// detection is by exact, case-insensitive product name within the
-// organisation.
+// hsn_sac_code (optional), base_uom_code (required — but unlike
+// category_name/brand_name below, does NOT need to already exist: a
+// code with no matching unit for this organisation is auto-created,
+// using the code itself as the unit's name since a CSV row carries
+// nothing else to name it with — rename it properly afterward on
+// Settings if you want a nicer display name than e.g. "PCS"), sku_code
+// (optional — generated from name when blank, same slug scheme
+// CataloguePage's manual "add product" flow already uses client-side),
+// price (optional, plain decimal, sets this variant's price on the
+// organisation's default price list), gst_rate (optional, plain decimal
+// percentage, sets a TAXABLE tax_rate_master row for the row's HSN/SAC
+// code), category_name (optional, auto-created if it doesn't already
+// exist for this organisation — same as clicking "Add" inline on the
+// manual form), brand_name (optional, same auto-create behaviour),
+// barcode (optional, must be unique for this organisation, checked
+// against both existing rows in the database and earlier rows in this
+// same file). Opening stock is deliberately NOT an import column — it's
+// edited afterwards on the Inventory page, same path a manually-added
+// product already uses. Every row gets an outcome in the returned
+// Report — a malformed row is recorded as an error, never silently
+// skipped. Duplicate detection is by exact, case-insensitive product
+// name within the organisation.
 //
 // Every committed product also gets a real ProductVariant — a product
 // with zero variants is invisible everywhere else in the app (billing
@@ -96,18 +100,21 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 		if err != nil {
 			return err
 		}
+		// A code with no match here gets auto-created (same as
+		// category_name/brand_name below) rather than rejected. Keyed
+		// uppercase so a CSV row's "pcs" matches an existing "PCS" unit
+		// instead of creating a near-duplicate — the row's own uomCode is
+		// uppercased the same way before every lookup/insert into this map.
 		unitByCode := make(map[string]uuid.UUID, len(units))
 		for _, u := range units {
 			unitByCode[strings.ToUpper(u.Code)] = u.ID
 		}
 
-		// Unlike base_uom_code (which must already exist — a unit affects
-		// stock/pricing math too broadly to guess), category_name and
-		// brand_name are auto-created on first use, same as clicking
-		// "Add" inline on the manual New Product form — a plain lookup
-		// table with no downstream implications from getting one wrong.
-		// Keyed lowercase so "Snacks" and "snacks" resolve to the same
-		// row instead of creating a near-duplicate.
+		// category_name/brand_name are auto-created on first use, same as
+		// clicking "Add" inline on the manual New Product form — a plain
+		// lookup table with no downstream implications from getting one
+		// wrong. Keyed lowercase so "Snacks" and "snacks" resolve to the
+		// same row instead of creating a near-duplicate.
 		categories, err := s.categories.ListByOrganisation(ctx, principal.OrganisationID)
 		if err != nil {
 			return err
@@ -149,9 +156,8 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 				b.Error(row.Number, "name is required")
 				continue
 			}
-			uomID, ok := unitByCode[uomCode]
-			if !ok {
-				b.Error(row.Number, "base_uom_code %q does not match any existing unit of measure for this organisation", uomCode)
+			if uomCode == "" {
+				b.Error(row.Number, "base_uom_code is required")
 				continue
 			}
 			key := strings.ToLower(name)
@@ -201,6 +207,18 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 			}
 
 			now := s.now()
+
+			uomID, ok := unitByCode[uomCode]
+			if !ok {
+				uomID, err = uuid.NewV7()
+				if err != nil {
+					return err
+				}
+				if err := s.units.Create(ctx, &domain.UnitOfMeasure{ID: uomID, OrganisationID: principal.OrganisationID, Code: uomCode, Name: uomCode, CreatedAt: now, UpdatedAt: now}); err != nil {
+					return err
+				}
+				unitByCode[uomCode] = uomID
+			}
 
 			var categoryID *uuid.UUID
 			if categoryName != "" {

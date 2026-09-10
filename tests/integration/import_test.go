@@ -52,11 +52,17 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 	}
 
 	newName := "Imported Widget " + uuid.NewString()[:8]
+	newUnitName := "New Unit Widget " + uuid.NewString()[:8]
+	newUnitCode := "NEWUNIT" + uuid.NewString()[:8]
 	rows := []importer.Row{
 		{Number: 1, Fields: map[string]string{"name": newName, "hsn_sac_code": "8471", "base_uom_code": "PCS"}}, // valid, new
 		{Number: 2, Fields: map[string]string{"name": existingName, "base_uom_code": "PCS"}},                    // duplicate
 		{Number: 3, Fields: map[string]string{"name": "", "base_uom_code": "PCS"}},                              // missing name
-		{Number: 4, Fields: map[string]string{"name": "Bad Unit Widget", "base_uom_code": "NOSUCHUNIT"}},        // bad unit
+		{Number: 4, Fields: map[string]string{"name": "No Unit Widget", "base_uom_code": ""}},                   // missing base_uom_code
+		// base_uom_code naming no unit this organisation has yet — must
+		// still succeed, auto-creating that unit, not error like a bad
+		// category_id/brand_id foreign key would.
+		{Number: 5, Fields: map[string]string{"name": newUnitName, "base_uom_code": newUnitCode}},
 	}
 
 	// Dry run first: nothing committed, but the report must already show
@@ -68,8 +74,8 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 	if dryReport.Committed != 0 {
 		t.Fatalf("dry run Committed = %d, want 0", dryReport.Committed)
 	}
-	if dryReport.Valid != 1 || dryReport.Duplicates != 1 || dryReport.Errors != 2 {
-		t.Fatalf("dry run counts = %+v, want Valid=1 Duplicates=1 Errors=2", dryReport)
+	if dryReport.Valid != 2 || dryReport.Duplicates != 1 || dryReport.Errors != 2 {
+		t.Fatalf("dry run counts = %+v, want Valid=2 Duplicates=1 Errors=2", dryReport)
 	}
 
 	list, err := svc.ListProducts(ctx, principal)
@@ -81,14 +87,40 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 			t.Fatalf("dry run must not have committed %q, but it exists", newName)
 		}
 	}
+	units, err := svc.ListUnitsOfMeasure(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListUnitsOfMeasure after dry run: %v", err)
+	}
+	for _, u := range units {
+		if u.Code == newUnitCode {
+			t.Fatalf("dry run must not have created unit %q, but it exists", newUnitCode)
+		}
+	}
 
 	// Real run: same rows, dryRun=false.
 	report, err := svc.ImportProducts(ctx, principal, rows, false)
 	if err != nil {
 		t.Fatalf("ImportProducts: %v", err)
 	}
-	if report.Committed != 1 || report.Duplicates != 1 || report.Errors != 2 {
-		t.Fatalf("real run counts = %+v, want Committed=1 Duplicates=1 Errors=2", report)
+	if report.Committed != 2 || report.Duplicates != 1 || report.Errors != 2 {
+		t.Fatalf("real run counts = %+v, want Committed=2 Duplicates=1 Errors=2", report)
+	}
+
+	units, err = svc.ListUnitsOfMeasure(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListUnitsOfMeasure: %v", err)
+	}
+	var newUnit *cataloguedomain.UnitOfMeasure
+	for _, u := range units {
+		if u.Code == newUnitCode {
+			newUnit = u
+		}
+	}
+	if newUnit == nil {
+		t.Fatalf("unit %q was not auto-created by the import", newUnitCode)
+	}
+	if newUnit.Name != newUnitCode {
+		t.Fatalf("auto-created unit Name = %q, want %q (the code itself, since a CSV row names nothing else)", newUnit.Name, newUnitCode)
 	}
 
 	list, err = svc.ListProducts(ctx, principal)

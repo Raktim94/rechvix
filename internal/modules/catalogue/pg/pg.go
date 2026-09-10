@@ -297,10 +297,19 @@ func (r *ProductRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID) (
 // (migrations/0008_catalogue.up.sql) — the fast, fuzzy billing-counter
 // search path (brief §24/§25).
 func (r *ProductRepo) SearchByName(ctx context.Context, orgID uuid.UUID, query string, limit int) ([]*domain.Product, error) {
+	// Trigram similarity (`%`) alone misses short or single-word queries
+	// against a longer product name — e.g. searching "Butter" finds
+	// nothing for "Amul Butter 500g" if the similarity score falls below
+	// pg_trgm.similarity_threshold, which reads as "the product I just
+	// added isn't in the system" even though it is. ILIKE '%...%' is the
+	// reliable substring fallback (still index-accelerated by the same
+	// idx_products_name_trgm GIN index, migrations/0008_catalogue.up.sql —
+	// gin_trgm_ops supports LIKE/ILIKE, not just `%`), ORed in rather than
+	// replacing `%` so a fuzzy/misspelled query still ranks by similarity.
 	const q = `
 		SELECT id, organisation_id, category_id, brand_id, base_uom_id, name, COALESCE(description, ''), COALESCE(hsn_sac_code, ''), status, created_at, updated_at
 		FROM products
-		WHERE organisation_id = $1 AND name % $2 AND status = 'ACTIVE'
+		WHERE organisation_id = $1 AND status = 'ACTIVE' AND (name % $2 OR name ILIKE '%' || $2 || '%')
 		ORDER BY similarity(name, $2) DESC
 		LIMIT $3`
 	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, query, limit)
