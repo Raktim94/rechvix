@@ -2,6 +2,7 @@ import ReactECharts from "echarts-for-react";
 import { ReportTable } from "../../components/ReportTable";
 import { formatMoney, moneyToApproxNumber } from "../../lib/money";
 import { useOrgContext } from "../../lib/useOrgContext";
+import { chartPalette } from "../../lib/chartColors";
 import { useReportTable, withLegalEntity } from "../../lib/useReportTable";
 import { useTheme } from "../../theme/ThemeProvider";
 import layout from "../DashboardPage.module.css";
@@ -109,10 +110,8 @@ function GrossProfitChart({ dark, legalEntityId }: { dark: boolean; legalEntityI
   const revenue = top.map((r) => moneyToApproxNumber({ amount: r[3] ?? "0", currency: "INR" }));
   const profit = top.map((r) => moneyToApproxNumber({ amount: r[5] ?? "0", currency: "INR" }));
 
-  const revenueColor = dark ? "#9db0a4" : "#5b6b62";
-  const profitColor = dark ? "#29c191" : "#0f6e5c";
-  const textColor = dark ? "#9db0a4" : "#5b6b62";
-  const gridColor = dark ? "#2b3632" : "#dbdfd8";
+  const { accent: profitColor, text: revenueColor, grid: gridColor } = chartPalette(dark);
+  const textColor = revenueColor;
 
   const option = {
     grid: { left: 140, right: 24, top: 8, bottom: 32 },
@@ -192,9 +191,7 @@ function PurchaseSummaryChart({ dark, legalEntityId }: { dark: boolean; legalEnt
   const keys = rows.map((r) => r[0] ?? "");
   const totals = rows.map((r) => moneyToApproxNumber({ amount: r[2] ?? "0", currency: "INR" }));
 
-  const accent = dark ? "#e0b355" : "#906409";
-  const textColor = dark ? "#9db0a4" : "#5b6b62";
-  const gridColor = dark ? "#2b3632" : "#dbdfd8";
+  const { warning: accent, text: textColor, grid: gridColor } = chartPalette(dark);
 
   const option = {
     grid: { left: 48, right: 16, top: 24, bottom: 32 },

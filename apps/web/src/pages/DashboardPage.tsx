@@ -7,6 +7,7 @@ import { QuickAccess } from "../components/QuickAccess";
 import { StatCard } from "../components/StatCard";
 import { api } from "../lib/api-client";
 import { toLocalIsoDate } from "../lib/calendarGrid";
+import { chartPalette } from "../lib/chartColors";
 import { formatMoney, isZeroMoney, moneyToApproxNumber, type Money } from "../lib/money";
 import { useOrgContext } from "../lib/useOrgContext";
 import { withLegalEntity } from "../lib/useReportTable";
@@ -245,9 +246,7 @@ export function DashboardPage() {
 }
 
 function SalesTrendChart({ rows, dark }: { rows: string[][]; dark: boolean }) {
-  const accent = dark ? "#29c191" : "#0f6e5c";
-  const textColor = dark ? "#9db0a4" : "#5b6b62";
-  const gridColor = dark ? "#2b3632" : "#dbdfd8";
+  const { accent, text: textColor, grid: gridColor } = chartPalette(dark);
 
   const days = rows.map((r) => r[0] ?? "");
   const totals = rows.map((r) => moneyToApproxNumber({ amount: r[4] ?? "0", currency: "INR" }));
@@ -320,10 +319,7 @@ function SalesTrendChart({ rows, dark }: { rows: string[][]; dark: boolean }) {
 // not polarity: outstanding-anything is a "watch this" state either way,
 // same read as the two StatCards above using the same "warning" tone.
 function ReceivablePayableChart({ receivable, payable, dark }: { receivable: Money; payable: Money; dark: boolean }) {
-  const receivableColor = dark ? "#29c191" : "#0f6e5c";
-  const payableColor = dark ? "#e0b355" : "#906409";
-  const textColor = dark ? "#9db0a4" : "#5b6b62";
-  const gridColor = dark ? "#2b3632" : "#dbdfd8";
+  const { accent: receivableColor, warning: payableColor, text: textColor, grid: gridColor } = chartPalette(dark);
 
   const receivableValue = moneyToApproxNumber(receivable);
   const payableValue = moneyToApproxNumber(payable);

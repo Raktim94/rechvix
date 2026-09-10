@@ -42,14 +42,39 @@
   --color-accent-soft: #e3f0ec;
   --color-on-accent: #ffffff;
 
-  --color-positive: #187a52;
+  /* Foreground of each status pair checked against its own -soft
+     background per WCAG 2.1 contrast math: the original values (#187a52,
+     #b3452f, #906409) all landed at 4.67–4.72:1 — technically past the
+     4.5:1 AA floor for the badges' 12px text, but with almost no margin,
+     on hardware (counter tablets, variable lighting/glare) where that
+     margin matters. Darkened each ~1-2 steps within its own hue so they
+     now sit at 5.7–6.0:1 without changing which color reads as which
+     status. */
+  --color-positive: #146b49;
   --color-positive-soft: #e5f4ec;
-  --color-negative: #b3452f;
+  --color-negative: #9c3a26;
   --color-negative-soft: #fbeae5;
-  --color-warning: #906409;
+  --color-warning: #7a5407;
   --color-warning-soft: #fbf1de;
 
   --color-focus-ring: #0f6e5c;
+
+  /* Qualitative chart palette (echarts, ReportsPage/DashboardPage) —
+     ordered so adjacent series stay distinguishable for the two common
+     forms of red-green color-blindness (deuteranopia/protanopia): the
+     first four alternate a green/red-orange/blue/amber hue cycle rather
+     than stepping through adjacent hues, and every color also differs in
+     lightness from its neighbors so the sequence still separates in
+     grayscale printouts. --chart-1/2 intentionally equal --color-accent /
+     --color-warning — existing single- and dual-series charts already key
+     off those two semantic tokens; --chart-3.. exist for when a report
+     grows a third-plus series. */
+  --chart-1: #0f6e5c;
+  --chart-2: #906409;
+  --chart-3: #2f6fb3;
+  --chart-4: #b3452f;
+  --chart-5: #6a4fb0;
+  --chart-6: #5b6b62;
 
   /* Softer, more diffuse elevation than the original hairline shadows —
      larger blur radius at lower opacity reads as "lifted paper" instead
@@ -133,6 +158,13 @@
 
     --color-focus-ring: #29c191;
 
+    --chart-1: #29c191;
+    --chart-2: #e0b355;
+    --chart-3: #6badf0;
+    --chart-4: #e2896a;
+    --chart-5: #b39ae0;
+    --chart-6: #9db0a4;
+
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 20px -8px rgba(0, 0, 0, 0.45);
     --shadow-card-hover: 0 2px 4px rgba(0, 0, 0, 0.4), 0 16px 32px -12px rgba(0, 0, 0, 0.55);
@@ -169,6 +201,13 @@
   --color-warning-soft: #362c15;
 
   --color-focus-ring: #29c191;
+
+  --chart-1: #29c191;
+  --chart-2: #e0b355;
+  --chart-3: #6badf0;
+  --chart-4: #e2896a;
+  --chart-5: #b39ae0;
+  --chart-6: #9db0a4;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 20px -8px rgba(0, 0, 0, 0.45);

@@ -1,11 +1,15 @@
+/* Three real columns for three real grid children (doc type, the customer
+   field, the Start sale button) — the previous 4-track definition left an
+   unused "auto" track and auto-placed the wide customer search+buttons row
+   into a bare 180px column, which is what was overflowing into neighbours. */
 .headerGrid {
   display: grid;
-  grid-template-columns: 180px 180px 1fr auto;
+  grid-template-columns: 200px minmax(280px, 1fr) auto;
   gap: var(--space-4);
   align-items: end;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .headerGrid {
     grid-template-columns: 1fr;
   }
@@ -19,11 +23,16 @@
   display: flex;
   gap: var(--space-2);
   align-items: flex-start;
+  /* The search input plus "+ New" and "Walk-in / Cash sale" no longer fit
+     on one line once the field's own column gets narrow (tablet widths,
+     or a long customer match in the input) — wrap instead of overlapping. */
+  flex-wrap: wrap;
 }
 
 .customerSearchWrap {
   position: relative;
-  flex: 1 1 auto;
+  flex: 1 1 220px;
+  min-width: 200px;
 }
 
 .dropdown {
