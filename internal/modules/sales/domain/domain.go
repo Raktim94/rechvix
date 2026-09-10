@@ -168,7 +168,11 @@ type DocumentLine struct {
 type DocumentRepository interface {
 	Create(ctx context.Context, d *Document) error
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Document, error)
-	ListByOrganisation(ctx context.Context, orgID uuid.UUID, documentType *DocumentType) ([]*Document, error)
+	// legalEntityIDs is a company filter: nil means no restriction (every
+	// company), a non-nil (possibly empty) slice restricts to exactly
+	// those legal entities — see permissions.ResolveLegalEntityFilter,
+	// which is what every caller of this method builds it from.
+	ListByOrganisation(ctx context.Context, orgID uuid.UUID, documentType *DocumentType, legalEntityIDs []uuid.UUID) ([]*Document, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status DocumentStatus, finalizedAt *time.Time) error
 	// UpdateFinalizedTotals stamps the tax snapshot pointer and headline
 	// grand total onto a document being finalized, in the same

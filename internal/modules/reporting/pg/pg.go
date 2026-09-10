@@ -77,6 +77,42 @@ func (b *whereBuilder) addOptionalUUID(column string, v *uuid.UUID) {
 	}
 }
 
+// addOptionalUUIDs restricts column to one of values via = ANY(...) — for
+// a table (sales_documents) that carries legal_entity_id directly. nil
+// means no restriction (the app layer's domain.Filter.LegalEntityIDs
+// nil-means-unrestricted contract); a non-nil, empty slice never reaches
+// here in practice (app.Service.resolvedFilter returns an empty result
+// itself rather than querying when the resolved filter is empty), but is
+// handled correctly regardless ("= ANY('{}')" matches nothing).
+func (b *whereBuilder) addOptionalUUIDs(column string, values []uuid.UUID) {
+	if values != nil {
+		b.args = append(b.args, values)
+		b.clauses = append(b.clauses, fmt.Sprintf("%s = ANY($%d)", column, len(b.args)))
+	}
+}
+
+// addLegalEntityViaBranch is addOptionalUUIDs' equivalent for a table
+// (purchase_documents) with no legal_entity_id column of its own, only
+// branchColumn — one hop from the company via branches.
+func (b *whereBuilder) addLegalEntityViaBranch(branchColumn string, values []uuid.UUID) {
+	if values != nil {
+		b.args = append(b.args, values)
+		b.clauses = append(b.clauses, fmt.Sprintf("%s IN (SELECT id FROM branches WHERE legal_entity_id = ANY($%d))", branchColumn, len(b.args)))
+	}
+}
+
+// addLegalEntityViaWarehouse is addLegalEntityViaBranch's equivalent for
+// a table (stock_balances/stock_movements) keyed by warehouseColumn
+// instead — one more join, via warehouses.branch_id.
+func (b *whereBuilder) addLegalEntityViaWarehouse(warehouseColumn string, values []uuid.UUID) {
+	if values != nil {
+		b.args = append(b.args, values)
+		b.clauses = append(b.clauses, fmt.Sprintf(
+			"%s IN (SELECT w.id FROM warehouses w JOIN branches br ON br.id = w.branch_id WHERE br.legal_entity_id = ANY($%d))",
+			warehouseColumn, len(b.args)))
+	}
+}
+
 func (b *whereBuilder) addOptionalString(column string, v *string) {
 	if v != nil {
 		b.add(column, *v)
@@ -146,6 +182,7 @@ func (r *Repo) SalesSummary(ctx context.Context, f domain.Filter, group domain.G
 	w.addOptionalUUID("sd.warehouse_id", f.WarehouseID)
 	w.addOptionalUUID("sd.customer_party_id", f.CustomerPartyID)
 	w.addOptionalString("sd.document_type", f.DocumentType)
+	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 
 	from := "sales_documents sd"
 	if needsPartyJoin {
@@ -194,6 +231,7 @@ func (r *Repo) SalesInvoiceDetail(ctx context.Context, f domain.Filter) ([]domai
 	w.addOptionalUUID("sd.customer_party_id", f.CustomerPartyID)
 	w.addOptionalString("sd.document_type", f.DocumentType)
 	w.addOptionalString("sd.status", f.Status)
+	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
 		SELECT sd.id, sd.document_type, sd.document_number, COALESCE(NULLIF(p.trade_name,''), p.legal_name),
@@ -230,6 +268,7 @@ func (r *Repo) GrossProfit(ctx context.Context, f domain.Filter) ([]domain.Gross
 	w.addRange("sd.issue_date", f.From, f.To)
 	w.addOptionalUUID("sd.warehouse_id", f.WarehouseID)
 	w.addOptionalUUID("sdl.product_variant_id", f.ProductVariantID)
+	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
 		SELECT pv.id, pr.name, pv.sku_code, SUM(sdl.quantity),
@@ -279,6 +318,7 @@ func (r *Repo) PurchaseSummary(ctx context.Context, f domain.Filter, group domai
 	w.addOptionalUUID("pd.warehouse_id", f.WarehouseID)
 	w.addOptionalUUID("pd.supplier_party_id", f.SupplierPartyID)
 	w.addOptionalString("pd.document_type", f.DocumentType)
+	w.addLegalEntityViaBranch("pd.branch_id", f.LegalEntityIDs)
 
 	from := "purchase_documents pd"
 	if needsPartyJoin {
@@ -311,6 +351,7 @@ func (r *Repo) PurchaseDetail(ctx context.Context, f domain.Filter) ([]domain.Do
 	w.addOptionalUUID("pd.supplier_party_id", f.SupplierPartyID)
 	w.addOptionalString("pd.document_type", f.DocumentType)
 	w.addOptionalString("pd.status", f.Status)
+	w.addLegalEntityViaBranch("pd.branch_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
 		SELECT pd.id, pd.document_type, pd.document_number, COALESCE(NULLIF(p.trade_name,''), p.legal_name),
@@ -327,6 +368,7 @@ func (r *Repo) StockValuation(ctx context.Context, f domain.Filter) ([]domain.St
 	w := newWhere(f.OrganisationID, "sb")
 	w.addOptionalUUID("sb.warehouse_id", f.WarehouseID)
 	w.addOptionalUUID("sb.product_variant_id", f.ProductVariantID)
+	w.addLegalEntityViaWarehouse("sb.warehouse_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
 		SELECT sb.warehouse_id, wh.name, sb.product_variant_id, pr.name, pv.sku_code, sb.quantity_on_hand, sb.average_cost
@@ -377,6 +419,7 @@ func condAppend(w *whereBuilder) string {
 func (r *Repo) LowStock(ctx context.Context, f domain.Filter) ([]domain.LowStockRow, error) {
 	w := newWhere(f.OrganisationID, "sb")
 	w.addOptionalUUID("sb.warehouse_id", f.WarehouseID)
+	w.addLegalEntityViaWarehouse("sb.warehouse_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
 		SELECT sb.warehouse_id, wh.name, sb.product_variant_id, pr.name, pv.sku_code, sb.quantity_on_hand, sp.reorder_level
@@ -411,6 +454,7 @@ func (r *Repo) StockMovements(ctx context.Context, f domain.Filter) ([]domain.St
 	w.addRange("sm.created_at", f.From, f.To)
 	w.addOptionalUUID("sm.warehouse_id", f.WarehouseID)
 	w.addOptionalUUID("sm.product_variant_id", f.ProductVariantID)
+	w.addLegalEntityViaWarehouse("sm.warehouse_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
 		SELECT sm.id, sm.created_at, wh.name, pr.name, pv.sku_code, sm.movement_type, sm.base_quantity, COALESCE(sm.reference_type, '')
@@ -440,6 +484,18 @@ func (r *Repo) StockMovements(ctx context.Context, f domain.Filter) ([]domain.St
 }
 
 // --- Accounting ---
+//
+// TrialBalance/AccountLedger/ReceivablesSummary/PayablesSummary
+// deliberately stay organisation-wide, not filtered by
+// domain.Filter.LegalEntityIDs — accounts/journals/journal_lines carry no
+// branch_id/warehouse_id/legal_entity_id of their own (a journal links
+// back to its source document only via a polymorphic source_type/
+// source_id pair, migrations/0020_accounting.up.sql), so filtering these
+// by company would need a real join through that polymorphic reference
+// per source type, not a mechanical addLegalEntityViaBranch/-Warehouse
+// call like every other report below got. Real, documented gap — a
+// company-restricted team member currently sees the FULL chart of
+// accounts and ledger across every company, not just their own.
 
 func (r *Repo) TrialBalance(ctx context.Context, orgID uuid.UUID, asOf time.Time) ([]domain.TrialBalanceRow, error) {
 	const q = `
@@ -534,6 +590,15 @@ func (r *Repo) AccountLedger(ctx context.Context, orgID, accountID uuid.UUID, f 
 }
 
 // --- Tax ---
+//
+// HSNSummary/TaxRateSummary below deliberately stay organisation-wide too
+// (same TrialBalance/AccountLedger gap noted above) — tax_documents has
+// no branch_id/legal_entity_id/warehouse_id either, and unlike GSTR1/
+// GSTR3B below, these two query tax_lines/tax_documents/tax_components
+// directly with no join back to sales_documents/purchase_documents at
+// all (they aggregate across BOTH origins together), so there's no
+// existing join to hang a company filter off without restructuring the
+// query to branch on tax_documents.reference_type first.
 
 func (r *Repo) HSNSummary(ctx context.Context, f domain.Filter) ([]domain.HSNSummaryRow, error) {
 	w := newWhere(f.OrganisationID, "tl")
@@ -607,6 +672,7 @@ func (r *Repo) GSTR1(ctx context.Context, f domain.Filter) ([]domain.GSTR1Line, 
 	w := newWhere(f.OrganisationID, "sd")
 	w.add("sd.status", "FINALIZED")
 	w.addRange("sd.issue_date", f.From, f.To)
+	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
 		SELECT sd.document_number, sd.issue_date, td.supply_type,
@@ -666,6 +732,7 @@ func (r *Repo) gstr3bOutward(ctx context.Context, f domain.Filter) ([]domain.GST
 	w := newWhere(f.OrganisationID, "sd")
 	w.add("sd.status", "FINALIZED")
 	w.addRange("sd.issue_date", f.From, f.To)
+	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 	q := fmt.Sprintf(`
 		SELECT
 			COALESCE(SUM(td.total_taxable_amount) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
@@ -692,6 +759,7 @@ func (r *Repo) gstr3bITC(ctx context.Context, f domain.Filter) (domain.GSTR3BLin
 	w := newWhere(f.OrganisationID, "pd")
 	w.add("pd.status", "FINALIZED")
 	w.addRange("pd.document_date", f.From, f.To)
+	w.addLegalEntityViaBranch("pd.branch_id", f.LegalEntityIDs)
 	q := fmt.Sprintf(`
 		SELECT
 			COALESCE(SUM(td.total_taxable_amount), 0),

@@ -25,6 +25,7 @@ import (
 	gstindiapg "rechvix/internal/modules/gstindia/pg"
 	identityapp "rechvix/internal/modules/identity/app"
 	inventoryapp "rechvix/internal/modules/inventory/app"
+	orgapp "rechvix/internal/modules/organisation/app"
 	orgdomain "rechvix/internal/modules/organisation/domain"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricingpg "rechvix/internal/modules/pricing/pg"
@@ -803,5 +804,136 @@ func TestSales_BuildInvoiceDataForShareLink_ImpersonatesCreatorScopedToOrg(t *te
 	// someone whose share link was for a different business entirely.
 	if _, err := salesSvc.BuildInvoiceDataForShareLink(ctx, fxB.Principal.OrganisationID, fxB.Principal.UserID, doc.ID); err == nil {
 		t.Fatal("BuildInvoiceDataForShareLink succeeded across organisations — should have failed closed")
+	}
+}
+
+// TestSales_CompanyScopedAccess covers the multi-company access-control
+// gap this session closed: a SECOND legal entity (company) added to the
+// SAME organisation as setupSalesFixture's first one, and a team member
+// restricted to only the first company (identityapp.CreateTeamMemberParams
+// .LegalEntityIDs). Proves both enforcement points from
+// sales/app.Service's own doc comments: ListDocuments excludes the other
+// company's documents for a restricted user, and CreateDocument rejects
+// creating one under a company the user isn't granted.
+func TestSales_CompanyScopedAccess(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, _, _ := newTestSalesServices(t)
+	fx := setupSalesFixture(t, ctx) // company A, via bootstrap
+	orgSvc := newTestOrgService(t)
+
+	unique := uuid.NewString()[:8]
+	companyB, err := orgSvc.CreateLegalEntity(ctx, fx.Principal, orgapp.CreateLegalEntityParams{
+		LegalName: "Company B " + unique, CountryCode: "IN", BaseCurrencyCode: "INR",
+		GSTIN: "27BBBBB0000B1Z5", GSTStateCode: "27",
+	})
+	if err != nil {
+		t.Fatalf("CreateLegalEntity (company B): %v", err)
+	}
+	branchB, err := orgSvc.CreateBranch(ctx, fx.Principal, orgapp.CreateBranchParams{
+		LegalEntityID: companyB.ID, Code: "BR-B-" + unique, Name: "Company B Branch",
+	})
+	if err != nil {
+		t.Fatalf("CreateBranch (company B): %v", err)
+	}
+	warehouseB, err := orgSvc.CreateWarehouse(ctx, fx.Principal, orgapp.CreateWarehouseParams{
+		BranchID: branchB.ID, Code: "WH-B-" + unique, Name: "Company B Warehouse",
+	})
+	if err != nil {
+		t.Fatalf("CreateWarehouse (company B): %v", err)
+	}
+
+	// One document under each company, both created by the (unrestricted)
+	// owner — so any filtering difference below comes purely from the
+	// restricted member's own grants, not from who created what.
+	docA, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocQuotation, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument (company A): %v", err)
+	}
+	// DocSalesOrder, not DocQuotation like docA — numbering.Service.Next is
+	// keyed by (org, branch, documentType, financial year), but
+	// sales_documents' own UNIQUE constraint is
+	// (organisation_id, document_type, document_number) with no branch in
+	// it (migrations/0019_sales.up.sql) — two DIFFERENT branches' first
+	// document of the SAME type in the SAME organisation both generate
+	// e.g. "QTN/2026-27/000001" and collide. Real, pre-existing bug this
+	// test tripped over (reported separately, out of scope for THIS
+	// session's plan) — worked around here with a different document
+	// type so this test exercises company-scoped access control, not
+	// numbering.
+	docB, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: companyB.ID, BranchID: branchB.ID, WarehouseID: warehouseB.ID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocSalesOrder, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument (company B): %v", err)
+	}
+
+	identitySvc, _ := newTestIdentityService(t)
+	memberEmail := "restricted-" + unique + "@example.com"
+	memberPassword := "another very long password 99"
+	memberID, err := identitySvc.CreateTeamMember(ctx, fx.Principal, identityapp.CreateTeamMemberParams{
+		FullName: "Restricted Member", Email: memberEmail, Password: memberPassword,
+		LegalEntityIDs: []uuid.UUID{fx.LegalEntityID}, // company A only
+	})
+	if err != nil {
+		t.Fatalf("CreateTeamMember: %v", err)
+	}
+	restricted := permissions.Principal{UserID: memberID, OrganisationID: fx.Principal.OrganisationID}
+
+	// Unfiltered list (no legal_entity_id query param, the same as the
+	// frontend's "show everything I can see" case) must only surface
+	// company A's document.
+	list, err := salesSvc.ListDocuments(ctx, restricted, nil, nil)
+	if err != nil {
+		t.Fatalf("ListDocuments (restricted, unfiltered): %v", err)
+	}
+	if len(list) != 1 || list[0].ID != docA.ID {
+		t.Fatalf("ListDocuments (restricted, unfiltered) = %d doc(s), want exactly [docA]", len(list))
+	}
+
+	// Explicitly asking for company B's documents must return empty, not
+	// an error and not company A's documents either — a restricted user
+	// requesting a company they don't hold sees nothing there.
+	listB, err := salesSvc.ListDocuments(ctx, restricted, nil, &companyB.ID)
+	if err != nil {
+		t.Fatalf("ListDocuments (restricted, company B filter): %v", err)
+	}
+	if len(listB) != 0 {
+		t.Fatalf("ListDocuments (restricted, company B filter) = %d doc(s), want 0", len(listB))
+	}
+
+	// The unrestricted owner must still see both.
+	listOwner, err := salesSvc.ListDocuments(ctx, fx.Principal, nil, nil)
+	if err != nil {
+		t.Fatalf("ListDocuments (owner): %v", err)
+	}
+	seenOwner := map[uuid.UUID]bool{}
+	for _, d := range listOwner {
+		seenOwner[d.ID] = true
+	}
+	if len(listOwner) != 2 || !seenOwner[docA.ID] || !seenOwner[docB.ID] {
+		t.Fatalf("ListDocuments (owner) = %d doc(s) %v, want exactly [docA, docB]", len(listOwner), seenOwner)
+	}
+
+	// Creating a document under company B, as the member restricted to
+	// company A, must be rejected — the highest-risk gap this feature
+	// exists to close.
+	if _, err := salesSvc.CreateDocument(ctx, restricted, salesapp.CreateDocumentParams{
+		LegalEntityID: companyB.ID, BranchID: branchB.ID, WarehouseID: warehouseB.ID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocQuotation, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	}); err == nil {
+		t.Fatal("CreateDocument under company B succeeded for a member restricted to company A — should have failed closed")
+	}
+	// The same call under company A (their own, granted company) must
+	// still succeed — this isn't a blanket "sales.create is broken" bug,
+	// only company B specifically is forbidden.
+	if _, err := salesSvc.CreateDocument(ctx, restricted, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocQuotation, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	}); err != nil {
+		t.Fatalf("CreateDocument under company A (granted): %v", err)
 	}
 }

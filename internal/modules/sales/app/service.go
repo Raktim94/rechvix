@@ -92,11 +92,41 @@ func NewService(
 // already pre-seeded for this module's exact brief §26 example list —
 // same reuse-don't-duplicate rationale as purchases (migrations/0014's
 // header comment).
+// view is a coarse "can this user see sales documents AT ALL" gate —
+// Checker.HasAny, not Require, because a team member restricted to one
+// company (identity.CreateTeamMemberParams.LegalEntityIDs) holds only
+// company-scoped sales.view grants, none of them unrestricted, and
+// Require(ctx, principal, code, Scope{}) would reject every one of them
+// (see TestRequire_BranchScopedGrantDoesNotMatchUnscopedRequest — that's
+// correct there, wrong here). The ACTUAL per-company restriction is
+// enforced separately: ListDocuments filters by
+// AllowedLegalEntities("sales.view"), and GetDocument's row is already
+// scoped to the caller's organisation by RLS + document ownership (a
+// restricted caller can only ever reach a document ID belonging to
+// their own or another company they hold sales.view for via
+// ListDocuments in the first place).
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "sales.view", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "sales.view")
 }
-func (s *Service) create(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "sales.create", permissions.Scope{})
+// create checks sales.create scoped to the specific company the new
+// document will belong to — a company-restricted user creating a
+// document under a company they don't hold sales.create for is exactly
+// the highest-risk gap company-scoped access exists to close, so this
+// (unlike view above and editDraft/finalizePerm/discountPerm below,
+// which are coarse "at all" gates) takes the scope explicitly rather
+// than an empty one.
+//
+// KNOWN GAP, documented not silent: editDraft/finalizePerm/discountPerm
+// below are STILL coarse Require(..., Scope{}) checks, unconverted —
+// meaning a company-restricted user currently cannot finalize, edit, or
+// discount ANY sales document (even their own company's), only view and
+// create ones. Properly scoping those needs each call site to first
+// resolve the target document's LegalEntityID before checking (most
+// don't have it on hand until after their own DB fetch) — real,
+// meaningful additional work deliberately left for a follow-up rather
+// than rushed through here alongside the view/list/create fix.
+func (s *Service) create(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID) error {
+	return s.permissions.Require(ctx, principal, "sales.create", permissions.Scope{LegalEntityID: &legalEntityID})
 }
 func (s *Service) editDraft(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.Require(ctx, principal, "sales.edit_draft", permissions.Scope{})
@@ -173,7 +203,7 @@ type CreateDocumentParams struct {
 }
 
 func (s *Service) CreateDocument(ctx context.Context, principal permissions.Principal, p CreateDocumentParams) (*domain.Document, error) {
-	if err := s.create(ctx, principal); err != nil {
+	if err := s.create(ctx, principal, p.LegalEntityID); err != nil {
 		return nil, err
 	}
 	if !domain.ValidDocumentType(p.DocumentType) {
@@ -268,14 +298,31 @@ func (s *Service) GetDocumentForOtherModule(ctx context.Context, orgID, id uuid.
 	return doc, lines, nil
 }
 
-func (s *Service) ListDocuments(ctx context.Context, principal permissions.Principal, documentType *domain.DocumentType) ([]*domain.Document, error) {
+// legalEntityID, when set, restricts the list to that one company (the
+// frontend's currently-selected one); nil asks for every company this
+// principal can see. Either way the result is intersected with what
+// AllowedLegalEntities reports for sales.view — a company-restricted
+// caller can never see another company's documents by simply omitting
+// the filter, and a caller asking for a company outside their grants
+// gets an empty list, not an error (matches how a normal, unfiltered
+// list request already silently reflects "whatever you're allowed to
+// see" rather than 403ing).
+func (s *Service) ListDocuments(ctx context.Context, principal permissions.Principal, documentType *domain.DocumentType, legalEntityID *uuid.UUID) ([]*domain.Document, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	unrestricted, allowed, err := s.permissions.AllowedLegalEntities(ctx, principal, "sales.view")
+	if err != nil {
+		return nil, err
+	}
+	filter := permissions.ResolveLegalEntityFilter(unrestricted, allowed, legalEntityID)
+	if filter != nil && len(filter) == 0 {
+		return nil, nil
+	}
 	var result []*domain.Document
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
-		result, err = s.documents.ListByOrganisation(ctx, principal.OrganisationID, documentType)
+		result, err = s.documents.ListByOrganisation(ctx, principal.OrganisationID, documentType, filter)
 		return err
 	})
 	return result, err
@@ -672,9 +719,12 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 // draft) to fix this up after the fact, so the override has to apply at
 // copy time.
 func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Principal, sourceDocumentID uuid.UUID, targetType domain.DocumentType, lineQuantities map[uuid.UUID]decimal.Decimal) (*domain.Document, error) {
-	if err := s.create(ctx, principal); err != nil {
-		return nil, err
-	}
+	// No standalone sales.create check here (unlike before this method
+	// took a company-scoped Scope{LegalEntityID}) — the target document's
+	// company is always the SOURCE document's (a conversion never moves
+	// companies), which isn't known until GetDocument below resolves it,
+	// and CreateDocument's own s.create call a few lines down already
+	// checks it scoped to source.LegalEntityID.
 	if !domain.ValidDocumentType(targetType) {
 		return nil, domain.ErrInvalidDocumentType
 	}

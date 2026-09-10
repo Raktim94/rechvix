@@ -108,14 +108,9 @@ func (c *Checker) Require(ctx context.Context, principal Principal, permissionCo
 		return fmt.Errorf("permissions: user %s: %w", principal.UserID, &ErrForbidden{PermissionCode: permissionCode})
 	}
 
-	var grants []Grant
-	err := c.runner.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		var err error
-		grants, err = c.store.Grants(ctx, principal.UserID)
-		return err
-	})
+	grants, err := c.grants(ctx, principal)
 	if err != nil {
-		return fmt.Errorf("permissions: loading grants: %w", err)
+		return err
 	}
 	for _, g := range grants {
 		if g.PermissionCode != permissionCode {
@@ -128,6 +123,130 @@ func (c *Checker) Require(ctx context.Context, principal Principal, permissionCo
 		}
 	}
 	return fmt.Errorf("permissions: user %s: %w", principal.UserID, &ErrForbidden{PermissionCode: permissionCode})
+}
+
+// AllowedLegalEntities answers "which companies can principal act on for
+// permissionCode" — the read/list-side counterpart to Require's
+// single-record check. unrestricted=true means every legal entity in the
+// organisation is allowed (an org-wide grant — the common case for every
+// install that has only ever had one company) and ids is meaningless;
+// unrestricted=false means only the legal entities in ids are allowed,
+// which is empty (not "everything") when the caller holds permissionCode
+// nowhere at all — callers MUST treat that as "show nothing", the same
+// fail-closed default Require already enforces for a single record.
+//
+// Deliberately does not consult apiKeyScopeFromContext itself (unlike
+// Require and HasAny) — every real call site (ListDocuments and
+// siblings) is only reached after that same request already passed a
+// HasAny/Require gate check for the same permission code, which already
+// rejects an out-of-scope API key before this method's result is ever
+// used to build a filter. A caller of THIS method with no preceding gate
+// check would not get that protection — don't add one without also
+// checking whether such a caller exists.
+func (c *Checker) AllowedLegalEntities(ctx context.Context, principal Principal, permissionCode string) (unrestricted bool, ids []uuid.UUID, err error) {
+	grants, err := c.grants(ctx, principal)
+	if err != nil {
+		return false, nil, err
+	}
+	seen := make(map[uuid.UUID]bool)
+	for _, g := range grants {
+		if g.PermissionCode != permissionCode {
+			continue
+		}
+		if g.LegalEntityID == nil {
+			return true, nil, nil
+		}
+		if !seen[*g.LegalEntityID] {
+			seen[*g.LegalEntityID] = true
+			ids = append(ids, *g.LegalEntityID)
+		}
+	}
+	return false, ids, nil
+}
+
+// HasAny answers a coarser question than Require: "does principal hold
+// permissionCode at ALL, for any company" — unlike Require(ctx, principal,
+// code, Scope{}), which only succeeds for a truly org-wide (unrestricted)
+// grant and (by design — see TestRequire_BranchScopedGrantDoesNotMatchUnscopedRequest)
+// treats a company-scoped-only grant as not matching an unscoped request
+// at all. That distinction is exactly right for a single-record action
+// (Require with a specific Scope), but wrong for a plain "can this user
+// use this feature/module at all" gate: with it, a team member
+// restricted to one company via company-scoped grants (see
+// identity.Service.CreateTeamMemberParams.LegalEntityIDs) would be
+// unable to even list or view their OWN company's data, since every
+// grant they hold names a specific legal entity and none is unrestricted.
+// HasAny is that gate — it's satisfied by ANY grant for the code,
+// org-wide or company-scoped — and should back module-level view/manage
+// checks (GetDocument, ListDocuments, and their siblings across sales/
+// purchases/inventory/reporting/catalogue), with the actual per-company
+// restriction enforced separately by AllowedLegalEntities-based filtering
+// (ListDocuments) or a Scope{LegalEntityID: ...}-based Require call at
+// the specific record being acted on (document/product creation).
+func (c *Checker) HasAny(ctx context.Context, principal Principal, permissionCode string) error {
+	// Same API-key restriction as Require's identical first check — an
+	// API-key-authenticated request (e.g. an MCP tool call) must never
+	// exercise more than its own declared scopes allow, regardless of
+	// what the underlying user's RBAC grants say. Missing this let a key
+	// with no declared scope for permissionCode succeed anyway, since
+	// HasAny otherwise only ever looks at the user's own grants — caught
+	// by TestMCP_ScopedAPIKey_AllowsInScopeToolsOnly during this method's
+	// own introduction.
+	if restricted, ok := apiKeyScopeFromContext(ctx); ok && !restricted[permissionCode] {
+		return fmt.Errorf("permissions: user %s: %w", principal.UserID, &ErrForbidden{PermissionCode: permissionCode})
+	}
+	unrestricted, allowed, err := c.AllowedLegalEntities(ctx, principal, permissionCode)
+	if err != nil {
+		return err
+	}
+	if unrestricted || len(allowed) > 0 {
+		return nil
+	}
+	return fmt.Errorf("permissions: user %s: %w", principal.UserID, &ErrForbidden{PermissionCode: permissionCode})
+}
+
+// ResolveLegalEntityFilter combines what AllowedLegalEntities reported for
+// a permission (unrestricted, allowed) with an optional caller-requested
+// company id (e.g. the frontend's currently-selected company) into the
+// concrete filter a list/report query should apply.
+//
+// nil means "no restriction — return everything" (only possible when
+// unrestricted and no specific company was requested, since an
+// unrestricted caller asking for nothing in particular gets nothing
+// filtered out). A non-nil, possibly-empty slice means "restrict to
+// exactly these ids" — empty means "matches nothing", never "no
+// restriction": a company-restricted caller who's allowed zero companies,
+// or who asked for a company they don't hold, must see nothing, not
+// everything.
+func ResolveLegalEntityFilter(unrestricted bool, allowed []uuid.UUID, requested *uuid.UUID) []uuid.UUID {
+	if unrestricted {
+		if requested == nil {
+			return nil
+		}
+		return []uuid.UUID{*requested}
+	}
+	if requested == nil {
+		return allowed
+	}
+	for _, id := range allowed {
+		if id == *requested {
+			return []uuid.UUID{*requested}
+		}
+	}
+	return []uuid.UUID{}
+}
+
+func (c *Checker) grants(ctx context.Context, principal Principal) ([]Grant, error) {
+	var grants []Grant
+	err := c.runner.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		grants, err = c.store.Grants(ctx, principal.UserID)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("permissions: loading grants: %w", err)
+	}
+	return grants, nil
 }
 
 func levelMatches(grantValue, scopeValue *uuid.UUID) bool {

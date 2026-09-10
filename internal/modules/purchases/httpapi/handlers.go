@@ -122,7 +122,16 @@ func (h *Handlers) listDocuments(w http.ResponseWriter, r *http.Request) {
 		t := domain.DocumentType(q)
 		docType = &t
 	}
-	list, err := h.svc.ListDocuments(r.Context(), principal(r), docType)
+	var legalEntityID *uuid.UUID
+	if q := r.URL.Query().Get("legal_entity_id"); q != "" {
+		id, err := uuid.Parse(q)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_LEGAL_ENTITY_ID", "legal_entity_id must be a UUID."))
+			return
+		}
+		legalEntityID = &id
+	}
+	list, err := h.svc.ListDocuments(r.Context(), principal(r), docType, legalEntityID)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

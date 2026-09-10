@@ -34,12 +34,16 @@ func NewService(
 	return &Service{pool: pool, priceLists: priceLists, items: items, permissions: checker, audit: recorder, now: time.Now}
 }
 
+// view/manage use Checker.HasAny, not Require — price lists have no
+// legal_entity_id of their own, shared org-wide across every company,
+// same rationale as catalogue/app.Service.view/manage's identical
+// comment.
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "pricing.view", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "pricing.view")
 }
 
 func (s *Service) manage(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "pricing.manage", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "pricing.manage")
 }
 
 type CreatePriceListParams struct {

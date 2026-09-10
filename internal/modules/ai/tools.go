@@ -272,7 +272,7 @@ func (t *Toolset) listInvoices(ctx context.Context, _ *mcp.CallToolRequest, in l
 		dt := salesdomain.DocumentType(in.DocumentType)
 		docType = &dt
 	}
-	docs, err := t.sales.ListDocuments(t.scopedCtx(ctx), t.principal, docType)
+	docs, err := t.sales.ListDocuments(t.scopedCtx(ctx), t.principal, docType, nil)
 	if err != nil {
 		return nil, listInvoicesOut{}, err
 	}

@@ -40,6 +40,19 @@ type Filter struct {
 	HSNSACCode       *string
 	DocumentType     *string
 	Status           *string
+	// LegalEntityID is the caller's optional single-company request (set
+	// by the HTTP handler from a `legal_entity_id` query param, mirroring
+	// BranchID/WarehouseID above) — app.Service.resolvedFilter reads this
+	// to produce LegalEntityIDs below; the pg layer never reads it
+	// directly.
+	LegalEntityID *uuid.UUID
+	// LegalEntityIDs is the RESOLVED company filter every report query
+	// actually applies — set by app.Service.resolvedFilter, never by a
+	// caller directly. nil means no restriction (every company); a
+	// non-nil, possibly-empty slice restricts to exactly those legal
+	// entities (empty means "matches nothing") — same contract as
+	// permissions.ResolveLegalEntityFilter, which is what produces it.
+	LegalEntityIDs []uuid.UUID
 }
 
 // GroupDimension is a validated allow-list of GROUP BY dimensions a

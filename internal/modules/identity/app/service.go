@@ -456,29 +456,54 @@ type TeamMember struct {
 	MFAEnabled  bool
 	LastLoginAt *time.Time
 	CreatedAt   time.Time
+	// Unrestricted true means this member can act on every company
+	// (legal entity) in the organisation — the default, and the only
+	// state that existed before company-scoped access — in which case
+	// LegalEntityIDs is empty and meaningless. Unrestricted false means
+	// LegalEntityIDs is the exact (possibly empty, meaning "none yet
+	// assigned") set of companies they're restricted to.
+	Unrestricted   bool
+	LegalEntityIDs []uuid.UUID
 }
 
 // ListTeamMembers lists every user in the caller's organisation
-// (identity.view_users).
+// (identity.view_users), including each member's current company access
+// (RoleRepo.ListUserCompanyAccess) so Settings > Team can render and edit
+// it. One extra query per member — organisations at this product's scale
+// are small (a handful to a few dozen team members), matching this
+// module's existing N+1-is-fine style elsewhere rather than adding a
+// bulk-fetch variant no other caller needs yet.
 func (s *Service) ListTeamMembers(ctx context.Context, principal permissions.Principal) ([]TeamMember, error) {
 	if err := s.permissions.Require(ctx, principal, "identity.view_users", permissions.Scope{}); err != nil {
 		return nil, err
 	}
 	var users []*domain.User
+	out := make([]TeamMember, 0)
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		users, err = s.users.ListByOrganisation(ctx, principal.OrganisationID)
-		return err
+		if err != nil {
+			return err
+		}
+		roleID, err := s.roles.GetIDByCode(ctx, principal.OrganisationID, "OWNER")
+		if err != nil {
+			return fmt.Errorf("looking up owner role: %w", err)
+		}
+		for _, u := range users {
+			unrestricted, legalEntityIDs, err := s.roles.ListUserCompanyAccess(ctx, principal.OrganisationID, u.ID, roleID)
+			if err != nil {
+				return fmt.Errorf("listing company access for %s: %w", u.ID, err)
+			}
+			out = append(out, TeamMember{
+				ID: u.ID, Email: u.Email, FullName: u.FullName, Status: u.Status,
+				MFAEnabled: u.MFAEnabled, LastLoginAt: u.LastLoginAt, CreatedAt: u.CreatedAt,
+				Unrestricted: unrestricted, LegalEntityIDs: legalEntityIDs,
+			})
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
-	}
-	out := make([]TeamMember, 0, len(users))
-	for _, u := range users {
-		out = append(out, TeamMember{
-			ID: u.ID, Email: u.Email, FullName: u.FullName, Status: u.Status,
-			MFAEnabled: u.MFAEnabled, LastLoginAt: u.LastLoginAt, CreatedAt: u.CreatedAt,
-		})
 	}
 	return out, nil
 }
@@ -487,6 +512,12 @@ type CreateTeamMemberParams struct {
 	FullName string
 	Email    string
 	Password string
+	// LegalEntityIDs restricts this member to exactly these companies —
+	// empty (the default) means unrestricted, identical to every team
+	// member's access before company-scoped grants existed, so a
+	// single-company install needs zero changes to keep working exactly
+	// as before.
+	LegalEntityIDs []uuid.UUID
 }
 
 // CreateTeamMember lets an Owner add another login to their own
@@ -497,9 +528,12 @@ type CreateTeamMemberParams struct {
 // v1 has exactly one role per organisation (OWNER, granted every
 // permission — see RoleRepo.GrantAllPermissions's doc comment), so every
 // team member added this way is a full peer of the person who invited
-// them, not a restricted "staff" account. Curated, lesser roles are a
-// real product decision this pass deliberately defers, same as
-// RoleRepo.GrantAllPermissions already flags.
+// them WITHIN whichever companies they're granted, not a restricted
+// "staff" account with fewer permissions — company-scoped access
+// restricts *which companies*, not *what they can do within them*.
+// Curated, lesser roles are a real product decision this pass
+// deliberately defers, same as RoleRepo.GrantAllPermissions already
+// flags.
 func (s *Service) CreateTeamMember(ctx context.Context, principal permissions.Principal, p CreateTeamMemberParams) (uuid.UUID, error) {
 	if err := s.permissions.Require(ctx, principal, "identity.manage_users", permissions.Scope{}); err != nil {
 		return uuid.UUID{}, err
@@ -523,9 +557,9 @@ func (s *Service) CreateTeamMember(ctx context.Context, principal permissions.Pr
 	if err != nil {
 		return uuid.UUID{}, fmt.Errorf("identity: generating user id: %w", err)
 	}
-	userRoleID, err := uuid.NewV7()
+	accessRows, err := newUserRoleScopeRows(p.LegalEntityIDs)
 	if err != nil {
-		return uuid.UUID{}, fmt.Errorf("identity: generating user_role id: %w", err)
+		return uuid.UUID{}, fmt.Errorf("identity: %w", err)
 	}
 	now := s.now()
 
@@ -547,7 +581,11 @@ func (s *Service) CreateTeamMember(ctx context.Context, principal permissions.Pr
 		}); err != nil {
 			return fmt.Errorf("creating team member: %w", err)
 		}
-		if err := s.roles.AssignUserRole(ctx, userRoleID, principal.OrganisationID, userID, roleID, now); err != nil {
+		// A brand-new user has no prior user_roles rows to clear — this
+		// is the "insert" half of ReplaceUserCompanyAccess's delete-then-
+		// insert, reused rather than a second, parallel insert-only path
+		// that could drift from it.
+		if err := s.roles.ReplaceUserCompanyAccess(ctx, principal.OrganisationID, userID, roleID, accessRows, now); err != nil {
 			return fmt.Errorf("assigning role: %w", err)
 		}
 		return s.audit.Record(ctx, audit.Entry{
@@ -565,4 +603,67 @@ func (s *Service) CreateTeamMember(ctx context.Context, principal permissions.Pr
 		return uuid.UUID{}, fmt.Errorf("identity: creating team member: %w", err)
 	}
 	return userID, nil
+}
+
+// newUserRoleScopeRows builds the rows ReplaceUserCompanyAccess should
+// write for a given "restrict to these companies" request: one
+// unrestricted row (LegalEntityID nil) when legalEntityIDs is empty —
+// the default, unrestricted case — otherwise one row per company.
+// Deliberately never returns a zero-row slice: ReplaceUserCompanyAccess
+// deletes-then-inserts, and zero rows in is zero rows in the table after,
+// which Require's fail-closed matching reads as "holds this permission
+// nowhere at all" rather than "unrestricted" — the opposite of what an
+// empty LegalEntityIDs list is supposed to mean here.
+func newUserRoleScopeRows(legalEntityIDs []uuid.UUID) ([]domain.UserRoleScope, error) {
+	if len(legalEntityIDs) == 0 {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("generating user_role id: %w", err)
+		}
+		return []domain.UserRoleScope{{ID: id}}, nil
+	}
+	rows := make([]domain.UserRoleScope, len(legalEntityIDs))
+	for i := range legalEntityIDs {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("generating user_role id: %w", err)
+		}
+		rows[i] = domain.UserRoleScope{ID: id, LegalEntityID: &legalEntityIDs[i]}
+	}
+	return rows, nil
+}
+
+// SetTeamMemberCompanyAccess changes which companies an EXISTING team
+// member can access — the edit-time counterpart to CreateTeamMember's
+// LegalEntityIDs, sharing the exact same ReplaceUserCompanyAccess write
+// path (see that method's doc comment for why "add" and "edit" must not
+// drift into two different code paths).
+func (s *Service) SetTeamMemberCompanyAccess(ctx context.Context, principal permissions.Principal, userID uuid.UUID, legalEntityIDs []uuid.UUID) error {
+	if err := s.permissions.Require(ctx, principal, "identity.manage_users", permissions.Scope{}); err != nil {
+		return err
+	}
+	accessRows, err := newUserRoleScopeRows(legalEntityIDs)
+	if err != nil {
+		return fmt.Errorf("identity: %w", err)
+	}
+	now := s.now()
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		roleID, err := s.roles.GetIDByCode(ctx, principal.OrganisationID, "OWNER")
+		if err != nil {
+			return fmt.Errorf("looking up owner role: %w", err)
+		}
+		if err := s.roles.ReplaceUserCompanyAccess(ctx, principal.OrganisationID, userID, roleID, accessRows, now); err != nil {
+			return fmt.Errorf("setting company access: %w", err)
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID,
+			ActorUserID:    &principal.UserID,
+			ActorType:      audit.ActorUser,
+			Action:         "user.company_access_changed",
+			EntityType:     "user",
+			EntityID:       &userID,
+			AfterState:     map[string]any{"legal_entity_ids": legalEntityIDs},
+			At:             now,
+		})
+	})
 }

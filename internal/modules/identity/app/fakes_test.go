@@ -239,6 +239,12 @@ func (fakeRoleRepo) AssignUserRole(ctx context.Context, id, organisationID, user
 func (fakeRoleRepo) GetIDByCode(ctx context.Context, organisationID uuid.UUID, code string) (uuid.UUID, error) {
 	return uuid.NewSHA1(organisationID, []byte(code)), nil
 }
+func (fakeRoleRepo) ReplaceUserCompanyAccess(ctx context.Context, organisationID, userID, roleID uuid.UUID, rows []domain.UserRoleScope, at time.Time) error {
+	return nil
+}
+func (fakeRoleRepo) ListUserCompanyAccess(ctx context.Context, organisationID, userID, roleID uuid.UUID) (bool, []uuid.UUID, error) {
+	return true, nil, nil
+}
 
 type fakeAPIKeyRepo struct{}
 

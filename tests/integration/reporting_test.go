@@ -8,15 +8,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	accountingapp "rechvix/internal/modules/accounting/app"
 	accountingdomain "rechvix/internal/modules/accounting/domain"
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactspg "rechvix/internal/modules/contacts/pg"
+	inventoryapp "rechvix/internal/modules/inventory/app"
+	orgapp "rechvix/internal/modules/organisation/app"
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchasesdomain "rechvix/internal/modules/purchases/domain"
 	reportingapp "rechvix/internal/modules/reporting/app"
 	reportingdomain "rechvix/internal/modules/reporting/domain"
 	reportingpg "rechvix/internal/modules/reporting/pg"
+	salesdomain "rechvix/internal/modules/sales/domain"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/permissions"
 )
@@ -80,6 +85,99 @@ func TestReporting_SalesSummary_GroupedByCustomer_MatchesHandComputed(t *testing
 	}
 	if got := r.TaxableAmount.StringFixed(0); got != "1500.00" {
 		t.Fatalf("TaxableAmount = %s, want 1500.00 (1000+500)", got)
+	}
+}
+
+// TestReporting_SalesSummary_FilteredByCompany covers the multi-company
+// report filtering this session added (domain.Filter.LegalEntityID,
+// resolved through app.Service.resolvedFilter and applied via
+// pg.whereBuilder.addOptionalUUIDs("sd.legal_entity_id", ...)) — the
+// mechanism GSTR1/GSTR3B/PurchaseSummary/StockValuation/etc. all share,
+// so proving it here via SalesSummary (which already has an established
+// hand-computed-totals test pattern) covers the shared code path without
+// duplicating the same assertion once per report function.
+func TestReporting_SalesSummary_FilteredByCompany(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fxA := setupAccountingFixture(t, ctx, accountingSvc)
+	orgSvc := newTestOrgService(t)
+
+	unique := uuid.NewString()[:8]
+	companyB, err := orgSvc.CreateLegalEntity(ctx, fxA.Principal, orgapp.CreateLegalEntityParams{
+		LegalName: "Report Company B " + unique, CountryCode: "IN", BaseCurrencyCode: "INR",
+		GSTIN: "27CCCCC0000C1Z5", GSTStateCode: "27",
+	})
+	if err != nil {
+		t.Fatalf("CreateLegalEntity (company B): %v", err)
+	}
+	branchB, err := orgSvc.CreateBranch(ctx, fxA.Principal, orgapp.CreateBranchParams{
+		LegalEntityID: companyB.ID, Code: "RB-" + unique, Name: "Company B Branch",
+	})
+	if err != nil {
+		t.Fatalf("CreateBranch (company B): %v", err)
+	}
+	warehouseB, err := orgSvc.CreateWarehouse(ctx, fxA.Principal, orgapp.CreateWarehouseParams{
+		BranchID: branchB.ID, Code: "RW-" + unique, Name: "Company B Warehouse",
+	})
+	if err != nil {
+		t.Fatalf("CreateWarehouse (company B): %v", err)
+	}
+	// Products/customers are org-wide (no legal_entity_id of their own —
+	// see catalogue/contacts' app.Service.view doc comments), so company
+	// B's invoice reuses fxA's product/customer, differing only in which
+	// company/branch/warehouse the DOCUMENT itself belongs to. Stock is
+	// NOT shared across warehouses though — company B's own warehouse
+	// starts with zero, so it needs its own opening stock the same way
+	// setupSalesFixture already gave fxA's warehouse.
+	fxB := accountingFixture{
+		salesFixture: salesFixture{
+			Principal: fxA.Principal, LegalEntityID: companyB.ID, BranchID: branchB.ID, WarehouseID: warehouseB.ID,
+			VariantID: fxA.VariantID, PCS: fxA.PCS, CustomerID: fxA.CustomerID,
+		},
+		SupplierID: fxA.SupplierID,
+	}
+	inventorySvc := newTestInventoryService(t)
+	openingCost := mustDecimal(t, "50")
+	if _, err := inventorySvc.RecordOpeningStock(ctx, fxA.Principal, inventoryapp.RecordMovementParams{
+		WarehouseID: warehouseB.ID, ProductVariantID: fxA.VariantID, MovementType: "OPENING",
+		UnitID: fxA.PCS, Quantity: mustDecimal(t, "100"), UnitCost: &openingCost,
+	}); err != nil {
+		t.Fatalf("RecordOpeningStock (company B warehouse): %v", err)
+	}
+
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fxA, "10", "100") // taxable 1000
+	// DocPOSInvoice, not DocTaxInvoice like fxA — same pre-existing
+	// numbering/branch collision noted in sales_test.go's
+	// TestSales_CompanyScopedAccess (numbering.Service.Next is keyed by
+	// branch, but sales_documents' UNIQUE constraint is
+	// (organisation_id, document_type, document_number) with no branch —
+	// two different branches' first invoice of the SAME type collide).
+	finalizeTaxInvoiceAs(t, ctx, salesSvc, fxB, salesdomain.DocPOSInvoice, "3", "100") // taxable 300, different company
+
+	rowsA, err := reportingSvc.SalesSummary(ctx, fxA.Principal, reportingdomain.Filter{LegalEntityID: &fxA.LegalEntityID}, reportingdomain.GroupByCustomer)
+	if err != nil {
+		t.Fatalf("SalesSummary (company A filter): %v", err)
+	}
+	if len(rowsA) != 1 || rowsA[0].DocumentCount != 1 || rowsA[0].TaxableAmount.StringFixed(0) != "1000.00" {
+		t.Fatalf("SalesSummary (company A filter) = %+v, want 1 doc, taxable 1000.00", rowsA)
+	}
+
+	rowsB, err := reportingSvc.SalesSummary(ctx, fxA.Principal, reportingdomain.Filter{LegalEntityID: &companyB.ID}, reportingdomain.GroupByCustomer)
+	if err != nil {
+		t.Fatalf("SalesSummary (company B filter): %v", err)
+	}
+	if len(rowsB) != 1 || rowsB[0].DocumentCount != 1 || rowsB[0].TaxableAmount.StringFixed(0) != "300.00" {
+		t.Fatalf("SalesSummary (company B filter) = %+v, want 1 doc, taxable 300.00", rowsB)
+	}
+
+	// No company filter at all -> both companies' invoices combined.
+	rowsAll, err := reportingSvc.SalesSummary(ctx, fxA.Principal, reportingdomain.Filter{}, reportingdomain.GroupByCustomer)
+	if err != nil {
+		t.Fatalf("SalesSummary (unfiltered): %v", err)
+	}
+	if len(rowsAll) != 1 || rowsAll[0].DocumentCount != 2 || rowsAll[0].TaxableAmount.StringFixed(0) != "1300.00" {
+		t.Fatalf("SalesSummary (unfiltered) = %+v, want 2 docs combined, taxable 1300.00", rowsAll)
 	}
 }
 

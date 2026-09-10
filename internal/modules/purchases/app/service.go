@@ -77,11 +77,45 @@ func NewService(
 // singular "purchase", not "purchases") — see
 // migrations/0014_stage4_permissions.up.sql for why this module doesn't
 // define its own parallel set.
+// view is a coarse "can see purchase documents at all" gate — see
+// sales/app.Service.view's identical rationale/doc comment for why this
+// is Checker.HasAny, not Require, and for the same KNOWN GAP note
+// (finalizePerm below is still an unscoped Require, unconverted).
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "purchase.view", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "purchase.view")
 }
 func (s *Service) manage(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.Require(ctx, principal, "purchase.create", permissions.Scope{})
+}
+
+// manageForBranch is manage's company-scoped variant, used at
+// document-create time — see sales/app.Service.create's identical
+// rationale (the highest-risk gap company-scoped access exists to
+// close). purchase_documents has no legal_entity_id of its own, so this
+// resolves it from branchID first, in its OWN short RunScoped (deliberately
+// separate from, and sequenced BEFORE, CreateDocument's own write
+// transaction — nesting a second RunScoped inside an already-open one
+// opens a second, independent connection/transaction rather than
+// participating in the outer one, the same hazard
+// catalogue/app.Service.ImportProducts' pendingPriceTax doc comment
+// documents for the identical reason). permissions.Checker.Require
+// self-scopes its own grants lookup the same way, so calling it here
+// (after this method's own RunScoped has already returned) keeps every
+// step sequential, never nested.
+func (s *Service) manageForBranch(ctx context.Context, principal permissions.Principal, branchID uuid.UUID) error {
+	var legalEntityID uuid.UUID
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		branch, err := s.organisation.GetBranchForOtherModule(ctx, principal.OrganisationID, branchID)
+		if err != nil {
+			return err
+		}
+		legalEntityID = branch.LegalEntityID
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("purchases: resolving branch's company: %w", err)
+	}
+	return s.permissions.Require(ctx, principal, "purchase.create", permissions.Scope{LegalEntityID: &legalEntityID})
 }
 func (s *Service) finalizePerm(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.Require(ctx, principal, "purchase.finalize", permissions.Scope{})
@@ -101,7 +135,7 @@ type CreateDocumentParams struct {
 }
 
 func (s *Service) CreateDocument(ctx context.Context, principal permissions.Principal, p CreateDocumentParams) (*domain.Document, error) {
-	if err := s.manage(ctx, principal); err != nil {
+	if err := s.manageForBranch(ctx, principal, p.BranchID); err != nil {
 		return nil, err
 	}
 	if !domain.ValidDocumentType(p.DocumentType) {
@@ -181,14 +215,24 @@ func (s *Service) GetDocument(ctx context.Context, principal permissions.Princip
 	return doc, lines, nil
 }
 
-func (s *Service) ListDocuments(ctx context.Context, principal permissions.Principal, documentType *domain.DocumentType) ([]*domain.Document, error) {
+// legalEntityID/company-filter semantics are identical to
+// sales/app.Service.ListDocuments — see that method's doc comment.
+func (s *Service) ListDocuments(ctx context.Context, principal permissions.Principal, documentType *domain.DocumentType, legalEntityID *uuid.UUID) ([]*domain.Document, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	unrestricted, allowed, err := s.permissions.AllowedLegalEntities(ctx, principal, "purchase.view")
+	if err != nil {
+		return nil, err
+	}
+	filter := permissions.ResolveLegalEntityFilter(unrestricted, allowed, legalEntityID)
+	if filter != nil && len(filter) == 0 {
+		return nil, nil
+	}
 	var result []*domain.Document
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
-		result, err = s.documents.ListByOrganisation(ctx, principal.OrganisationID, documentType)
+		result, err = s.documents.ListByOrganisation(ctx, principal.OrganisationID, documentType, filter)
 		return err
 	})
 	return result, err

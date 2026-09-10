@@ -93,6 +93,11 @@ func parseFilter(r *http.Request) (domain.Filter, error) {
 	} else if ok {
 		f.WarehouseID = &id
 	}
+	if id, ok, err := parseOptionalUUID(q, "legal_entity_id"); err != nil {
+		return f, err
+	} else if ok {
+		f.LegalEntityID = &id
+	}
 	if id, ok, err := parseOptionalUUID(q, "customer_id"); err != nil {
 		return f, err
 	} else if ok {

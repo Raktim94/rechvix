@@ -610,9 +610,25 @@ func TestPurchases_CancelDocument_NonStockNonAccountingType_NoOp(t *testing.T) {
 // exists" rather than caring about the exact totals themselves.
 func finalizeSimpleTaxInvoice(t *testing.T, ctx context.Context, salesSvc *salesapp.Service, fx accountingFixture, qty, price string) *salesdomain.Document {
 	t.Helper()
+	return finalizeTaxInvoiceAs(t, ctx, salesSvc, fx, salesdomain.DocTaxInvoice, qty, price)
+}
+
+// finalizeTaxInvoiceAs is finalizeSimpleTaxInvoice with an explicit
+// document type — for a test that finalizes invoices on two DIFFERENT
+// branches within the same organisation and would otherwise collide:
+// numbering.Service.Next is keyed by (org, branch, documentType, FY),
+// but sales_documents' own UNIQUE constraint is
+// (organisation_id, document_type, document_number) with no branch in it
+// (migrations/0019_sales.up.sql) — two branches' first document of the
+// SAME type both generate the identical number and collide. Real,
+// pre-existing bug (reported separately, out of scope to fix here); a
+// different document type per branch works around it in tests that need
+// two branches' invoices to coexist.
+func finalizeTaxInvoiceAs(t *testing.T, ctx context.Context, salesSvc *salesapp.Service, fx accountingFixture, docType salesdomain.DocumentType, qty, price string) *salesdomain.Document {
+	t.Helper()
 	doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
 		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
-		DocumentType: salesdomain.DocTaxInvoice, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+		DocumentType: docType, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
 		PricingMode: taxdomain.PricingExclusive,
 	})
 	if err != nil {

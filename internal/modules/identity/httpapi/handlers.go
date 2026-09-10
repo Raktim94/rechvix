@@ -75,6 +75,7 @@ func (h *Handlers) Mount(r chi.Router, bootstrapEnabled bool) {
 		r.Post("/auth/mfa/disable", h.disableMFA)
 		r.Get("/users", h.listUsers)
 		r.Post("/users", h.createUser)
+		r.Put("/users/{id}/company-access", h.setTeamMemberCompanyAccess)
 	})
 }
 
@@ -405,6 +406,28 @@ type teamMemberDTO struct {
 	MFAEnabled  bool       `json:"mfa_enabled"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+	// Unrestricted/LegalEntityIDs mirror app.TeamMember's own doc comment
+	// exactly: Unrestricted true means every company, in which case
+	// LegalEntityIDs is omitted rather than sent as a misleadingly empty
+	// array (which would otherwise read as "restricted to zero
+	// companies").
+	Unrestricted   bool     `json:"unrestricted"`
+	LegalEntityIDs []string `json:"legal_entity_ids,omitempty"`
+}
+
+func teamMemberToDTO(m app.TeamMember) teamMemberDTO {
+	dto := teamMemberDTO{
+		ID: m.ID.String(), Email: m.Email, FullName: m.FullName, Status: string(m.Status),
+		MFAEnabled: m.MFAEnabled, LastLoginAt: m.LastLoginAt, CreatedAt: m.CreatedAt,
+		Unrestricted: m.Unrestricted,
+	}
+	if !m.Unrestricted {
+		dto.LegalEntityIDs = make([]string, len(m.LegalEntityIDs))
+		for i, id := range m.LegalEntityIDs {
+			dto.LegalEntityIDs[i] = id.String()
+		}
+	}
+	return dto
 }
 
 func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -416,10 +439,7 @@ func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]teamMemberDTO, 0, len(members))
 	for _, m := range members {
-		out = append(out, teamMemberDTO{
-			ID: m.ID.String(), Email: m.Email, FullName: m.FullName, Status: string(m.Status),
-			MFAEnabled: m.MFAEnabled, LastLoginAt: m.LastLoginAt, CreatedAt: m.CreatedAt,
-		})
+		out = append(out, teamMemberToDTO(m))
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"users": out})
 }
@@ -428,6 +448,10 @@ type createUserRequest struct {
 	FullName string `json:"full_name"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	// LegalEntityIDs mirrors app.CreateTeamMemberParams' own doc
+	// comment: omitted or empty means unrestricted (every company),
+	// matching every team member's access before this field existed.
+	LegalEntityIDs []string `json:"legal_entity_ids,omitempty"`
 }
 
 func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
@@ -437,16 +461,67 @@ func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
 		return
 	}
+	legalEntityIDs, err := parseUUIDs(req.LegalEntityIDs)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_LEGAL_ENTITY_IDS", "legal_entity_ids must be a list of UUIDs."))
+		return
+	}
 	userID, err := h.svc.CreateTeamMember(r.Context(), principal, app.CreateTeamMemberParams{
-		FullName: req.FullName,
-		Email:    req.Email,
-		Password: req.Password,
+		FullName:       req.FullName,
+		Email:          req.Email,
+		Password:       req.Password,
+		LegalEntityIDs: legalEntityIDs,
 	})
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user_id": userID})
+}
+
+type setCompanyAccessRequest struct {
+	LegalEntityIDs []string `json:"legal_entity_ids"`
+}
+
+// setTeamMemberCompanyAccess is the edit-time counterpart to createUser's
+// legal_entity_ids — see app.Service.SetTeamMemberCompanyAccess.
+func (h *Handlers) setTeamMemberCompanyAccess(w http.ResponseWriter, r *http.Request) {
+	principal, _ := httpx.PrincipalFromContext(r.Context())
+	userID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[setCompanyAccessRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	legalEntityIDs, err := parseUUIDs(req.LegalEntityIDs)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_LEGAL_ENTITY_IDS", "legal_entity_ids must be a list of UUIDs."))
+		return
+	}
+	if err := h.svc.SetTeamMemberCompanyAccess(r.Context(), principal, userID, legalEntityIDs); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func parseUUIDs(raw []string) ([]uuid.UUID, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]uuid.UUID, len(raw))
+	for i, s := range raw {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = id
+	}
+	return out, nil
 }
 
 func (h *Handlers) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {

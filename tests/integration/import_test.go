@@ -53,7 +53,11 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 
 	newName := "Imported Widget " + uuid.NewString()[:8]
 	newUnitName := "New Unit Widget " + uuid.NewString()[:8]
-	newUnitCode := "NEWUNIT" + uuid.NewString()[:8]
+	// Uppercase suffix — ImportProducts uppercases base_uom_code before
+	// matching/storing it (case-insensitive by design, same as
+	// category_name/brand_name's lowercase-keyed matching), so a
+	// lowercase-hex uuid suffix here would never equal the stored code.
+	newUnitCode := "NEWUNIT" + strings.ToUpper(uuid.NewString()[:8])
 	rows := []importer.Row{
 		{Number: 1, Fields: map[string]string{"name": newName, "hsn_sac_code": "8471", "base_uom_code": "PCS"}}, // valid, new
 		{Number: 2, Fields: map[string]string{"name": existingName, "base_uom_code": "PCS"}},                    // duplicate

@@ -42,12 +42,15 @@ func (s *Service) ListStateCodes(ctx context.Context) ([]domain.GSTState, error)
 	return s.states.ListAll(ctx)
 }
 
+// view/manage use Checker.HasAny, not Require — tax_rate_master rows are
+// keyed by HSN/SAC code, org-wide, not per legal entity, same rationale
+// as catalogue/app.Service.view/manage's identical comment.
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "gst.view", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "gst.view")
 }
 
 func (s *Service) manage(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "gst.manage", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "gst.manage")
 }
 
 type CreateRateParams struct {

@@ -161,6 +161,136 @@ func TestRequire_ScopesGrantsLookupToPrincipalOrganisation(t *testing.T) {
 	}
 }
 
+func TestAllowedLegalEntities_NoGrantsIsRestrictedToNothing(t *testing.T) {
+	principal := testPrincipal()
+	checker := NewChecker(fakeStore{}, fakeRunner{})
+
+	unrestricted, ids, err := checker.AllowedLegalEntities(context.Background(), principal, "sales.view")
+	if err != nil {
+		t.Fatalf("AllowedLegalEntities: %v", err)
+	}
+	if unrestricted {
+		t.Fatal("expected unrestricted=false for a user with zero grants — callers must show nothing, not everything")
+	}
+	if len(ids) != 0 {
+		t.Fatalf("expected zero allowed legal entities, got %v", ids)
+	}
+}
+
+func TestAllowedLegalEntities_OrgWideGrantIsUnrestricted(t *testing.T) {
+	principal := testPrincipal()
+	checker := NewChecker(fakeStore{grants: []Grant{
+		{PermissionCode: "sales.view"}, // org-wide, all nil
+	}}, fakeRunner{})
+
+	unrestricted, ids, err := checker.AllowedLegalEntities(context.Background(), principal, "sales.view")
+	if err != nil {
+		t.Fatalf("AllowedLegalEntities: %v", err)
+	}
+	if !unrestricted {
+		t.Fatalf("expected unrestricted=true for an org-wide grant, got ids=%v", ids)
+	}
+}
+
+func TestAllowedLegalEntities_CompanyScopedGrantsAreCollectedAndDeduped(t *testing.T) {
+	principal := testPrincipal()
+	companyA := uuid.New()
+	companyB := uuid.New()
+	checker := NewChecker(fakeStore{grants: []Grant{
+		{PermissionCode: "sales.view", LegalEntityID: uuidPtr(companyA)},
+		{PermissionCode: "sales.view", LegalEntityID: uuidPtr(companyB)},
+		// Same company via a second (e.g. branch-scoped) grant row — must
+		// not appear twice.
+		{PermissionCode: "sales.view", LegalEntityID: uuidPtr(companyA), BranchID: uuidPtr(uuid.New())},
+		// Different permission code entirely — must not leak in.
+		{PermissionCode: "purchase.view", LegalEntityID: uuidPtr(uuid.New())},
+	}}, fakeRunner{})
+
+	unrestricted, ids, err := checker.AllowedLegalEntities(context.Background(), principal, "sales.view")
+	if err != nil {
+		t.Fatalf("AllowedLegalEntities: %v", err)
+	}
+	if unrestricted {
+		t.Fatal("expected unrestricted=false when every grant is company-scoped")
+	}
+	got := map[uuid.UUID]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	if len(got) != 2 || !got[companyA] || !got[companyB] {
+		t.Fatalf("expected exactly [companyA, companyB] (deduped), got %v", ids)
+	}
+}
+
+func TestHasAny_UnrestrictedGrantSucceeds(t *testing.T) {
+	principal := testPrincipal()
+	checker := NewChecker(fakeStore{grants: []Grant{{PermissionCode: "sales.view"}}}, fakeRunner{})
+	if err := checker.HasAny(context.Background(), principal, "sales.view"); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+}
+
+func TestHasAny_CompanyScopedGrantSucceeds(t *testing.T) {
+	// This is the exact case Require(ctx, principal, code, Scope{}) gets
+	// wrong for a company-restricted user — HasAny must succeed here.
+	principal := testPrincipal()
+	checker := NewChecker(fakeStore{grants: []Grant{
+		{PermissionCode: "sales.view", LegalEntityID: uuidPtr(uuid.New())},
+	}}, fakeRunner{})
+	if err := checker.HasAny(context.Background(), principal, "sales.view"); err != nil {
+		t.Fatalf("expected success for a company-scoped grant, got %v", err)
+	}
+}
+
+func TestHasAny_APIKeyRestrictionOverridesUnderlyingGrant(t *testing.T) {
+	principal := testPrincipal()
+	checker := NewChecker(fakeStore{grants: []Grant{{PermissionCode: "sales.view"}}}, fakeRunner{})
+	ctx := WithAPIKeyScopeRestriction(context.Background(), map[string]bool{"purchase.view": true}) // NOT sales.view
+	if err := checker.HasAny(ctx, principal, "sales.view"); err == nil {
+		t.Fatal("expected error: an API key with no sales.view scope must not succeed via the user's own unrestricted grant")
+	}
+}
+
+func TestHasAny_NoGrantsFails(t *testing.T) {
+	principal := testPrincipal()
+	checker := NewChecker(fakeStore{}, fakeRunner{})
+	if err := checker.HasAny(context.Background(), principal, "sales.view"); err == nil {
+		t.Fatal("expected error for a user with zero grants")
+	}
+}
+
+func TestResolveLegalEntityFilter(t *testing.T) {
+	a, b, c := uuid.New(), uuid.New(), uuid.New()
+
+	// Unrestricted, no specific request -> no restriction at all.
+	if got := ResolveLegalEntityFilter(true, nil, nil); got != nil {
+		t.Fatalf("unrestricted+no request: got %v, want nil (no restriction)", got)
+	}
+	// Unrestricted, requested one company -> exactly that one.
+	if got := ResolveLegalEntityFilter(true, nil, &a); len(got) != 1 || got[0] != a {
+		t.Fatalf("unrestricted+requested a: got %v, want [%s]", got, a)
+	}
+	// Restricted, no specific request -> exactly the allowed set.
+	if got := ResolveLegalEntityFilter(false, []uuid.UUID{a, b}, nil); len(got) != 2 {
+		t.Fatalf("restricted+no request: got %v, want [%s %s]", got, a, b)
+	}
+	// Restricted, requested an allowed company -> exactly that one.
+	if got := ResolveLegalEntityFilter(false, []uuid.UUID{a, b}, &a); len(got) != 1 || got[0] != a {
+		t.Fatalf("restricted+requested allowed a: got %v, want [%s]", got, a)
+	}
+	// Restricted, requested a company NOT in the allowed set -> matches
+	// nothing, never silently falls back to "everything".
+	got := ResolveLegalEntityFilter(false, []uuid.UUID{a, b}, &c)
+	if got == nil || len(got) != 0 {
+		t.Fatalf("restricted+requested disallowed c: got %v, want empty-but-non-nil (matches nothing)", got)
+	}
+	// Restricted with zero allowed companies -> matches nothing.
+	got = ResolveLegalEntityFilter(false, nil, nil)
+	if len(got) != 0 {
+		t.Fatalf("restricted+zero allowed: got %v, want empty", got)
+	}
+}
+
 type recordingRunner struct {
 	inner       database.Runner
 	onRunScoped func(orgID uuid.UUID)

@@ -79,12 +79,22 @@ func NewService(
 	}
 }
 
+// view/manage use Checker.HasAny, not Require — products/categories/
+// brands/units have no legal_entity_id of their own (they're shared
+// org-wide across every company, unlike sales/purchase/inventory
+// documents), so there is no per-company scope to enforce here in the
+// first place; a team member restricted to one company (see
+// identity.CreateTeamMemberParams.LegalEntityIDs) still holds
+// company-scoped catalogue.* grants (every permission the OWNER role has
+// gets scoped together) and must still be able to use the catalogue —
+// Require(ctx, principal, code, Scope{}) would wrongly reject them since
+// none of their grants is unrestricted.
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "catalogue.view", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "catalogue.view")
 }
 
 func (s *Service) manage(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "catalogue.manage", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "catalogue.manage")
 }
 
 // --- Units of measure ---

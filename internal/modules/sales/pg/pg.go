@@ -82,18 +82,18 @@ func (r *DocumentRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domai
 	return d, nil
 }
 
-func (r *DocumentRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID, documentType *domain.DocumentType) ([]*domain.Document, error) {
-	var (
-		q    string
-		args []any
-	)
+func (r *DocumentRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID, documentType *domain.DocumentType, legalEntityIDs []uuid.UUID) ([]*domain.Document, error) {
+	where := "organisation_id = $1"
+	args := []any{orgID}
 	if documentType != nil {
-		q = fmt.Sprintf(`SELECT %s FROM sales_documents WHERE organisation_id = $1 AND document_type = $2 ORDER BY issue_date DESC`, documentCols)
-		args = []any{orgID, string(*documentType)}
-	} else {
-		q = fmt.Sprintf(`SELECT %s FROM sales_documents WHERE organisation_id = $1 ORDER BY issue_date DESC`, documentCols)
-		args = []any{orgID}
+		args = append(args, string(*documentType))
+		where += fmt.Sprintf(" AND document_type = $%d", len(args))
 	}
+	if legalEntityIDs != nil {
+		args = append(args, legalEntityIDs)
+		where += fmt.Sprintf(" AND legal_entity_id = ANY($%d)", len(args))
+	}
+	q := fmt.Sprintf(`SELECT %s FROM sales_documents WHERE %s ORDER BY issue_date DESC`, documentCols, where)
 	rows, err := r.pool.Q(ctx).Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sales: listing sales_documents: %w", err)

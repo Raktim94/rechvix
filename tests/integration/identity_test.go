@@ -226,3 +226,84 @@ func TestCreateTeamMemberRoundTrip(t *testing.T) {
 		t.Fatalf("login resolved user %s, want %s", memberLogin.UserID, memberID)
 	}
 }
+
+// TestTeamMemberCompanyAccess covers CreateTeamMemberParams.LegalEntityIDs
+// and SetTeamMemberCompanyAccess end to end against a real database:
+// restricting a new member to the bootstrap organisation's one company,
+// confirming permissions.Checker.AllowedLegalEntities (the mechanism
+// Phase 3's list/report filtering will call) reports exactly that
+// restriction, then confirming SetTeamMemberCompanyAccess with an empty
+// list makes them unrestricted again — the same "empty means everything"
+// contract CreateTeamMember's default already relies on.
+func TestTeamMemberCompanyAccess(t *testing.T) {
+	ctx := context.Background()
+	identitySvc, _ := newTestIdentityService(t)
+	checker := permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool)
+
+	ownerEmail := "company-access-owner-" + uuid.NewString()[:8] + "@example.com"
+	password := "correct horse battery staple 42"
+	boot := bootstrapTestTenant(t, ctx, identitySvc, ownerEmail, password)
+
+	ownerLogin, err := identitySvc.Login(ctx, identityapp.LoginParams{Email: ownerEmail, Password: password})
+	if err != nil {
+		t.Fatalf("owner Login: %v", err)
+	}
+	principal, err := identitySvc.ValidateSession(ctx, ownerLogin.SessionToken)
+	if err != nil {
+		t.Fatalf("ValidateSession: %v", err)
+	}
+
+	memberEmail := "restricted-member-" + uuid.NewString()[:8] + "@example.com"
+	memberID, err := identitySvc.CreateTeamMember(ctx, principal, identityapp.CreateTeamMemberParams{
+		FullName: "Restricted Member", Email: memberEmail, Password: "another very long password 99",
+		LegalEntityIDs: []uuid.UUID{boot.LegalEntityID},
+	})
+	if err != nil {
+		t.Fatalf("CreateTeamMember: %v", err)
+	}
+
+	members, err := identitySvc.ListTeamMembers(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListTeamMembers: %v", err)
+	}
+	var restricted *identityapp.TeamMember
+	for i := range members {
+		if members[i].ID == memberID {
+			restricted = &members[i]
+		}
+	}
+	if restricted == nil {
+		t.Fatal("restricted member not found in ListTeamMembers")
+	}
+	if restricted.Unrestricted {
+		t.Fatal("expected the new member to be company-restricted, got Unrestricted=true")
+	}
+	if len(restricted.LegalEntityIDs) != 1 || restricted.LegalEntityIDs[0] != boot.LegalEntityID {
+		t.Fatalf("LegalEntityIDs = %v, want exactly [%s]", restricted.LegalEntityIDs, boot.LegalEntityID)
+	}
+
+	memberPrincipal := permissions.Principal{UserID: memberID, OrganisationID: boot.OrganisationID}
+	unrestricted, ids, err := checker.AllowedLegalEntities(ctx, memberPrincipal, "sales.view")
+	if err != nil {
+		t.Fatalf("AllowedLegalEntities: %v", err)
+	}
+	if unrestricted {
+		t.Fatal("expected the restricted member's AllowedLegalEntities to be unrestricted=false")
+	}
+	if len(ids) != 1 || ids[0] != boot.LegalEntityID {
+		t.Fatalf("AllowedLegalEntities ids = %v, want exactly [%s]", ids, boot.LegalEntityID)
+	}
+
+	// Lift the restriction — empty list means unrestricted, same contract
+	// as CreateTeamMember's own default.
+	if err := identitySvc.SetTeamMemberCompanyAccess(ctx, principal, memberID, nil); err != nil {
+		t.Fatalf("SetTeamMemberCompanyAccess: %v", err)
+	}
+	unrestrictedAfter, _, err := checker.AllowedLegalEntities(ctx, memberPrincipal, "sales.view")
+	if err != nil {
+		t.Fatalf("AllowedLegalEntities after reset: %v", err)
+	}
+	if !unrestrictedAfter {
+		t.Fatal("expected the member to be unrestricted after SetTeamMemberCompanyAccess(nil)")
+	}
+}

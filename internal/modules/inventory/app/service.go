@@ -68,8 +68,16 @@ func NewService(
 	}
 }
 
+// view is a coarse "can see stock at all" gate — see
+// sales/app.Service.view's identical rationale/doc comment for why this
+// is Checker.HasAny, not Require. manage/adjustPerm/transferPerm below
+// are the same KNOWN GAP as sales' editDraft/finalizePerm/discountPerm:
+// still unscoped Require checks, unconverted — a company-restricted
+// user can currently VIEW stock (via GetBalance/ListMovements/
+// ListCostLots/ListLowStock, all gated by this view check) but not
+// adjust/transfer/manage it, left for the same follow-up.
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
-	return s.permissions.Require(ctx, principal, "inventory.view", permissions.Scope{})
+	return s.permissions.HasAny(ctx, principal, "inventory.view")
 }
 func (s *Service) manage(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.Require(ctx, principal, "inventory.manage", permissions.Scope{})

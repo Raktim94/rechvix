@@ -41,12 +41,18 @@ func NewService(pool database.Runner, repo domain.Repository, accounting *accoun
 
 var ErrInvalidGroupDimension = fmt.Errorf("reporting: invalid group dimension")
 
+// view/export are coarse "can run reports at all" gates — see
+// sales/app.Service.view's identical rationale/doc comment for why this
+// is Checker.HasAny, not Require. The actual per-company restriction is
+// enforced by Filter.LegalEntityID below, resolved from
+// AllowedLegalEntities("reports.view") the same way
+// sales/app.Service.ListDocuments resolves its own filter.
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
-	return s.perms.Require(ctx, principal, "reports.view", permissions.Scope{})
+	return s.perms.HasAny(ctx, principal, "reports.view")
 }
 
 func (s *Service) export(ctx context.Context, principal permissions.Principal) error {
-	return s.perms.Require(ctx, principal, "reports.export", permissions.Scope{})
+	return s.perms.HasAny(ctx, principal, "reports.export")
 }
 
 // scoped fills f.OrganisationID from principal rather than trusting a
@@ -57,6 +63,32 @@ func scoped(principal permissions.Principal, f domain.Filter) domain.Filter {
 	return f
 }
 
+// resolvedFilter intersects f.LegalEntityID (the caller's optional
+// single-company request) with what AllowedLegalEntities reports for
+// reports.view, filling f.LegalEntityIDs with the concrete restriction
+// every report query below actually applies — see
+// permissions.ResolveLegalEntityFilter for the exact intersection rule.
+// sees=false means the result is "matches nothing" (a company-restricted
+// caller either has zero allowed companies, or asked for one outside
+// their grants) — the caller should return an empty result immediately
+// rather than querying.
+//
+// MUST be called before the report method's own RunScoped opens:
+// AllowedLegalEntities self-scopes its own transaction (same as
+// permissions.Checker.Require), and nesting it inside an already-open
+// RunScoped would open a second, independent connection/transaction
+// instead of participating in the outer one — see
+// purchases/app.Service.manageForBranch's identical note for the full
+// hazard this avoids.
+func (s *Service) resolvedFilter(ctx context.Context, principal permissions.Principal, f domain.Filter) (domain.Filter, bool, error) {
+	unrestricted, allowed, err := s.perms.AllowedLegalEntities(ctx, principal, "reports.view")
+	if err != nil {
+		return f, false, err
+	}
+	f.LegalEntityIDs = permissions.ResolveLegalEntityFilter(unrestricted, allowed, f.LegalEntityID)
+	return f, f.LegalEntityIDs == nil || len(f.LegalEntityIDs) > 0, nil
+}
+
 func (s *Service) SalesSummary(ctx context.Context, principal permissions.Principal, f domain.Filter, group domain.GroupDimension) ([]domain.SummaryRow, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
@@ -64,8 +96,12 @@ func (s *Service) SalesSummary(ctx context.Context, principal permissions.Princi
 	if !domain.ValidGroupDimension(group) {
 		return nil, ErrInvalidGroupDimension
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.SummaryRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.SalesSummary(ctx, scoped(principal, f), group)
 		return err
@@ -77,8 +113,12 @@ func (s *Service) SalesInvoiceDetail(ctx context.Context, principal permissions.
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.DocumentDetailRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.SalesInvoiceDetail(ctx, scoped(principal, f))
 		return err
@@ -90,8 +130,12 @@ func (s *Service) GrossProfit(ctx context.Context, principal permissions.Princip
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.GrossProfitRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.GrossProfit(ctx, scoped(principal, f))
 		return err
@@ -106,8 +150,12 @@ func (s *Service) PurchaseSummary(ctx context.Context, principal permissions.Pri
 	if !domain.ValidGroupDimension(group) {
 		return nil, ErrInvalidGroupDimension
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.SummaryRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.PurchaseSummary(ctx, scoped(principal, f), group)
 		return err
@@ -119,8 +167,12 @@ func (s *Service) PurchaseDetail(ctx context.Context, principal permissions.Prin
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.DocumentDetailRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.PurchaseDetail(ctx, scoped(principal, f))
 		return err
@@ -132,8 +184,12 @@ func (s *Service) StockValuation(ctx context.Context, principal permissions.Prin
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.StockValuationRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.StockValuation(ctx, scoped(principal, f))
 		return err
@@ -145,8 +201,12 @@ func (s *Service) LowStock(ctx context.Context, principal permissions.Principal,
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.LowStockRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.LowStock(ctx, scoped(principal, f))
 		return err
@@ -158,8 +218,12 @@ func (s *Service) StockMovements(ctx context.Context, principal permissions.Prin
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.StockMovementRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.StockMovements(ctx, scoped(principal, f))
 		return err
@@ -250,8 +314,12 @@ func (s *Service) AccountLedger(ctx context.Context, principal permissions.Princ
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.AccountLedgerRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.AccountLedger(ctx, principal.OrganisationID, accountID, scoped(principal, f))
 		return err
@@ -263,8 +331,12 @@ func (s *Service) HSNSummary(ctx context.Context, principal permissions.Principa
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.HSNSummaryRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.HSNSummary(ctx, scoped(principal, f))
 		return err
@@ -276,8 +348,12 @@ func (s *Service) TaxRateSummary(ctx context.Context, principal permissions.Prin
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.TaxRateSummaryRow
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.TaxRateSummary(ctx, scoped(principal, f))
 		return err
@@ -288,12 +364,19 @@ func (s *Service) TaxRateSummary(ctx context.Context, principal permissions.Prin
 // GSTR1 requires reports.export (not just reports.view) — this shapes
 // invoice-level GSTIN-bearing data intended for export/filing prep, a
 // more sensitive operation than viewing an aggregate on screen.
+// resolvedFilter still checks against reports.view (not .export) grants,
+// matching how every other report's filter is resolved — export is an
+// additional gate on TOP of view, not a separate scope dimension.
 func (s *Service) GSTR1(ctx context.Context, principal permissions.Principal, f domain.Filter) ([]domain.GSTR1Line, error) {
 	if err := s.export(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.GSTR1Line
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.GSTR1(ctx, scoped(principal, f))
 		return err
@@ -307,8 +390,12 @@ func (s *Service) GSTR3B(ctx context.Context, principal permissions.Principal, f
 	if err := s.export(ctx, principal); err != nil {
 		return nil, err
 	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
 	var out []domain.GSTR3BLine
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		out, err = s.repo.GSTR3B(ctx, scoped(principal, f))
 		return err
