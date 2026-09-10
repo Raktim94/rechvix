@@ -41,7 +41,7 @@ func (s *Service) BillingLookup(ctx context.Context, principal permissions.Princ
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 20 {
+	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
 

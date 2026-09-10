@@ -353,11 +353,16 @@ func (r *ProductRepo) SearchByName(ctx context.Context, orgID uuid.UUID, query s
 	// idx_products_name_trgm GIN index, migrations/0008_catalogue.up.sql —
 	// gin_trgm_ops supports LIKE/ILIKE, not just `%`), ORed in rather than
 	// replacing `%` so a fuzzy/misspelled query still ranks by similarity.
+	// An empty query matches every active product via ILIKE '%%' — the
+	// billing screen's "browse the whole catalogue" mode, not just typed
+	// search — where every row ties at similarity 0; `, name ASC` gives
+	// that browse list a stable, scannable alphabetical order instead of
+	// physical row order.
 	const q = `
 		SELECT id, organisation_id, category_id, brand_id, base_uom_id, name, COALESCE(description, ''), COALESCE(hsn_sac_code, ''), status, created_at, updated_at
 		FROM products
 		WHERE organisation_id = $1 AND status = 'ACTIVE' AND (name % $2 OR name ILIKE '%' || $2 || '%')
-		ORDER BY similarity(name, $2) DESC
+		ORDER BY similarity(name, $2) DESC, name ASC
 		LIMIT $3`
 	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, query, limit)
 	if err != nil {

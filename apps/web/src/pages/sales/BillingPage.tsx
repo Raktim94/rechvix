@@ -214,8 +214,13 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     return res.results ?? [];
   }
 
+  // No minimum query length: an empty productQuery still runs this (as
+  // "" against the backend, which browses the whole active catalogue —
+  // see SearchByName) so the panel below is a scrollable browse list from
+  // the moment a sale starts, not just a search box. A shop with a few
+  // hundred products can't rely on staff remembering exact names.
   useEffect(() => {
-    if (productQuery.trim().length < 2 || !documentId) {
+    if (!documentId) {
       setProductResults([]);
       return;
     }
@@ -557,7 +562,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 id="product-search"
                 ref={searchInputRef}
                 className={`${ui.input} ${styles.searchInput}`}
-                placeholder={documentId ? "Type a product name, or scan a barcode…" : "Pick a customer above to start billing…"}
+                placeholder={documentId ? "Type a product name, scan a barcode, or scroll below to browse…" : "Pick a customer above to start billing…"}
                 value={productQuery}
                 disabled={!documentId}
                 onChange={(e) => setProductQuery(e.target.value)}
@@ -578,24 +583,26 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                   <span className={styles.resultsHeaderNum}>Price</span>
                   <span />
                 </div>
-                {productResults.map((r) => {
-                  const stock = Number(r.QuantityAvailable || "0");
-                  return (
-                    <div key={r.ProductVariantID} className={styles.resultRow}>
-                      <div className={styles.resultName}>
-                        <strong>{r.ProductName}</strong>
-                        <span className={ui.muted}>SKU {r.SKUCode || "—"}</span>
+                <div className={styles.resultsBody}>
+                  {productResults.map((r) => {
+                    const stock = Number(r.QuantityAvailable || "0");
+                    return (
+                      <div key={r.ProductVariantID} className={styles.resultRow}>
+                        <div className={styles.resultName}>
+                          <strong>{r.ProductName}</strong>
+                          <span className={ui.muted}>SKU {r.SKUCode || "—"}</span>
+                        </div>
+                        <span className={ui.badge} data-tone={stock <= 0 ? "negative" : stock < 5 ? "warning" : "neutral"}>
+                          {r.QuantityAvailable || "0"}
+                        </span>
+                        <span className={styles.resultPrice}>{r.UnitPrice ? formatMoney(r.UnitPrice) : "—"}</span>
+                        <button type="button" className={ui.btnPrimary} disabled={addLine.isPending} onClick={() => handleAddProduct(r)}>
+                          Add
+                        </button>
                       </div>
-                      <span className={ui.badge} data-tone={stock <= 0 ? "negative" : stock < 5 ? "warning" : "neutral"}>
-                        {r.QuantityAvailable || "0"}
-                      </span>
-                      <span className={styles.resultPrice}>{r.UnitPrice ? formatMoney(r.UnitPrice) : "—"}</span>
-                      <button type="button" className={ui.btnPrimary} disabled={addLine.isPending} onClick={() => handleAddProduct(r)}>
-                        Add
-                      </button>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             ) : null}
           </div>

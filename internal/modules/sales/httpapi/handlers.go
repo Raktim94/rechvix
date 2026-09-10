@@ -477,7 +477,11 @@ func (h *Handlers) billingLookup(w http.ResponseWriter, r *http.Request) {
 		}
 		priceListID = &id
 	}
-	results, err := h.svc.BillingLookup(r.Context(), principal(r), q, warehouseID, priceListID, 10)
+	// 30, not 10: an empty q browses the whole active catalogue (ILIKE
+	// '%%' matches everything, see SearchByName) rather than only ever
+	// searching — a shop with a few hundred products needs more than 10
+	// rows to actually be "browsable" in the scrollable results panel.
+	results, err := h.svc.BillingLookup(r.Context(), principal(r), q, warehouseID, priceListID, 30)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

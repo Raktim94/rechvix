@@ -119,6 +119,16 @@
   overflow: hidden;
 }
 
+/* Up to 30 rows (an empty query browses the whole catalogue, not just a
+   handful of search matches) needs a bounded, scrollable window here —
+   otherwise a shop with a few hundred products turns this panel into a
+   page-length list. ~6 rows tall before it scrolls; the header stays
+   fixed via its own <div> outside this scroll container below. */
+.resultsBody {
+  max-height: 336px;
+  overflow-y: auto;
+}
+
 .resultsHeader,
 .resultRow {
   display: grid;
