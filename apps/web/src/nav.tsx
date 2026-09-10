@@ -9,7 +9,6 @@ import {
   GstIcon,
   IntegrationsIcon,
   InventoryIcon,
-  PricingIcon,
   PurchasesIcon,
   ReportsIcon,
   SalesIcon,
@@ -50,7 +49,6 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/inventory", label: "Inventory", icon: <InventoryIcon /> },
       { to: "/catalogue", label: "Catalogue", icon: <CatalogueIcon /> },
-      { to: "/pricing", label: "Pricing", icon: <PricingIcon /> },
     ],
   },
   {

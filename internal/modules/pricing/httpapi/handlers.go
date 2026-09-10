@@ -23,6 +23,7 @@ func NewHandlers(svc *app.Service) *Handlers { return &Handlers{svc: svc} }
 func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/pricing/price-lists", h.listPriceLists)
 	r.Post("/pricing/price-lists", h.createPriceList)
+	r.Post("/pricing/price-lists/ensure-default", h.ensureDefaultPriceList)
 	r.Get("/pricing/price-lists/{id}", h.getPriceList)
 	r.Get("/pricing/price-lists/{id}/items", h.listPrices)
 	r.Post("/pricing/price-lists/{id}/items", h.setPrice)
@@ -83,6 +84,34 @@ func (h *Handlers) createPriceList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, pl)
+}
+
+type ensureDefaultPriceListRequest struct {
+	CurrencyCode string `json:"currency_code"`
+}
+
+// ensureDefaultPriceList is the frontend-facing counterpart to
+// catalogue's price-hook (apps/server/main.go) — same
+// EnsureDefaultPriceList call, just reachable from the product form
+// directly instead of only via CSV import, so "type a price when
+// creating/editing a product" works with zero prior Pricing-page setup
+// on a fresh install.
+func (h *Handlers) ensureDefaultPriceList(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[ensureDefaultPriceListRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	if req.CurrencyCode == "" {
+		httpx.WriteError(w, r, httpx.NewBadRequest("CURRENCY_CODE_REQUIRED", "currency_code is required."))
+		return
+	}
+	pl, err := h.svc.EnsureDefaultPriceList(r.Context(), principal(r), req.CurrencyCode)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, pl)
 }
 
 func (h *Handlers) getPriceList(w http.ResponseWriter, r *http.Request) {

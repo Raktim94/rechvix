@@ -310,27 +310,33 @@ func run() error {
 	// catalogue.Service.ImportProducts' optional price/gst_rate CSV
 	// columns — see SetPriceHookFunc/SetTaxRateHookFunc's own doc
 	// comment on why these are wired here rather than catalogue
-	// importing pricing/gstindia directly.
+	// importing pricing/gstindia directly. Auto-creates the org's one
+	// price list on first use (EnsureDefaultPriceList) rather than
+	// erroring when none exists yet — a fresh organisation used to need
+	// a separate, undiscoverable trip to the Pricing page before a CSV
+	// price column (or the New Product form's own Price field) would
+	// ever actually take effect; every row still committed either way,
+	// just silently priceless, which read as "the import is broken."
 	catalogueSvc.WithPriceHook(func(ctx context.Context, principal permissions.Principal, variantID, unitID uuid.UUID, amount decimal.Decimal) error {
-		priceLists, err := pricingSvc.ListPriceLists(ctx, principal)
+		org, err := orgSvc.GetOrganisation(ctx, principal)
 		if err != nil {
 			return err
 		}
-		if len(priceLists) == 0 {
-			return fmt.Errorf("no price list exists yet — create one on the Pricing page first")
-		}
-		target := priceLists[0]
-		for _, pl := range priceLists {
-			if pl.IsDefault {
-				target = pl
-				break
-			}
+		target, err := pricingSvc.EnsureDefaultPriceList(ctx, principal, org.DefaultCurrencyCode)
+		if err != nil {
+			return err
 		}
 		_, err = pricingSvc.SetPrice(ctx, principal, pricingapp.SetPriceParams{
 			PriceListID: target.ID, ProductVariantID: variantID, UnitID: unitID,
 			Price: money.MustNew(amount, target.CurrencyCode),
 		})
 		return err
+	})
+	// catalogue.Service.DeleteProductsIfUnused's cleanup step for a
+	// hard-deleted product's price entries — see DeletePriceHookFunc's
+	// own doc comment.
+	catalogueSvc.WithDeletePriceHook(func(ctx context.Context, principal permissions.Principal, variantID uuid.UUID) error {
+		return pricingSvc.DeletePricesForVariant(ctx, principal, variantID)
 	})
 	catalogueSvc.WithTaxRateHook(func(ctx context.Context, principal permissions.Principal, hsnSacCode string, gstRate decimal.Decimal) error {
 		if hsnSacCode == "" {

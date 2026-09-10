@@ -17,7 +17,6 @@ const QUICK_ACTIONS = [
   { to: "/sales/new", label: "New sale", icon: <SalesIcon /> },
   { to: "/purchases", label: "New purchase", icon: <PurchasesIcon /> },
   { to: "/contacts", label: "New contact", icon: <ContactsIcon /> },
-  { to: "/pricing", label: "Set a price", icon: <PricingIcon /> },
   { to: "/settings", label: "Open settings", icon: <SettingsIcon /> },
 ] as const;
 

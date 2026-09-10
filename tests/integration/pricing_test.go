@@ -51,6 +51,23 @@ func seedVariant(t *testing.T, ctx context.Context, principal permissions.Princi
 	return unit.ID, variant.ID
 }
 
+// seedSecondVariant creates a second product+variant in the same tenant
+// against an already-existing unit — for tests needing two distinct
+// variants without seedVariant's fixed "PCS" unit code colliding.
+func seedSecondVariant(t *testing.T, ctx context.Context, principal permissions.Principal, unitID uuid.UUID) (variantID uuid.UUID) {
+	t.Helper()
+	catSvc := newTestCatalogueService(t)
+	product, err := catSvc.CreateProduct(ctx, principal, catalogueapp.CreateProductParams{BaseUOMID: unitID, Name: "Second Priced Widget"})
+	if err != nil {
+		t.Fatalf("seedSecondVariant: CreateProduct: %v", err)
+	}
+	variant, err := catSvc.CreateVariant(ctx, principal, catalogueapp.CreateVariantParams{ProductID: product.ID, SKUCode: "PRICED2-" + uuid.NewString()[:8]})
+	if err != nil {
+		t.Fatalf("seedSecondVariant: CreateVariant: %v", err)
+	}
+	return variant.ID
+}
+
 func TestPricing_PriceList_SetAndResolve(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestPricingService(t)
@@ -138,5 +155,124 @@ func TestPricing_RLS_BlocksCrossOrganisationPriceListRead(t *testing.T) {
 	}
 	if _, err := svc.GetPriceList(ctx, principalA, priceList.ID); err != nil {
 		t.Fatalf("GetPriceList as A for its own price list: %v", err)
+	}
+}
+
+// TestPricing_EnsureDefaultPriceList_CreatesOnceThenIdempotent covers the
+// auto-provisioning fix for "price not displaying" — a fresh organisation
+// has no price list until something needs one (CSV import, the New
+// Product form's Price field). The first call must create exactly one
+// "Default" list; every later call must return that same list, never a
+// second one.
+func TestPricing_EnsureDefaultPriceList_CreatesOnceThenIdempotent(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestPricingService(t)
+	principal := bootstrapOwnerPrincipal(t, ctx)
+
+	first, err := svc.EnsureDefaultPriceList(ctx, principal, "INR")
+	if err != nil {
+		t.Fatalf("EnsureDefaultPriceList (first call): %v", err)
+	}
+	if first.Name != "Default" || !first.IsDefault {
+		t.Fatalf("first call created %+v, want Name=Default IsDefault=true", first)
+	}
+
+	second, err := svc.EnsureDefaultPriceList(ctx, principal, "INR")
+	if err != nil {
+		t.Fatalf("EnsureDefaultPriceList (second call): %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("second call returned a different price list (%s), want the same one (%s) — must not create a duplicate", second.ID, first.ID)
+	}
+
+	lists, err := svc.ListPriceLists(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListPriceLists: %v", err)
+	}
+	if len(lists) != 1 {
+		t.Fatalf("expected exactly one price list after two EnsureDefaultPriceList calls, got %d", len(lists))
+	}
+}
+
+// TestPricing_EnsureDefaultPriceList_RespectsExistingDefault covers an
+// organisation that already created its own price list(s) directly via
+// CreatePriceList (pre-dating this method, or a deliberate multi-list
+// setup) — EnsureDefaultPriceList must never create a second list once
+// any exist, and must prefer the one marked IsDefault over just the first.
+func TestPricing_EnsureDefaultPriceList_RespectsExistingDefault(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestPricingService(t)
+	principal := bootstrapOwnerPrincipal(t, ctx)
+
+	if _, err := svc.CreatePriceList(ctx, principal, pricingapp.CreatePriceListParams{Name: "Wholesale", CurrencyCode: "INR"}); err != nil {
+		t.Fatalf("CreatePriceList(Wholesale): %v", err)
+	}
+	retail, err := svc.CreatePriceList(ctx, principal, pricingapp.CreatePriceListParams{Name: "Retail", CurrencyCode: "INR", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreatePriceList(Retail, IsDefault): %v", err)
+	}
+
+	result, err := svc.EnsureDefaultPriceList(ctx, principal, "INR")
+	if err != nil {
+		t.Fatalf("EnsureDefaultPriceList: %v", err)
+	}
+	if result.ID != retail.ID {
+		t.Fatalf("EnsureDefaultPriceList returned %s (%s), want the IsDefault list %s (Retail)", result.ID, result.Name, retail.ID)
+	}
+
+	lists, err := svc.ListPriceLists(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListPriceLists: %v", err)
+	}
+	if len(lists) != 2 {
+		t.Fatalf("expected the pre-existing two lists to remain untouched, got %d", len(lists))
+	}
+}
+
+// TestPricing_DeletePricesForVariant covers catalogue's DeletePriceHookFunc
+// counterpart directly (see catalogue_test.go's
+// TestCatalogue_DeleteProductsIfUnused_HardDeletesWhenNoHistory for the
+// end-to-end hook-wired version) — every price entry for a variant, across
+// every price list, is removed, and other variants' prices are untouched.
+func TestPricing_DeletePricesForVariant(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestPricingService(t)
+	principal := bootstrapOwnerPrincipal(t, ctx)
+	unitID, variantID := seedVariant(t, ctx, principal)
+	otherVariantID := seedSecondVariant(t, ctx, principal, unitID)
+
+	listA, err := svc.CreatePriceList(ctx, principal, pricingapp.CreatePriceListParams{Name: "List A", CurrencyCode: "INR"})
+	if err != nil {
+		t.Fatalf("CreatePriceList(List A): %v", err)
+	}
+	listB, err := svc.CreatePriceList(ctx, principal, pricingapp.CreatePriceListParams{Name: "List B", CurrencyCode: "INR"})
+	if err != nil {
+		t.Fatalf("CreatePriceList(List B): %v", err)
+	}
+	price, err := money.Parse("50.00", "INR")
+	if err != nil {
+		t.Fatalf("money.Parse: %v", err)
+	}
+	for _, pl := range []uuid.UUID{listA.ID, listB.ID} {
+		if _, err := svc.SetPrice(ctx, principal, pricingapp.SetPriceParams{PriceListID: pl, ProductVariantID: variantID, UnitID: unitID, Price: price}); err != nil {
+			t.Fatalf("SetPrice(variantID, list %s): %v", pl, err)
+		}
+	}
+	if _, err := svc.SetPrice(ctx, principal, pricingapp.SetPriceParams{PriceListID: listA.ID, ProductVariantID: otherVariantID, UnitID: unitID, Price: price}); err != nil {
+		t.Fatalf("SetPrice(otherVariantID): %v", err)
+	}
+
+	if err := svc.DeletePricesForVariant(ctx, principal, variantID); err != nil {
+		t.Fatalf("DeletePricesForVariant: %v", err)
+	}
+
+	if _, err := svc.ResolvePrice(ctx, principal, listA.ID, variantID, unitID); !errors.Is(err, pricingdomain.ErrNotFound) {
+		t.Fatalf("ResolvePrice(listA, variantID) after delete: got err=%v, want ErrNotFound", err)
+	}
+	if _, err := svc.ResolvePrice(ctx, principal, listB.ID, variantID, unitID); !errors.Is(err, pricingdomain.ErrNotFound) {
+		t.Fatalf("ResolvePrice(listB, variantID) after delete: got err=%v, want ErrNotFound", err)
+	}
+	if _, err := svc.ResolvePrice(ctx, principal, listA.ID, otherVariantID, unitID); err != nil {
+		t.Fatalf("ResolvePrice(listA, otherVariantID) after deleting a different variant's prices: %v (should be untouched)", err)
 	}
 }

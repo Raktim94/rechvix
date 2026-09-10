@@ -12,7 +12,11 @@ import (
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	cataloguedomain "rechvix/internal/modules/catalogue/domain"
 	cataloguepg "rechvix/internal/modules/catalogue/pg"
+	inventoryapp "rechvix/internal/modules/inventory/app"
+	pricingapp "rechvix/internal/modules/pricing/app"
+	pricingdomain "rechvix/internal/modules/pricing/domain"
 	"rechvix/internal/platform/audit"
+	"rechvix/internal/platform/money"
 	"rechvix/internal/platform/permissions"
 )
 
@@ -164,5 +168,123 @@ func TestCatalogue_RLS_BlocksCrossOrganisationProductRead(t *testing.T) {
 	// above is RLS, not a bug that blocks everyone).
 	if _, err := svc.GetProduct(ctx, principalA, product.ID); err != nil {
 		t.Fatalf("GetProduct as A for its own product: %v", err)
+	}
+}
+
+// TestCatalogue_DeleteProductsIfUnused_HardDeletesWhenNoHistory covers the
+// "delete button should actually remove the product" fix — a product with
+// zero transaction history is hard-deleted (row gone, not just flipped to
+// INACTIVE), and its price/barcode data is cleaned up alongside it via
+// DeletePriceHookFunc, matching production's apps/server/main.go wiring.
+func TestCatalogue_DeleteProductsIfUnused_HardDeletesWhenNoHistory(t *testing.T) {
+	ctx := context.Background()
+	pricingSvc := newTestPricingService(t)
+	svc := newTestCatalogueService(t).WithDeletePriceHook(func(ctx context.Context, principal permissions.Principal, variantID uuid.UUID) error {
+		return pricingSvc.DeletePricesForVariant(ctx, principal, variantID)
+	})
+	principal := bootstrapOwnerPrincipal(t, ctx)
+
+	pcs, err := svc.CreateUnitOfMeasure(ctx, principal, catalogueapp.CreateUnitOfMeasureParams{Code: "PCS", Name: "Pieces"})
+	if err != nil {
+		t.Fatalf("CreateUnitOfMeasure: %v", err)
+	}
+	product, err := svc.CreateProduct(ctx, principal, catalogueapp.CreateProductParams{BaseUOMID: pcs.ID, Name: "Unused Widget"})
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	variant, err := svc.CreateVariant(ctx, principal, catalogueapp.CreateVariantParams{ProductID: product.ID, SKUCode: "UNUSED-" + uuid.NewString()[:8]})
+	if err != nil {
+		t.Fatalf("CreateVariant: %v", err)
+	}
+	barcode, err := svc.AddBarcode(ctx, principal, catalogueapp.AddBarcodeParams{VariantID: variant.ID, UnitID: pcs.ID, Barcode: "890" + uuid.NewString()[:10]})
+	if err != nil {
+		t.Fatalf("AddBarcode: %v", err)
+	}
+
+	priceList, err := pricingSvc.EnsureDefaultPriceList(ctx, principal, "INR")
+	if err != nil {
+		t.Fatalf("EnsureDefaultPriceList: %v", err)
+	}
+	price, err := money.Parse("99.00", "INR")
+	if err != nil {
+		t.Fatalf("money.Parse: %v", err)
+	}
+	if _, err := pricingSvc.SetPrice(ctx, principal, pricingapp.SetPriceParams{PriceListID: priceList.ID, ProductVariantID: variant.ID, UnitID: pcs.ID, Price: price}); err != nil {
+		t.Fatalf("SetPrice: %v", err)
+	}
+
+	outcome, err := svc.DeleteProductsIfUnused(ctx, principal, []uuid.UUID{product.ID})
+	if err != nil {
+		t.Fatalf("DeleteProductsIfUnused: %v", err)
+	}
+	if len(outcome.HardDeleted) != 1 || outcome.HardDeleted[0] != product.ID {
+		t.Fatalf("HardDeleted = %v, want [%s]", outcome.HardDeleted, product.ID)
+	}
+	if len(outcome.Deactivated) != 0 {
+		t.Fatalf("Deactivated = %v, want none", outcome.Deactivated)
+	}
+
+	if _, err := svc.GetProduct(ctx, principal, product.ID); !errors.Is(err, cataloguedomain.ErrNotFound) {
+		t.Fatalf("GetProduct after hard delete: got err=%v, want ErrNotFound", err)
+	}
+	if _, err := svc.LookupBarcode(ctx, principal, barcode.Barcode); !errors.Is(err, cataloguedomain.ErrNotFound) {
+		t.Fatalf("LookupBarcode after hard delete: got err=%v, want ErrNotFound", err)
+	}
+	if _, err := pricingSvc.ResolvePrice(ctx, principal, priceList.ID, variant.ID, pcs.ID); !errors.Is(err, pricingdomain.ErrNotFound) {
+		t.Fatalf("ResolvePrice after hard delete: got err=%v, want ErrNotFound (deletePriceHook should have cleaned it up)", err)
+	}
+}
+
+// TestCatalogue_DeleteProductsIfUnused_DeactivatesWhenHasHistory covers the
+// safety fallback: a product with real transaction history (here, an
+// opening-stock movement) must never be hard-deleted — it falls back to
+// today's deactivate (soft-delete) behavior instead, keeping past
+// stock/sales/purchase records intact and referencable.
+func TestCatalogue_DeleteProductsIfUnused_DeactivatesWhenHasHistory(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestCatalogueService(t)
+	invSvc := newTestInventoryService(t)
+	identitySvc, _ := newTestIdentityService(t)
+	email := "catalogue-hist-" + uuid.NewString()[:8] + "@example.com"
+	boot := bootstrapTestTenant(t, ctx, identitySvc, email, "correct horse battery staple 42")
+	principal := permissions.Principal{UserID: boot.OwnerUserID, OrganisationID: boot.OrganisationID}
+
+	pcs, err := svc.CreateUnitOfMeasure(ctx, principal, catalogueapp.CreateUnitOfMeasureParams{Code: "PCS", Name: "Pieces"})
+	if err != nil {
+		t.Fatalf("CreateUnitOfMeasure: %v", err)
+	}
+	product, err := svc.CreateProduct(ctx, principal, catalogueapp.CreateProductParams{BaseUOMID: pcs.ID, Name: "Sold Widget"})
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	variant, err := svc.CreateVariant(ctx, principal, catalogueapp.CreateVariantParams{ProductID: product.ID, SKUCode: "SOLD-" + uuid.NewString()[:8]})
+	if err != nil {
+		t.Fatalf("CreateVariant: %v", err)
+	}
+
+	if _, err := invSvc.RecordOpeningStock(ctx, principal, inventoryapp.RecordMovementParams{
+		WarehouseID: boot.WarehouseID, ProductVariantID: variant.ID, UnitID: pcs.ID,
+		Quantity: mustDecimal(t, "10"), UnitCost: decimalPtr(mustDecimal(t, "5")),
+	}); err != nil {
+		t.Fatalf("RecordOpeningStock: %v", err)
+	}
+
+	outcome, err := svc.DeleteProductsIfUnused(ctx, principal, []uuid.UUID{product.ID})
+	if err != nil {
+		t.Fatalf("DeleteProductsIfUnused: %v", err)
+	}
+	if len(outcome.Deactivated) != 1 || outcome.Deactivated[0] != product.ID {
+		t.Fatalf("Deactivated = %v, want [%s]", outcome.Deactivated, product.ID)
+	}
+	if len(outcome.HardDeleted) != 0 {
+		t.Fatalf("HardDeleted = %v, want none", outcome.HardDeleted)
+	}
+
+	got, err := svc.GetProduct(ctx, principal, product.ID)
+	if err != nil {
+		t.Fatalf("GetProduct after deactivate: %v", err)
+	}
+	if got.Status != cataloguedomain.StatusInactive {
+		t.Fatalf("Status = %s, want INACTIVE", got.Status)
 	}
 }

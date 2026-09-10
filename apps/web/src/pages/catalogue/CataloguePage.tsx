@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
+import { formatMoney } from "../../lib/money";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 import { ImportAiMarkdownButton } from "../purchases/ImportAiMarkdownButton";
@@ -16,6 +17,11 @@ interface Product {
   CategoryID: string | null;
   BrandID: string | null;
   Status: "ACTIVE" | "INACTIVE";
+  // Added by catalogue/httpapi's productListDTO — the product's first
+  // variant, i.e. the one this page's single "Price" field reads/writes
+  // (see priceByVariantId below). Absent only if a product somehow has
+  // zero variants, which this form never itself creates.
+  DefaultVariantID?: string;
 }
 interface Unit {
   ID: string;
@@ -29,6 +35,15 @@ interface Category {
 interface Brand {
   ID: string;
   Name: string;
+}
+interface PriceListItem {
+  ProductVariantID: string;
+  UnitID: string;
+  Price: { amount: string; currency: string };
+}
+interface BulkDeleteResult {
+  hard_deleted: string[];
+  deactivated: string[];
 }
 
 export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }) {
@@ -46,15 +61,30 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   // are hidden, since PUT /catalogue/products/{id} only covers the
   // fields a product itself has (name/HSN/unit/category/brand).
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The product being edited's first variant — captured at startEdit so
+  // the Price field's save can target the right variant without a
+  // separate lookup. See DefaultVariantID's own comment above.
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
+  const [confirmingBulkRestore, setConfirmingBulkRestore] = useState(false);
+  // Transient summary shown after a delete completes — the backend now
+  // reports which ids were actually removed vs. which still have
+  // sales/purchase history and were deactivated instead (see
+  // catalogue.app.Service.DeleteProductsIfUnused), which the old plain
+  // "204 No Content" response gave no way to surface.
+  const [lastDeleteResult, setLastDeleteResult] = useState<BulkDeleteResult | null>(null);
   const [name, setName] = useState("");
   const [hsn, setHsn] = useState("");
   const [unitId, setUnitId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [brandId, setBrandId] = useState("");
   const [gstRate, setGstRate] = useState("");
+  // There's only ever one price per product now (the Pricing page and
+  // its per-list prices are gone) — this sets it directly on the org's
+  // one price list, auto-created on first use via ensure-default below.
+  const [price, setPrice] = useState("");
   const [skuCode, setSkuCode] = useState("");
   const [newUnitCode, setNewUnitCode] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
@@ -87,6 +117,34 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   });
   const categoryNameById = new Map(categories.data?.map((c) => [c.ID, c.Name]));
   const brandNameById = new Map(brands.data?.map((b) => [b.ID, b.Name]));
+
+  // ensure-default is idempotent — creates the org's "Default" price
+  // list on first call (fixing "price not displaying" on a fresh
+  // install, see pricing.app.Service.EnsureDefaultPriceList's own doc
+  // comment) and just returns it every call after, so it's safe to fire
+  // on every page load with no separate setup step.
+  const defaultPriceList = useQuery({
+    queryKey: ["default-price-list", org.organisation?.DefaultCurrencyCode],
+    queryFn: () => api.post<{ ID: string }>("/pricing/price-lists/ensure-default", { currency_code: org.organisation?.DefaultCurrencyCode || "INR" }),
+    enabled: !!org.organisation,
+  });
+  const priceItems = useQuery({
+    queryKey: ["price-items", defaultPriceList.data?.ID],
+    queryFn: () => api.getListField<PriceListItem>(`/pricing/price-lists/${defaultPriceList.data?.ID}/items`, "items"),
+    enabled: !!defaultPriceList.data?.ID,
+  });
+  const priceByVariantId = new Map(priceItems.data?.map((item) => [item.ProductVariantID, item]));
+
+  async function ensureAndSetPrice(variantId: string, unitIdForPrice: string, amount: string) {
+    const currencyCode = org.organisation?.DefaultCurrencyCode || "INR";
+    const priceList = await api.post<{ ID: string }>("/pricing/price-lists/ensure-default", { currency_code: currencyCode });
+    await api.post(`/pricing/price-lists/${priceList.ID}/items`, {
+      product_variant_id: variantId,
+      unit_id: unitIdForPrice,
+      amount,
+      currency_code: currencyCode,
+    });
+  }
 
   const createUnit = useMutation({
     mutationFn: () => api.post<Unit>("/catalogue/units", { code: newUnitCode, name: newUnitName }),
@@ -154,6 +212,12 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           unit_cost: openingCost || "0",
         });
       }
+      // Set right here so the product is ready to sell the moment it's
+      // saved, instead of only ever getting a price via CSV import or a
+      // (now-removed) separate Pricing page visit.
+      if (price.trim()) {
+        await ensureAndSetPrice(variant.ID, unitId, price.trim());
+      }
       // Optional: set this HSN code's GST rate right here instead of
       // sending the user to a separate GST page just to make a freshly
       // added product actually billable at the right tax rate.
@@ -171,12 +235,14 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["products"] });
+      void queryClient.invalidateQueries({ queryKey: ["price-items"] });
       setName("");
       setHsn("");
       setSkuCode("");
       setCategoryId("");
       setBrandId("");
       setGstRate("");
+      setPrice("");
       setOpeningQty("");
       setOpeningCost("");
       setBarcode("");
@@ -185,17 +251,23 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   });
 
   const updateProduct = useMutation({
-    mutationFn: () =>
-      api.put<Product>(`/catalogue/products/${editingId}`, {
+    mutationFn: async () => {
+      const updated = await api.put<Product>(`/catalogue/products/${editingId}`, {
         category_id: categoryId || null,
         brand_id: brandId || null,
         base_uom_id: unitId,
         name,
         description: "",
         hsn_sac_code: hsn,
-      }),
+      });
+      if (price.trim() && editingVariantId) {
+        await ensureAndSetPrice(editingVariantId, unitId, price.trim());
+      }
+      return updated;
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["products"] });
+      void queryClient.invalidateQueries({ queryKey: ["price-items"] });
       closeForm();
     },
   });
@@ -203,12 +275,14 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   function closeForm() {
     setShowForm(false);
     setEditingId(null);
+    setEditingVariantId(null);
     setName("");
     setHsn("");
     setSkuCode("");
     setCategoryId("");
     setBrandId("");
     setGstRate("");
+    setPrice("");
     setOpeningQty("");
     setOpeningCost("");
     setBarcode("");
@@ -216,33 +290,42 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
 
   function startEdit(p: Product) {
     setEditingId(p.ID);
+    setEditingVariantId(p.DefaultVariantID ?? null);
     setName(p.Name);
     setHsn(p.HSNSACCode);
     setUnitId(p.BaseUOMID);
     setCategoryId(p.CategoryID ?? "");
     setBrandId(p.BrandID ?? "");
+    setPrice(p.DefaultVariantID ? (priceByVariantId.get(p.DefaultVariantID)?.Price.amount ?? "") : "");
     setShowForm(true);
   }
 
-  // Products are never hard-deleted — "Delete" flips Status to INACTIVE
-  // (see catalogue.domain.ProductRepository.SetStatus's doc comment) so
-  // historical sales/purchase lines and stock movements keep resolving.
-  // "Restore" flips it back.
-  const setStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "ACTIVE" | "INACTIVE" }) =>
-      status === "INACTIVE" ? api.delete(`/catalogue/products/${id}`) : api.post(`/catalogue/products/${id}/restore`, {}),
-    onSuccess: () => {
+  // "Delete" removes the product completely when it's never been used in
+  // a sale/purchase/stock movement; a product with real history falls
+  // back to deactivating it instead (kept out of search/billing, but its
+  // past records still resolve) — see
+  // catalogue.app.Service.DeleteProductsIfUnused's own doc comment. The
+  // single-row button below shares this same endpoint with the bulk
+  // action rather than the old always-soft-delete one, so "Delete" means
+  // the same thing everywhere on this page.
+  const deleteProducts = useMutation({
+    mutationFn: (ids: string[]) => api.post<BulkDeleteResult>("/catalogue/products/bulk-delete", { ids }),
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["products"] });
+      void queryClient.invalidateQueries({ queryKey: ["price-items"] });
+      setSelectedIds(new Set());
+      setConfirmingBulkDelete(false);
       setConfirmingDeleteId(null);
+      setLastDeleteResult(result);
     },
   });
 
-  const bulkDelete = useMutation({
-    mutationFn: (ids: string[]) => api.post("/catalogue/products/bulk-delete", { ids }),
+  const restoreProducts = useMutation({
+    mutationFn: (ids: string[]) => api.post("/catalogue/products/bulk-restore", { ids }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["products"] });
       setSelectedIds(new Set());
-      setConfirmingBulkDelete(false);
+      setConfirmingBulkRestore(false);
     },
   });
 
@@ -269,12 +352,14 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
             if (showForm && !editingId) closeForm();
             else {
               setEditingId(null);
+              setEditingVariantId(null);
               setName("");
               setHsn("");
               setSkuCode("");
               setCategoryId("");
               setBrandId("");
               setGstRate("");
+              setPrice("");
               setOpeningQty("");
               setOpeningCost("");
               setBarcode("");
@@ -340,6 +425,20 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
             <div className={ui.field}>
               <label htmlFor="product-gst">GST rate for this HSN (%, optional)</label>
               <input id="product-gst" className={ui.input} value={gstRate} onChange={(e) => setGstRate(e.target.value)} placeholder="e.g. 18" />
+            </div>
+            <div className={ui.field}>
+              <label htmlFor="product-price">Price (optional)</label>
+              <input
+                id="product-price"
+                className={ui.input}
+                inputMode="decimal"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="What does this sell for?"
+              />
+              <span className={ui.muted} style={{ display: "block", marginTop: 4 }}>
+                Leave blank to set it later — a product with no price can't be sold yet.
+              </span>
             </div>
             <div className={ui.field}>
               <label htmlFor="product-unit">Unit</label>
@@ -563,32 +662,63 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           <p className={layout.emptyState}>No products yet — add your first one above.</p>
         ) : (
           <>
+            {lastDeleteResult ? (
+              <p className={ui.muted} style={{ marginBottom: 8 }} role="status">
+                {lastDeleteResult.hard_deleted.length > 0 ? `Removed ${lastDeleteResult.hard_deleted.length} product(s) completely. ` : ""}
+                {lastDeleteResult.deactivated.length > 0
+                  ? `${lastDeleteResult.deactivated.length} product(s) have sales/purchase history, so they were deactivated instead of deleted.`
+                  : ""}
+                <button type="button" className={ui.btnGhost} style={{ marginLeft: 8 }} onClick={() => setLastDeleteResult(null)}>
+                  Dismiss
+                </button>
+              </p>
+            ) : null}
             {selectedIds.size > 0 ? (
               <div className={ui.toolbar} style={{ marginBottom: 8, gap: 8 }}>
                 <span className={ui.muted}>{selectedIds.size} selected</span>
                 {confirmingBulkDelete ? (
                   <>
                     <span>Delete {selectedIds.size} product(s)?</span>
-                    <button type="button" className={ui.btnDanger} disabled={bulkDelete.isPending} onClick={() => bulkDelete.mutate([...selectedIds])}>
-                      {bulkDelete.isPending ? "Deleting…" : "Confirm delete"}
+                    <button type="button" className={ui.btnDanger} disabled={deleteProducts.isPending} onClick={() => deleteProducts.mutate([...selectedIds])}>
+                      {deleteProducts.isPending ? "Deleting…" : "Confirm delete"}
                     </button>
                     <button type="button" className={ui.btnGhost} onClick={() => setConfirmingBulkDelete(false)}>
                       Cancel
                     </button>
                   </>
+                ) : confirmingBulkRestore ? (
+                  <>
+                    <span>Restore {selectedIds.size} product(s)?</span>
+                    <button type="button" className={ui.btnPrimary} disabled={restoreProducts.isPending} onClick={() => restoreProducts.mutate([...selectedIds])}>
+                      {restoreProducts.isPending ? "Restoring…" : "Confirm restore"}
+                    </button>
+                    <button type="button" className={ui.btnGhost} onClick={() => setConfirmingBulkRestore(false)}>
+                      Cancel
+                    </button>
+                  </>
                 ) : (
-                  <button type="button" className={ui.btnSecondary} onClick={() => setConfirmingBulkDelete(true)}>
-                    Delete {selectedIds.size} product(s)
-                  </button>
+                  <>
+                    <button type="button" className={ui.btnSecondary} onClick={() => setConfirmingBulkRestore(true)}>
+                      Active {selectedIds.size} product(s)
+                    </button>
+                    <button type="button" className={ui.btnSecondary} onClick={() => setConfirmingBulkDelete(true)}>
+                      Delete {selectedIds.size} product(s)
+                    </button>
+                  </>
                 )}
                 <button type="button" className={ui.btnGhost} onClick={() => setSelectedIds(new Set())}>
                   Clear selection
                 </button>
               </div>
             ) : null}
-            {bulkDelete.isError ? (
+            {deleteProducts.isError ? (
               <p role="alert" style={{ color: "var(--color-negative)", marginBottom: 8 }}>
-                {bulkDelete.error instanceof ApiError ? bulkDelete.error.message : "Could not delete these products."}
+                {deleteProducts.error instanceof ApiError ? deleteProducts.error.message : "Could not delete these products."}
+              </p>
+            ) : null}
+            {restoreProducts.isError ? (
+              <p role="alert" style={{ color: "var(--color-negative)", marginBottom: 8 }}>
+                {restoreProducts.error instanceof ApiError ? restoreProducts.error.message : "Could not restore these products."}
               </p>
             ) : null}
             <div className={ui.tableScroll}>
@@ -605,6 +735,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                     </th>
                     <th scope="col">Name</th>
                     <th scope="col">HSN/SAC</th>
+                    <th scope="col">Price</th>
                     <th scope="col">Category</th>
                     <th scope="col">Brand</th>
                     <th scope="col">Status</th>
@@ -612,54 +743,53 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                   </tr>
                 </thead>
                 <tbody>
-                  {products.data.map((p) => (
-                    <tr key={p.ID} style={p.Status === "INACTIVE" ? { opacity: 0.6 } : undefined}>
-                      <td>
-                        <input type="checkbox" aria-label={`Select ${p.Name}`} checked={selectedIds.has(p.ID)} onChange={() => toggleSelected(p.ID)} />
-                      </td>
-                      <td>{p.Name}</td>
-                      <td>{p.HSNSACCode}</td>
-                      <td>{p.CategoryID ? (categoryNameById.get(p.CategoryID) ?? "—") : "—"}</td>
-                      <td>{p.BrandID ? (brandNameById.get(p.BrandID) ?? "—") : "—"}</td>
-                      <td>
-                        <span className={ui.badge} data-tone={p.Status === "ACTIVE" ? "positive" : "neutral"}>
-                          {p.Status}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <button type="button" className={ui.btnGhost} onClick={() => startEdit(p)}>
-                            Edit
-                          </button>
-                          {p.Status === "ACTIVE" ? (
-                            confirmingDeleteId === p.ID ? (
-                              <>
-                                <button
-                                  type="button"
-                                  className={ui.btnGhost}
-                                  disabled={setStatus.isPending}
-                                  onClick={() => setStatus.mutate({ id: p.ID, status: "INACTIVE" })}
-                                >
-                                  Confirm
-                                </button>
-                                <button type="button" className={ui.btnGhost} onClick={() => setConfirmingDeleteId(null)}>
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <button type="button" className={ui.btnGhost} onClick={() => setConfirmingDeleteId(p.ID)}>
-                                Delete
-                              </button>
-                            )
-                          ) : (
-                            <button type="button" className={ui.btnGhost} disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: p.ID, status: "ACTIVE" })}>
-                              Restore
+                  {products.data.map((p) => {
+                    const priceItem = p.DefaultVariantID ? priceByVariantId.get(p.DefaultVariantID) : undefined;
+                    return (
+                      <tr key={p.ID} style={p.Status === "INACTIVE" ? { opacity: 0.6 } : undefined}>
+                        <td>
+                          <input type="checkbox" aria-label={`Select ${p.Name}`} checked={selectedIds.has(p.ID)} onChange={() => toggleSelected(p.ID)} />
+                        </td>
+                        <td>{p.Name}</td>
+                        <td>{p.HSNSACCode}</td>
+                        <td>{priceItem ? formatMoney(priceItem.Price) : <span className={ui.muted}>Not set</span>}</td>
+                        <td>{p.CategoryID ? (categoryNameById.get(p.CategoryID) ?? "—") : "—"}</td>
+                        <td>{p.BrandID ? (brandNameById.get(p.BrandID) ?? "—") : "—"}</td>
+                        <td>
+                          <span className={ui.badge} data-tone={p.Status === "ACTIVE" ? "positive" : "neutral"}>
+                            {p.Status}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                            <button type="button" className={ui.btnGhost} onClick={() => startEdit(p)}>
+                              Edit
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {p.Status === "ACTIVE" ? (
+                              confirmingDeleteId === p.ID ? (
+                                <>
+                                  <button type="button" className={ui.btnGhost} disabled={deleteProducts.isPending} onClick={() => deleteProducts.mutate([p.ID])}>
+                                    Confirm
+                                  </button>
+                                  <button type="button" className={ui.btnGhost} onClick={() => setConfirmingDeleteId(null)}>
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <button type="button" className={ui.btnGhost} onClick={() => setConfirmingDeleteId(p.ID)}>
+                                  Delete
+                                </button>
+                              )
+                            ) : (
+                              <button type="button" className={ui.btnGhost} disabled={restoreProducts.isPending} onClick={() => restoreProducts.mutate([p.ID])}>
+                                Restore
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

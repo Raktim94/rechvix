@@ -55,4 +55,8 @@ type PriceListItemRepository interface {
 	// consumed outside this module yet — Stage 5 (sales) is the real
 	// caller — but the query belongs with the schema it reads.
 	Resolve(ctx context.Context, priceListID, variantID, unitID uuid.UUID) (*PriceListItem, error)
+	// DeleteByVariant removes every price_list_item (across every price
+	// list) for a variant that's about to be hard-deleted — see
+	// catalogue/app.DeletePriceHookFunc's own doc comment for the caller.
+	DeleteByVariant(ctx context.Context, orgID, variantID uuid.UUID) error
 }

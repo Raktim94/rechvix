@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -38,6 +39,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Delete("/catalogue/products/{id}", h.deleteProduct)
 	r.Post("/catalogue/products/{id}/restore", h.restoreProduct)
 	r.Post("/catalogue/products/bulk-delete", h.bulkDeleteProducts)
+	r.Post("/catalogue/products/bulk-restore", h.bulkRestoreProducts)
 	r.Get("/catalogue/products/{id}/variants", h.listVariants)
 	r.Post("/catalogue/variants", h.createVariant)
 	r.Post("/catalogue/barcodes", h.addBarcode)
@@ -203,6 +205,33 @@ func (h *Handlers) createBrand(w http.ResponseWriter, r *http.Request) {
 
 // --- Products ---
 
+// productListDTO embeds domain.Product (its fields flatten into the JSON
+// object, same shape callers already expect) plus DefaultVariantID — the
+// first/only variant most products have exactly one of (the same
+// assumption CataloguePage's manual "add product" flow, barcode field,
+// etc. already make). Added so the frontend can join this against a
+// price-list-items fetch to show/edit each product's price without an
+// N+1 round trip per product from the browser — catalogue deliberately
+// doesn't import the pricing module itself (SetPriceHookFunc's own doc
+// comment explains why), so the actual price is a frontend-side join,
+// not fetched here.
+type productListDTO struct {
+	*domain.Product
+	DefaultVariantID *uuid.UUID `json:"DefaultVariantID,omitempty"`
+}
+
+func (h *Handlers) withDefaultVariants(ctx context.Context, p permissions.Principal, products []*domain.Product) []productListDTO {
+	out := make([]productListDTO, len(products))
+	for i, prod := range products {
+		out[i] = productListDTO{Product: prod}
+		variants, err := h.svc.ListVariantsByProduct(ctx, p, prod.ID)
+		if err == nil && len(variants) > 0 {
+			out[i].DefaultVariantID = &variants[0].ID
+		}
+	}
+	return out
+}
+
 func (h *Handlers) listOrSearchProducts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if q != "" {
@@ -211,7 +240,7 @@ func (h *Handlers) listOrSearchProducts(w http.ResponseWriter, r *http.Request) 
 			writeServiceError(w, r, err)
 			return
 		}
-		httpx.WriteJSON(w, http.StatusOK, map[string]any{"products": list})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"products": h.withDefaultVariants(r.Context(), principal(r), list)})
 		return
 	}
 	list, err := h.svc.ListProducts(r.Context(), principal(r))
@@ -219,7 +248,7 @@ func (h *Handlers) listOrSearchProducts(w http.ResponseWriter, r *http.Request) 
 		writeServiceError(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"products": list})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"products": h.withDefaultVariants(r.Context(), principal(r), list)})
 }
 
 type createProductRequest struct {
@@ -314,6 +343,9 @@ type bulkDeleteProductsRequest struct {
 	IDs []uuid.UUID `json:"ids"`
 }
 
+// bulkDeleteProducts reports which ids were actually removed vs. which
+// fell back to deactivation (still referenced by real history) — see
+// app.Service.DeleteProductsIfUnused's own doc comment.
 func (h *Handlers) bulkDeleteProducts(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeJSON[bulkDeleteProductsRequest](r)
 	if err != nil {
@@ -324,7 +356,32 @@ func (h *Handlers) bulkDeleteProducts(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("IDS_REQUIRED", "ids must contain at least one product id."))
 		return
 	}
-	if err := h.svc.BulkSetProductStatus(r.Context(), principal(r), req.IDs, domain.StatusInactive); err != nil {
+	result, err := h.svc.DeleteProductsIfUnused(r.Context(), principal(r), req.IDs)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"hard_deleted": result.HardDeleted,
+		"deactivated":  result.Deactivated,
+	})
+}
+
+type bulkRestoreProductsRequest struct {
+	IDs []uuid.UUID `json:"ids"`
+}
+
+func (h *Handlers) bulkRestoreProducts(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[bulkRestoreProductsRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	if len(req.IDs) == 0 {
+		httpx.WriteError(w, r, httpx.NewBadRequest("IDS_REQUIRED", "ids must contain at least one product id."))
+		return
+	}
+	if err := h.svc.BulkSetProductStatus(r.Context(), principal(r), req.IDs, domain.StatusActive); err != nil {
 		writeServiceError(w, r, err)
 		return
 	}

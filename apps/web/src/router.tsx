@@ -19,7 +19,6 @@ import {
   GstPage,
   IntegrationsPage,
   InventoryPage,
-  PricingPage,
   PurchasesPage,
   ReportsPage,
   SalesDetailPage,
@@ -176,7 +175,6 @@ const catalogueRoute = createRoute({
     return <CataloguePage openNewForm={!!openNew} />;
   }),
 });
-const pricingRoute = realRoute("/pricing", PricingPage);
 const contactsRoute = realRoute("/contacts", ContactsPage);
 const contactDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -215,7 +213,6 @@ const routeTree = rootRoute.addChildren([
   purchasesRoute,
   inventoryRoute,
   catalogueRoute,
-  pricingRoute,
   contactsRoute,
   contactDetailRoute,
   accountingRoute,

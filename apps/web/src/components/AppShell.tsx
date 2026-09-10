@@ -160,9 +160,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link to="/catalogue" role="menuitem" onClick={() => setCreateOpen(false)}>
                 New product
               </Link>
-              <Link to="/pricing" role="menuitem" onClick={() => setCreateOpen(false)}>
-                Set a price
-              </Link>
               <Link to="/expenses" role="menuitem" onClick={() => setCreateOpen(false)}>
                 Record an expense
               </Link>

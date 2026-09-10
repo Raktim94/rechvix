@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
 import { SearchIcon } from "../../components/icons";
@@ -25,13 +25,6 @@ interface BillingLookupResult {
 
 interface AgeingBucket {
   Total: { amount: string; currency: string };
-}
-
-interface PriceList {
-  ID: string;
-  Name: string;
-  CurrencyCode: string;
-  IsDefault: boolean;
 }
 
 /** One cart line's quantity, editable in place — committed on blur or
@@ -152,22 +145,18 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const [nameByVariant, setNameByVariant] = useState<Record<string, string>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
-  const [priceListId, setPriceListId] = useState<string>("");
 
-  const priceLists = useQuery({
-    queryKey: ["price-lists"],
-    queryFn: () => api.getListField<PriceList>("/pricing/price-lists", "price_lists"),
+  // There's only ever one price list per organisation now (Pricing page
+  // removed — price lives directly on the product, brief simplification).
+  // ensure-default is idempotent: it creates the org's "Default" list on
+  // first call and just returns it on every call after, so this is safe
+  // to call from every billing session with no separate setup step.
+  const defaultPriceList = useQuery({
+    queryKey: ["default-price-list", org.organisation?.DefaultCurrencyCode],
+    queryFn: () => api.post<{ ID: string }>("/pricing/price-lists/ensure-default", { currency_code: org.organisation?.DefaultCurrencyCode || "INR" }),
+    enabled: !!org.organisation,
   });
-
-  // Default to the org's default price list (or its only one) the first
-  // time the list loads, but leave the cashier's own choice alone after
-  // that — this effect only ever fires while priceListId is still unset.
-  useEffect(() => {
-    if (priceListId || !priceLists.data || priceLists.data.length === 0) return;
-    const def = priceLists.data.find((pl) => pl.IsDefault) ?? priceLists.data[0];
-    if (def) setPriceListId(def.ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceLists.data]);
+  const priceListId = defaultPriceList.data?.ID ?? "";
 
   useEffect(() => {
     if (!showCustomerResults) return;
@@ -437,23 +426,6 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className={ui.field}>
-            <label htmlFor="price-list-select">Price list</label>
-            {priceLists.data && priceLists.data.length > 0 ? (
-              <select id="price-list-select" className={ui.select} value={priceListId} onChange={(e) => setPriceListId(e.target.value)}>
-                {priceLists.data.map((pl) => (
-                  <option key={pl.ID} value={pl.ID}>
-                    {pl.Name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <Link to="/pricing" className={ui.btnSecondary}>
-                Set up pricing
-              </Link>
-            )}
           </div>
 
           <div className={`${ui.field} ${styles.customerField}`}>

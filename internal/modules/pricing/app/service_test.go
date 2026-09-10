@@ -52,6 +52,9 @@ func (f *fakePriceListItemRepo) ListByPriceList(ctx context.Context, priceListID
 func (f *fakePriceListItemRepo) Resolve(ctx context.Context, priceListID, variantID, unitID uuid.UUID) (*domain.PriceListItem, error) {
 	return nil, domain.ErrNotFound
 }
+func (f *fakePriceListItemRepo) DeleteByVariant(ctx context.Context, orgID, variantID uuid.UUID) error {
+	return nil
+}
 
 type fakePriceListRepo struct{}
 

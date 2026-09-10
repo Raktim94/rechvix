@@ -167,6 +167,28 @@ type ProductRepository interface {
 	// quick-add search path (sales.Service.BillingLookup), and a
 	// "deleted" (INACTIVE) product must not be addable to a new sale.
 	SearchByName(ctx context.Context, orgID uuid.UUID, query string, limit int) ([]*Product, error)
+	// HasTransactionHistory reports whether ANY of this product's
+	// variants has ever been referenced by a sales/purchase document
+	// line or any inventory activity (stock_movements/stock_balances/
+	// stock_reservations/stock_batches/stock_serial_numbers/
+	// stock_cost_lots/stock_policies) — exactly the set of tables that
+	// hold a plain (non-cascading) foreign key to product_variants(id),
+	// per every relevant migration file. true means this product cannot
+	// be hard-deleted (Delete below would fail on the same FK a real
+	// DELETE would hit) and must fall back to SetStatus(INACTIVE)
+	// instead — see app.Service.DeleteProductsIfUnused, the only caller.
+	// Maintenance note: a future migration adding another table with a
+	// plain FK to product_variants(id) must be added to this check too,
+	// or a product referenced only by that new table would wrongly be
+	// treated as safe to hard-delete.
+	HasTransactionHistory(ctx context.Context, orgID, productID uuid.UUID) (bool, error)
+	// Delete permanently removes a product row — only safe to call once
+	// HasTransactionHistory has confirmed false; unlike SetStatus, this
+	// cannot be undone. Callers must delete this product's variants
+	// (ProductVariantRepository.DeleteByProduct) first — a product row
+	// cannot outlive its variants without violating product_variants'
+	// own FK back to products(id).
+	Delete(ctx context.Context, orgID, id uuid.UUID) error
 }
 
 type ProductVariantRepository interface {
@@ -174,6 +196,11 @@ type ProductVariantRepository interface {
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*ProductVariant, error)
 	ListByProduct(ctx context.Context, productID uuid.UUID) ([]*ProductVariant, error)
 	GetBySKU(ctx context.Context, orgID uuid.UUID, skuCode string) (*ProductVariant, error)
+	// DeleteByProduct permanently removes every variant of productID —
+	// see ProductRepository.Delete's doc comment for the safety
+	// precondition (HasTransactionHistory must be false) and ordering
+	// (variants before the product itself).
+	DeleteByProduct(ctx context.Context, orgID, productID uuid.UUID) error
 }
 
 type BarcodeRepository interface {
@@ -182,4 +209,9 @@ type BarcodeRepository interface {
 	// GetByBarcode is the billing-counter scan lookup — must stay a single
 	// indexed exact-match query (brief §25: feels instantaneous).
 	GetByBarcode(ctx context.Context, orgID uuid.UUID, barcode string) (*Barcode, error)
+	// DeleteByVariant permanently removes every barcode for variantID —
+	// a barcode is a plain attribute, never a historical record, so this
+	// runs unconditionally as part of ProductRepository.Delete's cleanup,
+	// no HasTransactionHistory precondition needed for this one table.
+	DeleteByVariant(ctx context.Context, variantID uuid.UUID) error
 }

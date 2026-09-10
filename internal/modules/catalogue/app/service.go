@@ -30,6 +30,16 @@ import (
 type SetPriceHookFunc func(ctx context.Context, principal permissions.Principal, variantID, unitID uuid.UUID, amount decimal.Decimal) error
 type SetTaxRateHookFunc func(ctx context.Context, principal permissions.Principal, hsnSacCode string, gstRate decimal.Decimal) error
 
+// DeletePriceHookFunc is SetPriceHookFunc's counterpart for hard-deleting
+// a product (DeleteProductsIfUnused below) — best-effort cleanup of any
+// price_list_items row for variantID before the variant itself is
+// deleted, since pricing owns that table and catalogue can't touch it
+// directly (same layering reason as the two hooks above). Unlike
+// HasTransactionHistory's other 9 tables, a price entry is never treated
+// as "history" that blocks a hard delete — it's just an attribute to
+// clean up, same as a barcode.
+type DeletePriceHookFunc func(ctx context.Context, principal permissions.Principal, variantID uuid.UUID) error
+
 type Service struct {
 	pool            database.Runner
 	units           domain.UnitOfMeasureRepository
@@ -44,19 +54,27 @@ type Service struct {
 	now             func() time.Time
 	setPriceHook    SetPriceHookFunc
 	setTaxRateHook  SetTaxRateHookFunc
+	deletePriceHook DeletePriceHookFunc
 }
 
-// WithPriceHook/WithTaxRateHook wire the optional cross-module hooks
-// above — nil-guarded everywhere they're called, so a composition that
-// doesn't set them just means ImportProducts never attempts to set a
-// price/tax rate (the price/gst_rate CSV columns are simply ignored,
-// same as before these hooks existed), not an error.
+// WithPriceHook/WithTaxRateHook/WithDeletePriceHook wire the optional
+// cross-module hooks above — nil-guarded everywhere they're called, so a
+// composition that doesn't set them just means ImportProducts never
+// attempts to set a price/tax rate (the price/gst_rate CSV columns are
+// simply ignored, same as before these hooks existed) and
+// DeleteProductsIfUnused never attempts to clean up a price entry before
+// a hard delete (harmless — an orphaned price_list_items row just never
+// resolves to a real product afterward), not an error either way.
 func (s *Service) WithPriceHook(f SetPriceHookFunc) *Service {
 	s.setPriceHook = f
 	return s
 }
 func (s *Service) WithTaxRateHook(f SetTaxRateHookFunc) *Service {
 	s.setTaxRateHook = f
+	return s
+}
+func (s *Service) WithDeletePriceHook(f DeletePriceHookFunc) *Service {
+	s.deletePriceHook = f
 	return s
 }
 
@@ -414,6 +432,102 @@ func (s *Service) SetProductStatus(ctx context.Context, principal permissions.Pr
 			AfterState: map[string]any{"status": string(status)}, At: now,
 		})
 	})
+}
+
+// DeleteOutcome reports, per bulk-delete call, which products were
+// actually removed vs. which fell back to deactivation — see
+// DeleteProductsIfUnused's own doc comment for why both are possible
+// outcomes of the same "Delete" action.
+type DeleteOutcome struct {
+	HardDeleted []uuid.UUID
+	Deactivated []uuid.UUID
+}
+
+// DeleteProductsIfUnused is what the catalogue UI's bulk "Delete" action
+// calls. Per product: if ProductRepository.HasTransactionHistory says
+// it's never been referenced by a sales/purchase document line or any
+// inventory activity, it's permanently removed (barcodes and any price
+// entry cleaned up first, then its variants, then the product row
+// itself); otherwise it falls back to SetProductStatus(INACTIVE), the
+// same soft-delete this UI action used exclusively before this method
+// existed — a product with real history cannot be hard-deleted without
+// violating the FK every one of those referencing tables holds back to
+// product_variants(id) (HasTransactionHistory's own doc comment lists
+// them). Every id's actual outcome is reported back in DeleteOutcome,
+// never a silent "some vanished, some didn't" — same "no silent partial
+// outcome" philosophy ImportProducts' own Report already follows.
+//
+// Each product is processed as its own sequence of short transactions
+// (history check, then variant listing, then the actual delete) rather
+// than one big transaction for the whole batch — deletePriceHook (when
+// wired) self-scopes its own RunScoped the same way setPriceHook does,
+// so it must run between two of this method's own RunScoped calls, never
+// nested inside one (see purchases/app.Service.manageForBranch's doc
+// comment for the general hazard this avoids).
+func (s *Service) DeleteProductsIfUnused(ctx context.Context, principal permissions.Principal, ids []uuid.UUID) (DeleteOutcome, error) {
+	if err := s.manage(ctx, principal); err != nil {
+		return DeleteOutcome{}, err
+	}
+	var out DeleteOutcome
+	now := s.now()
+	for _, id := range ids {
+		var hasHistory bool
+		err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+			var err error
+			hasHistory, err = s.products.HasTransactionHistory(ctx, principal.OrganisationID, id)
+			return err
+		})
+		if err != nil {
+			return out, err
+		}
+		if hasHistory {
+			if err := s.SetProductStatus(ctx, principal, id, domain.StatusInactive); err != nil {
+				return out, err
+			}
+			out.Deactivated = append(out.Deactivated, id)
+			continue
+		}
+
+		var variants []*domain.ProductVariant
+		err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+			var err error
+			variants, err = s.variants.ListByProduct(ctx, id)
+			return err
+		})
+		if err != nil {
+			return out, err
+		}
+		if s.deletePriceHook != nil {
+			for _, v := range variants {
+				if err := s.deletePriceHook(ctx, principal, v.ID); err != nil {
+					return out, fmt.Errorf("catalogue: cleaning up price for variant %s before delete: %w", v.ID, err)
+				}
+			}
+		}
+		err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+			for _, v := range variants {
+				if err := s.barcodes.DeleteByVariant(ctx, v.ID); err != nil {
+					return err
+				}
+			}
+			if err := s.variants.DeleteByProduct(ctx, principal.OrganisationID, id); err != nil {
+				return err
+			}
+			if err := s.products.Delete(ctx, principal.OrganisationID, id); err != nil {
+				return err
+			}
+			return s.audit.Record(ctx, audit.Entry{
+				OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+				Action: "product.deleted", EntityType: "product", EntityID: &id,
+				AfterState: map[string]any{"hard_deleted": true}, At: now,
+			})
+		})
+		if err != nil {
+			return out, err
+		}
+		out.HardDeleted = append(out.HardDeleted, id)
+	}
+	return out, nil
 }
 
 // BulkSetProductStatus applies SetProductStatus to every id in one

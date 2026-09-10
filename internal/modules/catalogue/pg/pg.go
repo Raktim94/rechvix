@@ -273,6 +273,53 @@ func (r *ProductRepo) SetStatus(ctx context.Context, orgID, id uuid.UUID, status
 	return nil
 }
 
+// Delete permanently removes a product row — see
+// domain.ProductRepository.Delete's own doc comment for the
+// HasTransactionHistory precondition; this issues the bare DELETE and
+// lets Postgres's own FK constraints be the final backstop (rather than
+// re-deriving "is this safe" here too) if that precondition was somehow
+// skipped — a real FK violation surfaces as an ordinary error, not a
+// silently-ignored no-op.
+func (r *ProductRepo) Delete(ctx context.Context, orgID, id uuid.UUID) error {
+	const q = `DELETE FROM products WHERE organisation_id = $1 AND id = $2`
+	rowsAffected, err := r.pool.Q(ctx).Exec(ctx, q, orgID, id)
+	if err != nil {
+		return fmt.Errorf("catalogue: deleting product: %w", err)
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// HasTransactionHistory — see domain.ProductRepository.HasTransactionHistory's
+// own doc comment for exactly which 9 tables this checks and why (every
+// plain, non-cascading foreign key back to product_variants(id) across
+// the schema). One query, one EXISTS per table, ORed together — cheap
+// even at zero matches since every one of these tables already has an
+// index on product_variant_id (created alongside its own FK).
+func (r *ProductRepo) HasTransactionHistory(ctx context.Context, orgID, productID uuid.UUID) (bool, error) {
+	const q = `
+		SELECT EXISTS (
+			SELECT 1 FROM product_variants pv WHERE pv.organisation_id = $1 AND pv.product_id = $2 AND (
+				EXISTS (SELECT 1 FROM sales_document_lines sdl WHERE sdl.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM purchase_document_lines pdl WHERE pdl.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM stock_balances sb WHERE sb.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM stock_reservations sr WHERE sr.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM stock_batches sba WHERE sba.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM stock_serial_numbers ssn WHERE ssn.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM stock_cost_lots scl WHERE scl.product_variant_id = pv.id)
+				OR EXISTS (SELECT 1 FROM stock_policies sp WHERE sp.product_variant_id = pv.id)
+			)
+		)`
+	var exists bool
+	if err := r.pool.Q(ctx).QueryRow(ctx, q, orgID, productID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("catalogue: checking product transaction history: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *ProductRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Product, error) {
 	const q = `
 		SELECT id, organisation_id, category_id, brand_id, base_uom_id, name, COALESCE(description, ''), COALESCE(hsn_sac_code, ''), status, created_at, updated_at
@@ -380,6 +427,18 @@ func (r *ProductVariantRepo) Create(ctx context.Context, v *domain.ProductVarian
 	return nil
 }
 
+// DeleteByProduct permanently removes every variant of productID — see
+// domain.ProductVariantRepository.DeleteByProduct's own doc comment for
+// the safety precondition and ordering this relies on the caller to
+// already have handled.
+func (r *ProductVariantRepo) DeleteByProduct(ctx context.Context, orgID, productID uuid.UUID) error {
+	const q = `DELETE FROM product_variants WHERE organisation_id = $1 AND product_id = $2`
+	if _, err := r.pool.Q(ctx).Exec(ctx, q, orgID, productID); err != nil {
+		return fmt.Errorf("catalogue: deleting product_variants: %w", err)
+	}
+	return nil
+}
+
 func (r *ProductVariantRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.ProductVariant, error) {
 	const q = `SELECT id, organisation_id, product_id, sku_code, attributes, status, created_at, updated_at FROM product_variants WHERE organisation_id = $1 AND id = $2`
 	row := r.pool.Q(ctx).QueryRow(ctx, q, orgID, id)
@@ -457,6 +516,17 @@ func (r *BarcodeRepo) Create(ctx context.Context, b *domain.Barcode) error {
 			return fmt.Errorf("catalogue: %w", errors.New("barcode already in use"))
 		}
 		return fmt.Errorf("catalogue: inserting product_barcode: %w", err)
+	}
+	return nil
+}
+
+// DeleteByVariant permanently removes every barcode for variantID —
+// unconditional, no history precondition (see
+// domain.BarcodeRepository.DeleteByVariant's own doc comment).
+func (r *BarcodeRepo) DeleteByVariant(ctx context.Context, variantID uuid.UUID) error {
+	const q = `DELETE FROM product_barcodes WHERE variant_id = $1`
+	if _, err := r.pool.Q(ctx).Exec(ctx, q, variantID); err != nil {
+		return fmt.Errorf("catalogue: deleting product_barcodes: %w", err)
 	}
 	return nil
 }

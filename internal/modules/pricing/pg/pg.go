@@ -107,6 +107,17 @@ func (r *PriceListItemRepo) Upsert(ctx context.Context, item *domain.PriceListIt
 	return nil
 }
 
+// DeleteByVariant removes every price entry for variantID across every
+// price list in the organisation — see
+// domain.PriceListItemRepository.DeleteByVariant's own doc comment.
+func (r *PriceListItemRepo) DeleteByVariant(ctx context.Context, orgID, variantID uuid.UUID) error {
+	const q = `DELETE FROM price_list_items WHERE organisation_id = $1 AND product_variant_id = $2`
+	if _, err := r.pool.Q(ctx).Exec(ctx, q, orgID, variantID); err != nil {
+		return fmt.Errorf("pricing: deleting price_list_items: %w", err)
+	}
+	return nil
+}
+
 func (r *PriceListItemRepo) ListByPriceList(ctx context.Context, priceListID uuid.UUID) ([]*domain.PriceListItem, error) {
 	const q = `
 		SELECT i.id, i.organisation_id, i.price_list_id, i.product_variant_id, i.unit_id, i.price_amount, i.created_at, i.updated_at, l.currency_code

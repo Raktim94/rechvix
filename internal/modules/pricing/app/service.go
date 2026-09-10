@@ -91,6 +91,64 @@ func (s *Service) GetPriceList(ctx context.Context, principal permissions.Princi
 	return result, err
 }
 
+// EnsureDefaultPriceList returns the organisation's one price list,
+// creating it (named "Default", IsDefault=true) if none exists yet —
+// same "auto-provision required setup instead of erroring" pattern as
+// catalogue/app.Service.EnsureDefaultUnits. This is what makes a fresh
+// install's CSV price column (catalogue.ImportProducts' price-hook,
+// wired in apps/server/main.go) and the New Product form's own Price
+// field work with zero setup: previously, a fresh organisation with no
+// price list yet made both silently fail to set anything, with only a
+// per-row import-report note as any indication — see this method's own
+// introduction for the bug report that prompted it. If more than one
+// price list already exists (pre-dating this method, or created
+// directly via CreatePriceList), the one marked IsDefault wins, else
+// simply the first — never creates a second list once any exist.
+func (s *Service) EnsureDefaultPriceList(ctx context.Context, principal permissions.Principal, currencyCode string) (*domain.PriceList, error) {
+	if err := s.manage(ctx, principal); err != nil {
+		return nil, err
+	}
+	var result *domain.PriceList
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		existing, err := s.priceLists.ListByOrganisation(ctx, principal.OrganisationID)
+		if err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			result = existing[0]
+			for _, pl := range existing {
+				if pl.IsDefault {
+					result = pl
+					break
+				}
+			}
+			return nil
+		}
+		id, err := uuid.NewV7()
+		if err != nil {
+			return fmt.Errorf("pricing: generating price_list id: %w", err)
+		}
+		now := s.now()
+		pl := &domain.PriceList{
+			ID: id, OrganisationID: principal.OrganisationID, Name: "Default",
+			CurrencyCode: currencyCode, IsDefault: true, Status: domain.StatusActive, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := s.priceLists.Create(ctx, pl); err != nil {
+			return err
+		}
+		if err := s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "price_list.created", EntityType: "price_list", EntityID: &id,
+			AfterState: map[string]any{"name": "Default", "currency_code": currencyCode, "auto_created": true}, At: now,
+		}); err != nil {
+			return err
+		}
+		result = pl
+		return nil
+	})
+	return result, err
+}
+
 func (s *Service) ListPriceLists(ctx context.Context, principal permissions.Principal) ([]*domain.PriceList, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
@@ -142,6 +200,19 @@ func (s *Service) SetPrice(ctx context.Context, principal permissions.Principal,
 		return nil, err
 	}
 	return item, nil
+}
+
+// DeletePricesForVariant backs catalogue/app.DeletePriceHookFunc — see
+// that type's own doc comment for why a hard-deleted product's price
+// entries need cleaning up here rather than catalogue touching this
+// module's tables directly.
+func (s *Service) DeletePricesForVariant(ctx context.Context, principal permissions.Principal, variantID uuid.UUID) error {
+	if err := s.manage(ctx, principal); err != nil {
+		return err
+	}
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		return s.items.DeleteByVariant(ctx, principal.OrganisationID, variantID)
+	})
 }
 
 func (s *Service) ListPrices(ctx context.Context, principal permissions.Principal, priceListID uuid.UUID) ([]*domain.PriceListItem, error) {
