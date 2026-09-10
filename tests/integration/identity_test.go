@@ -307,3 +307,98 @@ func TestTeamMemberCompanyAccess(t *testing.T) {
 		t.Fatal("expected the member to be unrestricted after SetTeamMemberCompanyAccess(nil)")
 	}
 }
+
+// TestRestrictedMember_SeesOnlyGrantedCompaniesInSwitcher covers a real
+// bug this session found via manual smoke testing (not unit tests) and
+// fixed the same session: organisation.app.Service.ListLegalEntities/
+// ListBranches/GetOrganisation used a coarse, unscoped
+// Require(ctx, principal, "settings.view", Scope{}) check — which, like
+// every other "view" gate before this session's HasAny fix, rejects a
+// company-restricted member outright (their grants are ALL
+// company-scoped, none unrestricted, and Require's Scope{} only matches
+// an unrestricted grant). Since apps/web's useOrgContext/CompanySwitcher
+// call exactly these three endpoints on every page load, this bug broke
+// the ENTIRE frontend for any restricted member, not just the switcher —
+// worse than the sales/purchase HasAny bug this same pattern caused
+// earlier, since there was no page a restricted member could load at
+// all. Fixed by converting GetOrganisation to HasAny and — since
+// ListLegalEntities/ListBranches are exactly the place a restricted
+// member's allowed companies need to determine what's even offered as
+// an option, not just gate a coarse yes/no — filtering their results by
+// AllowedLegalEntities, the same pattern ListDocuments already used.
+func TestRestrictedMember_SeesOnlyGrantedCompaniesInSwitcher(t *testing.T) {
+	ctx := context.Background()
+	identitySvc, orgSvc := newTestIdentityService(t)
+
+	ownerEmail := "switcher-owner-" + uuid.NewString()[:8] + "@example.com"
+	password := "correct horse battery staple 42"
+	boot := bootstrapTestTenant(t, ctx, identitySvc, ownerEmail, password)
+
+	ownerLogin, err := identitySvc.Login(ctx, identityapp.LoginParams{Email: ownerEmail, Password: password})
+	if err != nil {
+		t.Fatalf("owner Login: %v", err)
+	}
+	principal, err := identitySvc.ValidateSession(ctx, ownerLogin.SessionToken)
+	if err != nil {
+		t.Fatalf("ValidateSession: %v", err)
+	}
+
+	unique := uuid.NewString()[:8]
+	companyB, err := orgSvc.CreateLegalEntity(ctx, principal, orgapp.CreateLegalEntityParams{
+		LegalName: "Switcher Company B " + unique, CountryCode: "IN", BaseCurrencyCode: "INR",
+		GSTIN: "27DDDDD0000D1Z5", GSTStateCode: "27",
+	})
+	if err != nil {
+		t.Fatalf("CreateLegalEntity (company B): %v", err)
+	}
+	if _, err := orgSvc.CreateBranch(ctx, principal, orgapp.CreateBranchParams{
+		LegalEntityID: companyB.ID, Code: "SWB-" + unique, Name: "Company B Branch",
+	}); err != nil {
+		t.Fatalf("CreateBranch (company B): %v", err)
+	}
+
+	memberID, err := identitySvc.CreateTeamMember(ctx, principal, identityapp.CreateTeamMemberParams{
+		FullName: "Switcher Test Member", Email: "switcher-member-" + unique + "@example.com", Password: "another very long password 99",
+		LegalEntityIDs: []uuid.UUID{boot.LegalEntityID}, // company A only, NOT company B
+	})
+	if err != nil {
+		t.Fatalf("CreateTeamMember: %v", err)
+	}
+	memberPrincipal := permissions.Principal{UserID: memberID, OrganisationID: boot.OrganisationID}
+
+	// GetOrganisation must succeed at all (the pre-fix bug rejected this
+	// outright) — every page in the app calls this via useOrgContext.
+	if _, err := orgSvc.GetOrganisation(ctx, memberPrincipal); err != nil {
+		t.Fatalf("GetOrganisation (restricted member): %v", err)
+	}
+
+	legalEntities, err := orgSvc.ListLegalEntities(ctx, memberPrincipal)
+	if err != nil {
+		t.Fatalf("ListLegalEntities (restricted member): %v", err)
+	}
+	if len(legalEntities) != 1 || legalEntities[0].ID != boot.LegalEntityID {
+		t.Fatalf("ListLegalEntities (restricted member) = %d entities, want exactly [company A] (company B must not appear)", len(legalEntities))
+	}
+
+	branches, err := orgSvc.ListBranches(ctx, memberPrincipal)
+	if err != nil {
+		t.Fatalf("ListBranches (restricted member): %v", err)
+	}
+	for _, br := range branches {
+		if br.LegalEntityID == companyB.ID {
+			t.Fatalf("ListBranches (restricted member) leaked company B's branch %s", br.ID)
+		}
+	}
+	if len(branches) != 1 || branches[0].LegalEntityID != boot.LegalEntityID {
+		t.Fatalf("ListBranches (restricted member) = %d branches, want exactly [company A's branch]", len(branches))
+	}
+
+	// The unrestricted owner must still see both.
+	ownerLegalEntities, err := orgSvc.ListLegalEntities(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListLegalEntities (owner): %v", err)
+	}
+	if len(ownerLegalEntities) != 2 {
+		t.Fatalf("ListLegalEntities (owner) = %d entities, want 2 (both companies)", len(ownerLegalEntities))
+	}
+}

@@ -8,6 +8,8 @@ import { StatCard } from "../components/StatCard";
 import { api } from "../lib/api-client";
 import { toLocalIsoDate } from "../lib/calendarGrid";
 import { formatMoney, isZeroMoney, moneyToApproxNumber, type Money } from "../lib/money";
+import { useOrgContext } from "../lib/useOrgContext";
+import { withLegalEntity } from "../lib/useReportTable";
 import { useTheme } from "../theme/ThemeProvider";
 
 interface StaffMember {
@@ -115,6 +117,11 @@ interface ReportTable {
   rows: string[][];
 }
 
+// Not company-filtered — reporting.app.Service.Dashboard takes no
+// Filter at all (unlike SalesSummary etc. below), a real, separate gap
+// from the documented "no cheap company join" ones: this one's just not
+// wired up yet. A multi-company install's Dashboard currently totals
+// every company together.
 function useDashboard() {
   return useQuery({
     queryKey: ["dashboard"],
@@ -122,16 +129,17 @@ function useDashboard() {
   });
 }
 
-function useSalesTrend() {
+function useSalesTrend(legalEntityId: string | undefined) {
   return useQuery({
-    queryKey: ["reports", "sales-summary", "day"],
-    queryFn: () => api.get<ReportTable>("/reports/sales/summary?group_by=day&format=json"),
+    queryKey: ["reports", "sales-summary", "day", legalEntityId],
+    queryFn: () => api.get<ReportTable>(withLegalEntity("/reports/sales/summary?group_by=day&format=json", legalEntityId)),
   });
 }
 
 export function DashboardPage() {
+  const org = useOrgContext();
   const dashboard = useDashboard();
-  const trend = useSalesTrend();
+  const trend = useSalesTrend(org.legalEntity?.ID);
   const { theme } = useTheme();
 
   return (

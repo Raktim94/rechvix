@@ -23,6 +23,23 @@ export function useReportTable(path: string) {
   });
 }
 
+/** Every /reports/* endpoint also accepts `legal_entity_id` (see
+ * internal/modules/reporting/httpapi/handlers.go's parseFilter) —
+ * restricts the report to the given company, intersected server-side
+ * with whatever companies the caller actually holds reports.view for.
+ * `id` undefined (org/company data still loading, or a genuinely
+ * single-company install with nothing selected yet) leaves the path
+ * unchanged — every report already defaults to "everything this caller
+ * can see" with no filter at all. Same swap-one-param-without-disturbing
+ *-the-rest shape as withFormat above, so call sites can compose both. */
+export function withLegalEntity(path: string, id: string | undefined): string {
+  if (!id) return path;
+  const [base, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  params.set("legal_entity_id", id);
+  return `${base}?${params.toString()}`;
+}
+
 /** Every /reports/* endpoint accepts the same `format=csv|xlsx|pdf|json`
  * query param (see internal/modules/reporting/httpapi/handlers.go's
  * writeTable) — this swaps just that param on an existing report path

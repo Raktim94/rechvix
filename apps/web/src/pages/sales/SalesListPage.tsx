@@ -6,6 +6,8 @@ import ui from "../../components/ui.module.css";
 import { api } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
+import { useOrgContext } from "../../lib/useOrgContext";
+import { withLegalEntity } from "../../lib/useReportTable";
 import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
 import { DOCUMENT_TYPE_LABELS, type DocumentStatus, type DocumentType, type SalesDocument } from "./types";
@@ -56,10 +58,11 @@ export function SalesListPage() {
   const [type, setType] = useState<TypeFilter>("ALL");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const org = useOrgContext();
 
   const documents = useQuery({
-    queryKey: ["sales-documents"],
-    queryFn: () => api.getListField<SalesDocument>("/sales/documents", "documents"),
+    queryKey: ["sales-documents", org.legalEntity?.ID],
+    queryFn: () => api.getListField<SalesDocument>(withLegalEntity("/sales/documents", org.legalEntity?.ID), "documents"),
   });
   // Only used to resolve CustomerPartyID -> a display name and to let the
   // search box match by customer name, not just document number — the

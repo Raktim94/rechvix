@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import modal from "../../components/Modal.module.css";
 import { PasswordInput } from "../../components/PasswordInput";
 import ui from "../../components/ui.module.css";
 import { useAuth } from "../../auth/AuthProvider";
@@ -15,7 +16,10 @@ import layout from "../DashboardPage.module.css";
 
 /** Mirrors app.TeamMember (internal/modules/identity/app/service.go) as
  * serialized by httpapi's teamMemberDTO — no password hash ever crosses
- * this boundary. */
+ * this boundary. unrestricted/legal_entity_ids mirror that struct's own
+ * doc comment: unrestricted true means every company, in which case
+ * legal_entity_ids is omitted (never sent as a misleadingly empty
+ * array). */
 interface TeamMember {
   id: string;
   email: string;
@@ -24,6 +28,8 @@ interface TeamMember {
   mfa_enabled: boolean;
   last_login_at?: string;
   created_at: string;
+  unrestricted: boolean;
+  legal_entity_ids?: string[];
 }
 
 const addMemberSchema = z
@@ -45,9 +51,128 @@ type AddMemberValues = z.infer<typeof addMemberSchema>;
  * added here is a full Owner-equivalent peer, not a restricted role —
  * see app.Service.CreateTeamMember's doc comment for why v1 has no
  * lesser role to assign yet. */
+/** One checkbox per company, "checked" meaning "this member can access
+ * it" — shared by the add-member form and EditCompanyAccessModal below
+ * so the two never drift into different interactions for the same
+ * concept. uncheckedIds is the set of company ids the caller has
+ * explicitly excluded; empty (the default) means every current AND
+ * future company — sent to the backend as no restriction at all
+ * (CreateTeamMemberParams.LegalEntityIDs/SetTeamMemberCompanyAccess's
+ * own "empty means unrestricted" contract), not as an explicit list of
+ * today's companies that a newly-added company wouldn't be in. */
+function CompanyAccessCheckboxes({
+  legalEntities,
+  uncheckedIds,
+  onToggle,
+}: {
+  legalEntities: LegalEntity[];
+  uncheckedIds: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className={ui.field}>
+      <span style={{ display: "block", marginBottom: 6 }}>Company access</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {legalEntities.map((le) => (
+          <label key={le.ID} style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
+            <input type="checkbox" checked={!uncheckedIds.has(le.ID)} onChange={() => onToggle(le.ID)} />
+            {le.LegalName}
+          </label>
+        ))}
+      </div>
+      <p className={ui.muted} style={{ marginTop: 4 }}>
+        {uncheckedIds.size === 0
+          ? "Every company checked — this member sees all of them, including any company added later."
+          : "Restricted to the checked companies only."}
+      </p>
+    </div>
+  );
+}
+
+/** Edit-time counterpart to the add-member form's own company-access
+ * checkboxes — same CompanyAccessCheckboxes, same
+ * PUT /users/{id}/company-access this member's initial grant already
+ * used under the hood (identity.Service.SetTeamMemberCompanyAccess
+ * shares its write path with CreateTeamMember, see that method's own
+ * doc comment for why). */
+function EditCompanyAccessModal({
+  member,
+  legalEntities,
+  onOpenChange,
+}: {
+  member: TeamMember | null;
+  legalEntities: LegalEntity[];
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [uncheckedIds, setUncheckedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!member) return;
+    setUncheckedIds(member.unrestricted ? new Set() : new Set(legalEntities.map((le) => le.ID).filter((id) => !member.legal_entity_ids?.includes(id))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [member?.id]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.put(`/users/${member?.id}/company-access`, {
+        legal_entity_ids: uncheckedIds.size === 0 ? [] : legalEntities.map((le) => le.ID).filter((id) => !uncheckedIds.has(id)),
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["team-members"] });
+      onOpenChange(false);
+    },
+  });
+
+  if (!member) return null;
+
+  function toggle(id: string) {
+    setUncheckedIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className={modal.overlay} onClick={() => onOpenChange(false)}>
+      <div className={modal.dialog} role="dialog" aria-modal="true" aria-label={`Company access for ${member.full_name}`} onClick={(e) => e.stopPropagation()}>
+        <div className={modal.header}>
+          <h2>Company access — {member.full_name}</h2>
+          <button type="button" className={modal.closeButton} aria-label="Close" onClick={() => onOpenChange(false)}>
+            ×
+          </button>
+        </div>
+        <div className={modal.body}>
+          <CompanyAccessCheckboxes legalEntities={legalEntities} uncheckedIds={uncheckedIds} onToggle={toggle} />
+          {save.isError ? (
+            <p role="alert" style={{ color: "var(--color-negative)", margin: 0 }}>
+              {save.error instanceof ApiError ? save.error.message : "Could not save company access."}
+            </p>
+          ) : null}
+        </div>
+        <div className={modal.footer}>
+          <button type="button" className={ui.btnSecondary} onClick={() => onOpenChange(false)}>
+            Cancel
+          </button>
+          <button type="button" className={ui.btnPrimary} disabled={save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TeamPanel() {
   const queryClient = useQueryClient();
+  const org = useOrgContext();
+  const legalEntities = org.legalEntities ?? [];
+  const legalEntityNameById = new Map(legalEntities.map((le) => [le.ID, le.LegalName]));
   const [showAddForm, setShowAddForm] = useState(false);
+  const [uncheckedIds, setUncheckedIds] = useState<Set<string>>(new Set());
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
 
   const members = useQuery({
     queryKey: ["team-members"],
@@ -63,6 +188,15 @@ function TeamPanel() {
 
   const [serverError, setServerError] = useState<string | null>(null);
 
+  function toggleCompany(id: string) {
+    setUncheckedIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const onSubmit = async (values: AddMemberValues) => {
     setServerError(null);
     try {
@@ -70,9 +204,11 @@ function TeamPanel() {
         full_name: values.fullName,
         email: values.email,
         password: values.password,
+        legal_entity_ids: uncheckedIds.size === 0 ? undefined : legalEntities.map((le) => le.ID).filter((id) => !uncheckedIds.has(id)),
       });
       await queryClient.invalidateQueries({ queryKey: ["team-members"] });
       reset();
+      setUncheckedIds(new Set());
       setShowAddForm(false);
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : "Could not add this team member. Please try again.");
@@ -120,6 +256,12 @@ function TeamPanel() {
               <input id="member-confirm" type="password" className={ui.input} autoComplete="new-password" {...register("confirmPassword")} />
               {errors.confirmPassword ? <p className={ui.muted}>{errors.confirmPassword.message}</p> : null}
             </div>
+            {/* Only worth showing once there's an actual choice to make —
+                a single-company install (the overwhelming majority) never
+                sees this. */}
+            {legalEntities.length > 1 ? (
+              <CompanyAccessCheckboxes legalEntities={legalEntities} uncheckedIds={uncheckedIds} onToggle={toggleCompany} />
+            ) : null}
           </div>
           <div className={ui.formActions} style={{ marginTop: 12 }}>
             <button
@@ -129,6 +271,7 @@ function TeamPanel() {
                 setShowAddForm(false);
                 setServerError(null);
                 reset();
+                setUncheckedIds(new Set());
               }}
             >
               Cancel
@@ -155,7 +298,9 @@ function TeamPanel() {
                 <th>Email</th>
                 <th>Status</th>
                 <th>2FA</th>
+                {legalEntities.length > 1 ? <th>Companies</th> : null}
                 <th>Last login</th>
+                {legalEntities.length > 1 ? <th /> : null}
               </tr>
             </thead>
             <tbody>
@@ -173,13 +318,29 @@ function TeamPanel() {
                       {m.mfa_enabled ? "Enabled" : "Off"}
                     </span>
                   </td>
+                  {legalEntities.length > 1 ? (
+                    <td>
+                      {m.unrestricted
+                        ? "All companies"
+                        : (m.legal_entity_ids ?? []).map((id) => legalEntityNameById.get(id) ?? "—").join(", ") || "None"}
+                    </td>
+                  ) : null}
                   <td>{m.last_login_at ? new Date(m.last_login_at).toLocaleString() : "Never"}</td>
+                  {legalEntities.length > 1 ? (
+                    <td>
+                      <button type="button" className={ui.btnGhost} onClick={() => setEditingMember(m)}>
+                        Edit companies
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <EditCompanyAccessModal member={editingMember} legalEntities={legalEntities} onOpenChange={(open) => !open && setEditingMember(null)} />
     </div>
   );
 }

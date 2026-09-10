@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { api } from "./api-client";
 
 /** Mirrors internal/modules/organisation/domain.LegalEntity/Branch/Warehouse
@@ -46,15 +47,44 @@ export interface Organisation {
   EWayBillThresholdOverride: string | null;
 }
 
-/** Every screen that creates a document (Sales, Purchases, ...) needs a
- * legal entity / branch / warehouse to post against. Almost every
- * self-hosted install of this size has exactly one of each (single-branch
- * small business) — this hook resolves "the" one, so screens don't each
- * re-implement a picker for something that, for the overwhelming majority
- * of installs, is not actually a choice. A business that genuinely has
- * multiple branches/warehouses can still see and change them via
- * Settings (existing legal-entities/branches/warehouses endpoints); nothing
- * here prevents that, it just isn't this pass's UI.
+/** Which company (legal entity) is active is a per-browser UI
+ * preference, not server state — same convention as the theme toggle.
+ * Kept outside React state too, as a plain module-level fallback read
+ * once at hook-init, so every component calling useOrgContext in the
+ * same render agrees on the initially-selected id before any effect has
+ * had a chance to run. */
+const SELECTED_COMPANY_STORAGE_KEY = "rechvix:selected-company";
+
+function readStoredCompanyId(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_COMPANY_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredCompanyId(id: string) {
+  try {
+    localStorage.setItem(SELECTED_COMPANY_STORAGE_KEY, id);
+  } catch {
+    // Private browsing / storage disabled — the selection just won't
+    // survive a reload, same degraded-but-working fallback the theme
+    // toggle already accepts.
+  }
+}
+
+/** Every screen that creates or lists a document (Sales, Purchases,
+ * Inventory, GST, Reports, ...) needs a legal entity ("company") /
+ * branch / warehouse to post against or filter by. Most self-hosted
+ * installs have exactly one company, in which case this hook silently
+ * always resolves it and nothing below is ever visible — but a business
+ * with more than one (each with its own GSTIN) picks the active one via
+ * the company switcher in AppShell's topbar, which calls selectCompany.
+ * The selection is a plain id persisted in localStorage — every other
+ * hook/query that needs "the active company's id" reads
+ * legalEntity?.ID from here and includes it in its own query key, so
+ * switching companies naturally refetches everything company-scoped
+ * without this hook needing to know what depends on it.
  */
 export function useOrgContext() {
   const organisation = useQuery({
@@ -69,22 +99,38 @@ export function useOrgContext() {
     queryKey: ["branches"],
     queryFn: () => api.getListField<Branch>("/branches", "branches"),
   });
-  const firstBranch = branches.data?.[0];
+
+  const [selectedId, setSelectedId] = useState<string | null>(readStoredCompanyId);
+
+  function selectCompany(id: string) {
+    setSelectedId(id);
+    writeStoredCompanyId(id);
+  }
+
+  // The stored id if it still names a company this user can see (an
+  // employee's company access can shrink, or the stored id could be
+  // stale from a different account on a shared browser), else just the
+  // first one — same "there's almost always exactly one" fallback the
+  // single-company version of this hook always used.
+  const legalEntity = legalEntities.data?.find((le) => le.ID === selectedId) ?? legalEntities.data?.[0];
+  const branch = branches.data?.find((b) => b.LegalEntityID === legalEntity?.ID);
   const warehouses = useQuery({
-    queryKey: ["warehouses", firstBranch?.ID],
-    queryFn: () => api.getListField<Warehouse>(`/branches/${firstBranch?.ID}/warehouses`, "warehouses"),
-    enabled: !!firstBranch,
+    queryKey: ["warehouses", branch?.ID],
+    queryFn: () => api.getListField<Warehouse>(`/branches/${branch?.ID}/warehouses`, "warehouses"),
+    enabled: !!branch,
   });
 
-  const isPending = organisation.isPending || legalEntities.isPending || branches.isPending || warehouses.isPending;
+  const isPending = organisation.isPending || legalEntities.isPending || branches.isPending || (!!branch && warehouses.isPending);
   const isError = organisation.isError || legalEntities.isError || branches.isError || warehouses.isError;
 
   return {
     isPending,
     isError,
     organisation: organisation.data,
-    legalEntity: legalEntities.data?.[0],
-    branch: firstBranch,
+    legalEntities: legalEntities.data,
+    legalEntity,
+    branch,
     warehouse: warehouses.data?.[0],
+    selectCompany,
   };
 }

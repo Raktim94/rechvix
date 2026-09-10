@@ -187,3 +187,24 @@ export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M12 5v14M5 12h14" />
   </Icon>
 );
+
+export const BuildingIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M4 21V6a1 1 0 011-1h6a1 1 0 011 1v15" />
+    <path d="M12 21V10a1 1 0 011-1h6a1 1 0 011 1v11" />
+    <path d="M2 21h20" />
+    <path d="M7.5 8h.01M7.5 12h.01M7.5 16h.01" />
+  </Icon>
+);
+
+export const ChevronDownIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M6 9l6 6 6-6" />
+  </Icon>
+);
+
+export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M5 12l5 5L20 7" />
+  </Icon>
+);

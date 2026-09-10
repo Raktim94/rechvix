@@ -494,3 +494,79 @@
 .userDropdown a:hover {
   background: var(--color-surface-alt);
 }
+
+/* Company switcher — same visual family as .userButton/.userDropdown
+   (a labelled pill instead of a bare icon, since "which company" needs
+   to read at a glance without opening the menu) rather than a new
+   pattern. Comes right after the search box, before the primary sale/
+   purchase actions — the one piece of topbar chrome that changes what
+   every other action on the page means. */
+.companyButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 7px var(--space-3);
+  border-radius: 999px;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  max-width: 220px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.companyButton:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-alt);
+}
+
+.companyButtonIcon {
+  flex: none;
+  color: var(--color-accent);
+}
+
+.companyButtonLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.companyButtonChevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-faint);
+}
+
+@media (max-width: 900px) {
+  .companyButtonLabel {
+    display: none;
+  }
+  .companyButton {
+    max-width: none;
+    padding: 7px var(--space-2);
+  }
+}
+
+/* .userDropdown button already sets display:block at equal specificity
+   (0,1,1) to a bare .companyOption (0,1,0) and would win — qualify with
+   .userDropdown so this rule's specificity (0,2,1) actually overrides
+   it, rather than reaching for !important. */
+.userDropdown .companyOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.companyOptionCheck {
+  flex: none;
+  color: var(--color-accent);
+}
+
+.companyDropdownDivider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 4px;
+}

@@ -214,7 +214,14 @@ func (s *Service) Provision(ctx context.Context, p ProvisionParams) (ProvisionRe
 // tricked by a client-supplied ID into fetching another tenant's data
 // (brief Rule 5).
 func (s *Service) GetOrganisation(ctx context.Context, principal permissions.Principal) (*domain.Organisation, error) {
-	if err := s.permissions.Require(ctx, principal, "settings.view", permissions.Scope{}); err != nil {
+	// HasAny, not Require(..., Scope{}) — a team member restricted to one
+	// company (identity.CreateTeamMemberParams.LegalEntityIDs) holds only
+	// company-scoped settings.view grants, none unrestricted, and would
+	// otherwise be rejected fetching even their own organisation's basic
+	// record. There's only one organisation per principal either way, so
+	// unlike ListLegalEntities/ListBranches below there's nothing to
+	// additionally filter here.
+	if err := s.permissions.HasAny(ctx, principal, "settings.view"); err != nil {
 		return nil, err
 	}
 	var result *domain.Organisation
@@ -541,38 +548,115 @@ func (s *Service) CreateWarehouse(ctx context.Context, principal permissions.Pri
 	return w, nil
 }
 
+// ListLegalEntities returns only the companies principal is allowed to
+// see — the company switcher's own data source (apps/web's
+// useOrgContext/CompanySwitcher), so this is the ONE place a
+// company-restricted employee's grants determine which companies even
+// APPEAR as an option, not just which company-scoped data loads once
+// selected. Same AllowedLegalEntities-based filtering as
+// sales/app.Service.ListDocuments, just applied to legal_entities
+// itself rather than a legal_entities-owned document.
 func (s *Service) ListLegalEntities(ctx context.Context, principal permissions.Principal) ([]*domain.LegalEntity, error) {
-	if err := s.permissions.Require(ctx, principal, "settings.view", permissions.Scope{}); err != nil {
+	unrestricted, allowed, err := s.permissions.AllowedLegalEntities(ctx, principal, "settings.view")
+	if err != nil {
 		return nil, err
 	}
+	if !unrestricted && len(allowed) == 0 {
+		return nil, fmt.Errorf("organisation: %w", &permissions.ErrForbidden{PermissionCode: "settings.view"})
+	}
 	var result []*domain.LegalEntity
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		result, err = s.legalEntities.ListByOrganisation(ctx, principal.OrganisationID)
 		return err
 	})
-	return result, err
-}
-
-func (s *Service) ListBranches(ctx context.Context, principal permissions.Principal) ([]*domain.Branch, error) {
-	if err := s.permissions.Require(ctx, principal, "settings.view", permissions.Scope{}); err != nil {
+	if err != nil {
 		return nil, err
 	}
+	if unrestricted {
+		return result, nil
+	}
+	allowedSet := make(map[uuid.UUID]bool, len(allowed))
+	for _, id := range allowed {
+		allowedSet[id] = true
+	}
+	filtered := make([]*domain.LegalEntity, 0, len(result))
+	for _, le := range result {
+		if allowedSet[le.ID] {
+			filtered = append(filtered, le)
+		}
+	}
+	return filtered, nil
+}
+
+// ListBranches is ListLegalEntities' identical filtering, applied to
+// branches instead (via each branch's own LegalEntityID) — the
+// company switcher's useOrgContext resolves "the active company's
+// branch" from this same list, so an unfiltered result here would leak
+// a restricted company's branch (name, code) even though its legal
+// entity itself was correctly filtered out above.
+func (s *Service) ListBranches(ctx context.Context, principal permissions.Principal) ([]*domain.Branch, error) {
+	unrestricted, allowed, err := s.permissions.AllowedLegalEntities(ctx, principal, "settings.view")
+	if err != nil {
+		return nil, err
+	}
+	if !unrestricted && len(allowed) == 0 {
+		return nil, fmt.Errorf("organisation: %w", &permissions.ErrForbidden{PermissionCode: "settings.view"})
+	}
 	var result []*domain.Branch
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		result, err = s.branches.ListByOrganisation(ctx, principal.OrganisationID)
 		return err
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	if unrestricted {
+		return result, nil
+	}
+	allowedSet := make(map[uuid.UUID]bool, len(allowed))
+	for _, id := range allowed {
+		allowedSet[id] = true
+	}
+	filtered := make([]*domain.Branch, 0, len(result))
+	for _, br := range result {
+		if allowedSet[br.LegalEntityID] {
+			filtered = append(filtered, br)
+		}
+	}
+	return filtered, nil
 }
 
+// ListWarehouses' permission check resolves branchID's own LegalEntityID
+// first and includes it in the Scope — a Scope{BranchID: &branchID}
+// alone (this method's shape before company-scoped grants existed)
+// leaves LegalEntityID nil, which Require's level-by-level matching
+// reads as "the caller must hold an UNRESTRICTED-at-the-company-level
+// grant" (levelMatches: a company-scoped grant's non-nil LegalEntityID
+// never matches a request that left it nil) — exactly backwards from
+// what's needed, since branchID unambiguously belongs to one company
+// already. Two sequential RunScoped calls (the branch lookup, then
+// Require's own self-scoped grants lookup), never nested — see
+// purchases/app.Service.manageForBranch's identical note for why.
 func (s *Service) ListWarehouses(ctx context.Context, principal permissions.Principal, branchID uuid.UUID) ([]*domain.Warehouse, error) {
-	if err := s.permissions.Require(ctx, principal, "settings.view", permissions.Scope{BranchID: &branchID}); err != nil {
+	var legalEntityID uuid.UUID
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		branch, err := s.branches.GetByID(ctx, principal.OrganisationID, branchID)
+		if err != nil {
+			return err
+		}
+		legalEntityID = branch.LegalEntityID
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.permissions.Require(ctx, principal, "settings.view", permissions.Scope{LegalEntityID: &legalEntityID, BranchID: &branchID}); err != nil {
 		return nil, err
 	}
 	var result []*domain.Warehouse
-	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
 		result, err = s.warehouses.ListByBranch(ctx, branchID)
 		return err

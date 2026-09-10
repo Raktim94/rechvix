@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import styles from "./AppShell.module.css";
 import { CommandPalette } from "./CommandPalette";
+import { CompanySwitcher } from "./CompanySwitcher";
 import { Logo } from "./Logo";
 import { PlusIcon, SearchIcon } from "./icons";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -124,6 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </kbd>
         </button>
         <div className={styles.topbarSpacer} />
+        <CompanySwitcher />
         <div className={styles.primaryActions}>
           <Link to="/sales/new" className={styles.actionPrimary}>
             <span className={styles.actionPlus} aria-hidden="true">

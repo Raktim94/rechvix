@@ -5,6 +5,7 @@ import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { useOrgContext } from "../../lib/useOrgContext";
+import { withLegalEntity } from "../../lib/useReportTable";
 import layout from "../DashboardPage.module.css";
 
 /** Mirrors internal/modules/sales/app.BillingLookup's result shape
@@ -252,12 +253,12 @@ export function InventoryPage() {
 
       <div className={layout.panel}>
         <h2>Low stock</h2>
-        <ReportTable path="/reports/inventory/low-stock?format=json" emptyLabel="Nothing is running low." />
+        <ReportTable path={withLegalEntity("/reports/inventory/low-stock?format=json", org.legalEntity?.ID)} emptyLabel="Nothing is running low." />
       </div>
 
       <div className={layout.panel}>
         <h2>Stock valuation</h2>
-        <ReportTable path="/reports/inventory/valuation?format=json" emptyLabel="No stock recorded yet." />
+        <ReportTable path={withLegalEntity("/reports/inventory/valuation?format=json", org.legalEntity?.ID)} emptyLabel="No stock recorded yet." />
       </div>
     </div>
   );

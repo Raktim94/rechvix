@@ -9,6 +9,7 @@ import { formatMoney } from "../../lib/money";
 import { getOcrProvider, runOcr } from "../../lib/ocr";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
+import { withLegalEntity } from "../../lib/useReportTable";
 import layout from "../DashboardPage.module.css";
 import { CancelPurchaseModal } from "./CancelPurchaseModal";
 import { ImportAiMarkdownButton } from "./ImportAiMarkdownButton";
@@ -68,8 +69,8 @@ export function PurchasesPage() {
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
   const documents = useQuery({
-    queryKey: ["purchase-documents"],
-    queryFn: () => api.getListField<PurchaseDocument>("/purchases/documents", "documents"),
+    queryKey: ["purchase-documents", org.legalEntity?.ID],
+    queryFn: () => api.getListField<PurchaseDocument>(withLegalEntity("/purchases/documents", org.legalEntity?.ID), "documents"),
   });
 
   // Only used to resolve SupplierPartyID -> a display name in the list

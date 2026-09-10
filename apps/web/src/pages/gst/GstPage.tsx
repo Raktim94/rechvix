@@ -3,7 +3,8 @@ import { useState } from "react";
 import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
 import { api, apiUrl, ApiError } from "../../lib/api-client";
-import type { Organisation } from "../../lib/useOrgContext";
+import { useOrgContext, type Organisation } from "../../lib/useOrgContext";
+import { withLegalEntity } from "../../lib/useReportTable";
 import layout from "../DashboardPage.module.css";
 import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, type SalesDocument } from "../sales/types";
 
@@ -328,15 +329,15 @@ function TaxRatesSection() {
  * government portal, plus a MANIFEST.txt listing anything that couldn't
  * be included and why (not eligible yet, missing distance, etc.) — a
  * skip is surfaced, never silently dropped from the download. */
-function BulkEwayBillPanel() {
+function BulkEwayBillPanel({ legalEntityId }: { legalEntityId: string | undefined }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const documents = useQuery({
-    queryKey: ["sales-documents"],
-    queryFn: () => api.getListField<SalesDocument>("/sales/documents", "documents"),
+    queryKey: ["sales-documents", legalEntityId],
+    queryFn: () => api.getListField<SalesDocument>(withLegalEntity("/sales/documents", legalEntityId), "documents"),
   });
   const eligible = (documents.data ?? []).filter((d) => d.Status === "FINALIZED" && EWB_ELIGIBLE_TYPES.has(d.DocumentType));
 
@@ -448,21 +449,32 @@ function BulkEwayBillPanel() {
 }
 
 export function GstPage() {
+  const org = useOrgContext();
+  const legalEntityId = org.legalEntity?.ID;
+
   return (
     <div className={layout.page}>
       <div className={layout.heading}>
         <div>
           <h1>GST / Tax</h1>
-          <p className={layout.subtitle}>Tax rates, e-Way Bill settings, and filing summaries.</p>
+          <p className={layout.subtitle}>
+            Tax rates, e-Way Bill settings, and filing summaries{org.legalEntity ? <> for {org.legalEntity.LegalName}</> : null}.
+          </p>
         </div>
       </div>
 
       <EWayBillModeSection />
-      <BulkEwayBillPanel />
+      <BulkEwayBillPanel legalEntityId={legalEntityId} />
       <VehiclesSection />
       <TransportersSection />
       <TaxRatesSection />
 
+      {/* HSN/tax-rate summary stay organisation-wide (no withLegalEntity
+          here) — tax_documents has no cheap company join available yet,
+          see reporting/pg.Repo.HSNSummary's own doc comment. GSTR-1/3B
+          below ARE filtered — each is squarely "this company's filing
+          prep," the one place mixing companies together would be
+          actively wrong, not just incomplete. */}
       <div className={layout.panel}>
         <h2>HSN summary</h2>
         <ReportTable path="/reports/tax/hsn-summary?format=json" />
@@ -477,7 +489,7 @@ export function GstPage() {
           Prepared from your finalized sales for the current data — not a filing submission. Export and hand this to
           your CA, or use it to fill the government GSTR-1 form yourself.
         </p>
-        <ReportTable path="/reports/tax/gstr1?format=json" />
+        <ReportTable path={withLegalEntity("/reports/tax/gstr1?format=json", legalEntityId)} />
       </div>
       <div className={layout.panel}>
         <h2>GSTR-3B summary</h2>
@@ -487,7 +499,7 @@ export function GstPage() {
           from your finalized sales and purchases. Reverse charge, imports, and ITC reversals aren't tracked and are
           left off rather than shown as a guessed zero — bring those to your CA separately.
         </p>
-        <ReportTable path="/reports/tax/gstr3b?format=json" />
+        <ReportTable path={withLegalEntity("/reports/tax/gstr3b?format=json", legalEntityId)} />
       </div>
     </div>
   );

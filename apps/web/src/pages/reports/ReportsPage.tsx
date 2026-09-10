@@ -1,13 +1,16 @@
 import ReactECharts from "echarts-for-react";
 import { ReportTable } from "../../components/ReportTable";
 import { formatMoney, moneyToApproxNumber } from "../../lib/money";
-import { useReportTable } from "../../lib/useReportTable";
+import { useOrgContext } from "../../lib/useOrgContext";
+import { useReportTable, withLegalEntity } from "../../lib/useReportTable";
 import { useTheme } from "../../theme/ThemeProvider";
 import layout from "../DashboardPage.module.css";
 
 export function ReportsPage() {
   const { theme } = useTheme();
   const dark = theme === "dark";
+  const org = useOrgContext();
+  const legalEntityId = org.legalEntity?.ID;
 
   return (
     <div className={layout.page}>
@@ -20,40 +23,44 @@ export function ReportsPage() {
 
       <div className={layout.panel}>
         <h2>Top products by profit</h2>
-        <GrossProfitChart dark={dark} />
+        <GrossProfitChart dark={dark} legalEntityId={legalEntityId} />
       </div>
 
       <div className={layout.panel}>
         <h2>Sales invoices</h2>
-        <ReportTable path="/reports/sales/invoices?format=json" />
+        <ReportTable path={withLegalEntity("/reports/sales/invoices?format=json", legalEntityId)} />
       </div>
       <div className={layout.panel}>
         <h2>Gross profit</h2>
-        <ReportTable path="/reports/sales/gross-profit?format=json" />
+        <ReportTable path={withLegalEntity("/reports/sales/gross-profit?format=json", legalEntityId)} />
       </div>
 
       <div className={layout.panel}>
         <h2>Purchases by day</h2>
-        <PurchaseSummaryChart dark={dark} />
+        <PurchaseSummaryChart dark={dark} legalEntityId={legalEntityId} />
       </div>
       <div className={layout.panel}>
         <h2>Purchase summary</h2>
-        <ReportTable path="/reports/purchases/summary?format=json" />
+        <ReportTable path={withLegalEntity("/reports/purchases/summary?format=json", legalEntityId)} />
       </div>
       <div className={layout.panel}>
         <h2>Purchase documents</h2>
-        <ReportTable path="/reports/purchases/documents?format=json" emptyLabel="No purchases recorded yet." />
+        <ReportTable path={withLegalEntity("/reports/purchases/documents?format=json", legalEntityId)} emptyLabel="No purchases recorded yet." />
       </div>
       <div className={layout.panel}>
         <h2>Stock movements</h2>
-        <ReportTable path="/reports/inventory/movements?format=json" emptyLabel="No stock movements recorded yet." />
+        <ReportTable path={withLegalEntity("/reports/inventory/movements?format=json", legalEntityId)} emptyLabel="No stock movements recorded yet." />
       </div>
 
       {/* Trial balance/receivables/payables also live on Accounting
           (alongside the chart of accounts they're derived from) — shown
           here too since "Reports" is where anyone actually goes looking
           for them; same ReportTable, same live data, just a second door
-          into it rather than a duplicate implementation. */}
+          into it rather than a duplicate implementation. NOT company-
+          filtered (no withLegalEntity here) — journals/accounts have no
+          cheap company join available yet, see
+          reporting/pg.Repo.TrialBalance's own doc comment; these three
+          stay organisation-wide on purpose. */}
       <div className={layout.panel}>
         <h2>Trial balance</h2>
         <ReportTable path="/reports/accounting/trial-balance?format=json" />
@@ -75,8 +82,8 @@ export function ReportsPage() {
 // Top 8 by profit, revenue vs. profit as two categorical bars per product
 // — magnitude comparison across products, not a trend, so grouped bars
 // beat a line here.
-function GrossProfitChart({ dark }: { dark: boolean }) {
-  const query = useReportTable("/reports/sales/gross-profit?format=json");
+function GrossProfitChart({ dark, legalEntityId }: { dark: boolean; legalEntityId: string | undefined }) {
+  const query = useReportTable(withLegalEntity("/reports/sales/gross-profit?format=json", legalEntityId));
 
   if (query.isPending) {
     return <div className={layout.skeleton} style={{ height: 280 }} aria-hidden="true" />;
@@ -164,8 +171,8 @@ function GrossProfitChart({ dark }: { dark: boolean }) {
 // (same domain.GroupByDay default as the Dashboard's sales trend) —
 // plotted as bars rather than the Dashboard's line so the two daily-trend
 // charts in this app don't read as the same chart with different data.
-function PurchaseSummaryChart({ dark }: { dark: boolean }) {
-  const query = useReportTable("/reports/purchases/summary?format=json");
+function PurchaseSummaryChart({ dark, legalEntityId }: { dark: boolean; legalEntityId: string | undefined }) {
+  const query = useReportTable(withLegalEntity("/reports/purchases/summary?format=json", legalEntityId));
 
   if (query.isPending) {
     return <div className={layout.skeleton} style={{ height: 260 }} aria-hidden="true" />;
