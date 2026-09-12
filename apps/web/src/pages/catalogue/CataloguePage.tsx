@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
@@ -141,6 +141,14 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   // via /catalogue?new=1 — the form is right here, it just used to be
   // one unexplained click away for anyone arriving from elsewhere.
   const [showForm, setShowForm] = useState(openNewForm);
+  // The New/Edit form panel sits near the top of the page, above the
+  // product list — clicking "Edit" on a row far down a long list used
+  // to leave the now-open form out of view above the fold, looking like
+  // nothing happened. Scrolled into view explicitly below (startEdit and
+  // the toolbar's "+ New product" button) rather than relying on the
+  // browser's own focus-follows-scroll, which doesn't fire here since
+  // the first focusable field doesn't autofocus.
+  const formRef = useRef<HTMLDivElement>(null);
   // Set while editing an existing product — the same form panel is
   // reused, but submit calls updateProduct instead of createProduct and
   // the create-only fields below (SKU/barcode/opening stock/GST rate)
@@ -184,6 +192,10 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   const [openingQty, setOpeningQty] = useState("");
   const [openingCost, setOpeningCost] = useState("");
   const [barcode, setBarcode] = useState("");
+
+  useEffect(() => {
+    if (showForm) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showForm, editingId]);
 
   const products = useQuery({
     queryKey: ["products", query],
@@ -466,7 +478,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       </div>
 
       {showForm ? (
-        <div className={layout.panel}>
+        <div className={layout.panel} ref={formRef}>
           <h2 style={{ marginTop: 0 }}>{editingId ? "Edit product" : "New product"}</h2>
           {units.data && units.data.length === 0 ? (
             <div style={{ marginBottom: 16 }}>
