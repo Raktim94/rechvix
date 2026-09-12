@@ -354,6 +354,19 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   });
 
   async function handleAddProduct(result: BillingLookupResult) {
+    // Adding the same product a second time (a repeat "Add" click, or the
+    // same barcode scanned twice) used to always POST a brand-new line —
+    // two separate rows both reading quantity 1, instead of one row at
+    // quantity 2. Merge into the existing line instead, same as any real
+    // billing counter would.
+    const existing = lines.find((l) => l.ProductVariantID === result.ProductVariantID);
+    if (existing) {
+      updateLine.mutate({ line: existing, quantity: String(Number(existing.Quantity) + 1) });
+      setProductQuery("");
+      setProductResults([]);
+      searchInputRef.current?.focus();
+      return;
+    }
     let unitId: string;
     try {
       const product = await api.get<{ ID: string; BaseUOMID: string }>(`/catalogue/products/${result.ProductID}`);
