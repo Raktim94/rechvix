@@ -45,6 +45,92 @@ interface BulkDeleteResult {
   hard_deleted: string[];
   deactivated: string[];
 }
+interface StockBalance {
+  QuantityOnHand: string;
+}
+
+const ADJUSTMENT_REASON_BY_TYPE: Record<string, string> = {
+  ADJUSTMENT_IN: "Add stock (found / recount)",
+  ADJUSTMENT_OUT: "Remove stock (recount)",
+  DAMAGE: "Damaged",
+  EXPIRY: "Expired",
+};
+
+/** Editing an existing product used to have no way to change its stock at
+ * all — PUT /catalogue/products/{id} only ever covered the product's own
+ * fields (name/HSN/unit/category/brand), so a shop owner correcting a
+ * count mid-edit had to abandon this form, go to Inventory, search for
+ * the same product again, and adjust it there. Same POST
+ * /inventory/adjustments call InventoryPage's own StockCard already uses
+ * (Stage 13) — kept intentionally small here (current balance + one
+ * adjustment form) rather than the movement-history table that page
+ * also shows, since this is a side panel inside product editing, not a
+ * dedicated stock screen. */
+function StockChangeSection({ variantId, warehouseId, baseUOMID }: { variantId: string; warehouseId: string; baseUOMID: string }) {
+  const queryClient = useQueryClient();
+  const [adjQty, setAdjQty] = useState("");
+  const [adjType, setAdjType] = useState("ADJUSTMENT_IN");
+  const [adjReason, setAdjReason] = useState("");
+
+  const balanceKey = ["inventory-balance", warehouseId, variantId];
+  const balance = useQuery({
+    queryKey: balanceKey,
+    queryFn: () => api.get<StockBalance>(`/inventory/balances?warehouse_id=${warehouseId}&product_variant_id=${variantId}`),
+  });
+
+  const adjust = useMutation({
+    mutationFn: () =>
+      api.post("/inventory/adjustments", {
+        warehouse_id: warehouseId,
+        reason: adjReason || ADJUSTMENT_REASON_BY_TYPE[adjType],
+        notes: "",
+        lines: [{ product_variant_id: variantId, unit_id: baseUOMID, quantity: adjQty, movement_type: adjType }],
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: balanceKey });
+      void queryClient.invalidateQueries({ queryKey: ["report-table"] }); // low-stock/valuation tables
+      setAdjQty("");
+      setAdjReason("");
+    },
+  });
+
+  return (
+    <div className={ui.field} style={{ gridColumn: "1 / -1" }}>
+      <label>Stock (in {warehouseId ? "your current warehouse" : "—"})</label>
+      <p style={{ margin: "0 0 8px" }}>
+        Current stock:{" "}
+        <strong className="num">{balance.isPending ? "…" : balance.isError ? "—" : Number(balance.data?.QuantityOnHand ?? "0")}</strong>
+      </p>
+      <div className={ui.formGrid}>
+        <div className={ui.field}>
+          <label htmlFor="edit-stock-type">Type</label>
+          <select id="edit-stock-type" className={ui.select} value={adjType} onChange={(e) => setAdjType(e.target.value)}>
+            <option value="ADJUSTMENT_IN">Add stock (found / recount)</option>
+            <option value="ADJUSTMENT_OUT">Remove stock (recount)</option>
+            <option value="DAMAGE">Damaged</option>
+            <option value="EXPIRY">Expired</option>
+          </select>
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="edit-stock-qty">Quantity</label>
+          <input id="edit-stock-qty" className={ui.input} value={adjQty} onChange={(e) => setAdjQty(e.target.value)} placeholder="0" />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="edit-stock-reason">Reason (optional)</label>
+          <input id="edit-stock-reason" className={ui.input} value={adjReason} onChange={(e) => setAdjReason(e.target.value)} />
+        </div>
+        <button type="button" className={ui.btnSecondary} disabled={!adjQty || adjust.isPending} onClick={() => adjust.mutate()}>
+          {adjust.isPending ? "Saving…" : "Record adjustment"}
+        </button>
+      </div>
+      {adjust.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>
+          {adjust.error instanceof ApiError ? adjust.error.message : "Could not record this adjustment."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }) {
   const queryClient = useQueryClient();
@@ -514,6 +600,8 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                   </div>
                 ) : null}
               </>
+            ) : editingVariantId && org.warehouse ? (
+              <StockChangeSection variantId={editingVariantId} warehouseId={org.warehouse.ID} baseUOMID={unitId} />
             ) : null}
             <div className={ui.field}>
               <label htmlFor="product-category">Category (optional)</label>
