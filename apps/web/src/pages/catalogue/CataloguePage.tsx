@@ -49,6 +49,17 @@ interface StockBalance {
   QuantityOnHand: string;
 }
 
+/** Purely a display hint for the single "GST rate" field — GST law never
+ * lets CGST/SGST/IGST be set independently (CGST+SGST always equals
+ * IGST), so there's nothing here to configure, only to explain. Returns
+ * null for a blank/invalid rate rather than showing a hint for nothing. */
+function gstSplitHint(rate: string): string | null {
+  const n = Number(rate);
+  if (rate.trim() === "" || !Number.isFinite(n) || n < 0) return null;
+  const half = (n / 2).toFixed(2).replace(/\.?0+$/, "");
+  return `${n}% = ${half}% CGST + ${half}% SGST (in-state) or ${n}% IGST (out-of-state)`;
+}
+
 const ADJUSTMENT_REASON_BY_TYPE: Record<string, string> = {
   ADJUSTMENT_IN: "Add stock (found / recount)",
   ADJUSTMENT_OUT: "Remove stock (recount)",
@@ -526,6 +537,18 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
             <div className={ui.field}>
               <label htmlFor="product-gst">GST rate for this HSN (%, optional)</label>
               <input id="product-gst" className={ui.input} value={gstRate} onChange={(e) => setGstRate(e.target.value)} placeholder="e.g. 18" />
+              {/* This is always the ONE combined rate — CGST+SGST always
+                  equals IGST under GST law, so there's nothing to
+                  independently configure. taxation.CalculateAndSnapshotTx
+                  (called from sales.FinalizeDocument) already splits this
+                  automatically at billing time based on the customer's
+                  state vs. your own; this line is purely informational so
+                  the single number's meaning is clear. */}
+              {gstSplitHint(gstRate) ? (
+                <span className={ui.muted} style={{ display: "block", marginTop: 4 }}>
+                  {gstSplitHint(gstRate)}
+                </span>
+              ) : null}
             </div>
             <div className={ui.field}>
               <label htmlFor="product-price">Price (optional)</label>
@@ -711,7 +734,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           "base_uom_code (created automatically if it doesn't exist yet)",
           "sku_code (optional — generated from name if blank)",
           "price (optional — sets this product's price on your default price list)",
-          "gst_rate (optional — sets the GST% for this HSN/SAC code)",
+          "gst_rate (optional — the combined GST% for this HSN/SAC code, e.g. 18; split into CGST+SGST or IGST automatically at billing time, not entered separately)",
           "category_name (optional — created automatically if it doesn't exist yet)",
           "brand_name (optional — created automatically if it doesn't exist yet)",
           "barcode (optional — must be unique)",
