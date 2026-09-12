@@ -249,7 +249,20 @@ export function InventoryPage() {
 
       {selected ? (
         <StockCard product={selected.result} warehouseId={org.warehouse!.ID} baseUOMID={selected.baseUOMID} />
-      ) : null}
+      ) : (
+        // Without this, a first-time user sees a search box and two report
+        // tables and nothing telling them "Add stock" exists at all — it's
+        // actually the Stock adjustment panel inside StockCard above, which
+        // only renders once a specific product is selected (stock is always
+        // per-product). Confirmed via a real end-to-end repro: search alone
+        // never shows it, only clicking a result does.
+        <div className={layout.panel}>
+          <p className={layout.emptyState}>
+            To add stock, search for a product above and select it — you'll get a
+            "Stock adjustment" panel with an "Add stock (found / recount)" option.
+          </p>
+        </div>
+      )}
 
       <div className={layout.panel}>
         <h2>Low stock</h2>
