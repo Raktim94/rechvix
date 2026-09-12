@@ -112,6 +112,37 @@ function EditableDiscount({ line, onCommit, disabled }: { line: SalesDocumentLin
   );
 }
 
+/** Mirrors gstindia.httpapi's tax-rate list shape (same one GstPage's own
+ * TaxRatesSection already trusts) — only the fields this per-line display
+ * needs. */
+interface HSNTaxRate {
+  GSTRate: string;
+}
+
+/** A line's applicable GST% during billing — until now, nothing on this
+ * screen showed what tax rate would apply; a line's real tax only became
+ * visible after finalize, on the printed invoice. Looks the HSN/SAC code
+ * up against GET /gst/tax-rates/{hsn} (the same admin-configured
+ * tax_rate_master rows FinalizeDocument's real TaxEngine reads from,
+ * already ordered newest-ValidFrom-first server-side — same "just take
+ * the first row" simplicity GstPage's own TaxRatesSection already uses,
+ * not stricter). Purely informational: FinalizeDocument's own
+ * server-side calculation remains the actual source of truth for what
+ * gets charged. */
+function LineGstRate({ hsnSacCode }: { hsnSacCode: string }) {
+  const trimmed = hsnSacCode.trim();
+  const rates = useQuery({
+    queryKey: ["gst-rate-for-hsn", trimmed],
+    queryFn: () => api.getListField<HSNTaxRate>(`/gst/tax-rates/${encodeURIComponent(trimmed)}`, "tax_rates"),
+    enabled: trimmed.length > 0,
+    staleTime: 60_000,
+  });
+  if (!trimmed) return <span className={ui.muted}>—</span>;
+  if (rates.isPending) return <span className={ui.muted}>…</span>;
+  const current = rates.data?.[0];
+  return current ? <span>{current.GSTRate}%</span> : <span className={ui.muted}>—</span>;
+}
+
 /** The billing counter — brief's "exceptional attention" screen. A sale is
  * a real DRAFT sales_documents row from the moment the customer is picked
  * (not client-side-only state until some later "save"): every add-line
@@ -620,6 +651,9 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                       <th scope="col">Item</th>
                       <th scope="col">HSN/SAC</th>
                       <th scope="col" className={styles.colRight}>
+                        GST %
+                      </th>
+                      <th scope="col" className={styles.colRight}>
                         Qty
                       </th>
                       <th scope="col" className={styles.colRight}>
@@ -636,7 +670,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                   </thead>
                   <tbody>
                     <tr>
-                      <td colSpan={8} className={styles.gridEmpty}>
+                      <td colSpan={9} className={styles.gridEmpty}>
                         {documentId ? "Scan a barcode or search above to add the first item." : "Pick a customer above, then scan or search to add items."}
                       </td>
                     </tr>
@@ -653,6 +687,9 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                       </th>
                       <th scope="col">Item</th>
                       <th scope="col">HSN/SAC</th>
+                      <th scope="col" className={styles.colRight}>
+                        GST %
+                      </th>
                       <th scope="col" className={styles.colRight}>
                         Qty
                       </th>
@@ -674,6 +711,9 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                         <td className={`num ${styles.colNum}`}>{l.LineNumber}</td>
                         <td className={styles.itemCell}>{nameByVariant[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
                         <td className={styles.hsnCell}>{l.HSNSACCode || "—"}</td>
+                        <td className={`num ${styles.colRight}`}>
+                          <LineGstRate hsnSacCode={l.HSNSACCode} />
+                        </td>
                         <td className={`num ${styles.colRight}`}>
                           <EditableQty line={l} disabled={updateLine.isPending} onCommit={(quantity) => updateLine.mutate({ line: l, quantity })} />
                         </td>
@@ -701,6 +741,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                     <tr className={styles.gridTotalRow}>
                       <td />
                       <td>Total</td>
+                      <td />
                       <td />
                       <td className={`num ${styles.colRight}`}>{lines.reduce((sum, l) => sum + Number(l.Quantity), 0)}</td>
                       <td />
