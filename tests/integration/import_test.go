@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	cataloguedomain "rechvix/internal/modules/catalogue/domain"
@@ -15,6 +16,7 @@ import (
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactsdomain "rechvix/internal/modules/contacts/domain"
 	contactspg "rechvix/internal/modules/contacts/pg"
+	inventoryapp "rechvix/internal/modules/inventory/app"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/importer"
 	"rechvix/internal/platform/permissions"
@@ -71,7 +73,7 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 
 	// Dry run first: nothing committed, but the report must already show
 	// the correct outcome per row.
-	dryReport, err := svc.ImportProducts(ctx, principal, rows, true)
+	dryReport, err := svc.ImportProducts(ctx, principal, rows, true, nil)
 	if err != nil {
 		t.Fatalf("ImportProducts(dryRun): %v", err)
 	}
@@ -102,7 +104,7 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 	}
 
 	// Real run: same rows, dryRun=false.
-	report, err := svc.ImportProducts(ctx, principal, rows, false)
+	report, err := svc.ImportProducts(ctx, principal, rows, false, nil)
 	if err != nil {
 		t.Fatalf("ImportProducts: %v", err)
 	}
@@ -195,7 +197,7 @@ func TestCatalogue_ImportProducts_GeneratesUniqueSKUsOnCollision(t *testing.T) {
 		{Number: 1, Fields: map[string]string{"name": baseName, "base_uom_code": "PCS"}},        // collides with occupiedSKU
 		{Number: 2, Fields: map[string]string{"name": baseName + "!!", "base_uom_code": "PCS"}}, // different product name, SAME slug as row 1's fallback
 	}
-	report, err := svc.ImportProducts(ctx, principal, rows, false)
+	report, err := svc.ImportProducts(ctx, principal, rows, false, nil)
 	if err != nil {
 		t.Fatalf("ImportProducts: %v", err)
 	}
@@ -317,7 +319,7 @@ func TestCatalogue_ImportProducts_CategoryBrandBarcode(t *testing.T) {
 		{Number: 4, Fields: map[string]string{"name": "Chips D " + unique, "base_uom_code": "PCS", "barcode": takenBarcode}},
 	}
 
-	report, err := svc.ImportProducts(ctx, principal, rows, false)
+	report, err := svc.ImportProducts(ctx, principal, rows, false, nil)
 	if err != nil {
 		t.Fatalf("ImportProducts: %v", err)
 	}
@@ -367,6 +369,103 @@ func TestCatalogue_ImportProducts_CategoryBrandBarcode(t *testing.T) {
 	}
 	if _, err := svc.LookupBarcode(ctx, principal, barcodeB); err != nil {
 		t.Fatalf("LookupBarcode(%q): %v", barcodeB, err)
+	}
+}
+
+// TestCatalogue_ImportProducts_OpeningStock proves the opening_qty/
+// opening_cost columns actually move real stock through
+// SetOpeningStockHook (apps/server/main.go wires it to
+// inventoryapp.Service.RecordOpeningStock — this test wires the same
+// real service, not a mock, so a passing GetBalance below means the
+// whole cross-module hook chain works, not just that ImportProducts'
+// own bookkeeping is internally consistent) when the caller passes a
+// warehouseID, and degrades to a non-fatal per-row note (row still
+// COMMITTED, product+variant still created) when it doesn't — see
+// ImportProducts' own doc comment for why opening_qty needs a warehouse
+// a CSV row has no column to name.
+func TestCatalogue_ImportProducts_OpeningStock(t *testing.T) {
+	ctx := context.Background()
+	identitySvc, _ := newTestIdentityService(t)
+	email := "catalogue-stock-" + uuid.NewString()[:8] + "@example.com"
+	boot := bootstrapTestTenant(t, ctx, identitySvc, email, "correct horse battery staple 42")
+	principal := permissions.Principal{UserID: boot.OwnerUserID, OrganisationID: boot.OrganisationID}
+
+	svc := newTestCatalogueServiceForImport(t)
+	inventorySvc := newTestInventoryService(t)
+	svc.WithOpeningStockHook(func(ctx context.Context, principal permissions.Principal, warehouseID, variantID, unitID uuid.UUID, quantity, unitCost decimal.Decimal) error {
+		_, err := inventorySvc.RecordOpeningStock(ctx, principal, inventoryapp.RecordMovementParams{
+			WarehouseID: warehouseID, ProductVariantID: variantID, UnitID: unitID,
+			Quantity: quantity, UnitCost: &unitCost,
+		})
+		return err
+	})
+
+	if _, err := svc.CreateUnitOfMeasure(ctx, principal, catalogueapp.CreateUnitOfMeasureParams{Code: "PCS", Name: "Pieces"}); err != nil {
+		t.Fatalf("CreateUnitOfMeasure: %v", err)
+	}
+	unique := uuid.NewString()[:8]
+	stockedName := "Stocked Widget " + unique
+	unstockedName := "Unstocked Widget " + unique
+
+	// warehouseID is per-call, not per-row, so the "no warehouse" path
+	// (row 2 below) needs its own ImportProducts call with warehouseID
+	// nil rather than a second row in this same call.
+	report, err := svc.ImportProducts(ctx, principal, []importer.Row{
+		{Number: 1, Fields: map[string]string{"name": stockedName, "base_uom_code": "PCS", "opening_qty": "10", "opening_cost": "50"}},
+	}, false, &boot.WarehouseID)
+	if err != nil {
+		t.Fatalf("ImportProducts: %v", err)
+	}
+	if report.Committed != 1 {
+		t.Fatalf("report = %+v, want Committed=1", report)
+	}
+
+	// Same opening_qty column, but this call passes warehouseID=nil — must
+	// still commit the product, just without the stock, and say so in the
+	// row's note.
+	report2, err := svc.ImportProducts(ctx, principal, []importer.Row{
+		{Number: 1, Fields: map[string]string{"name": unstockedName, "base_uom_code": "PCS", "opening_qty": "5"}},
+	}, false, nil)
+	if err != nil {
+		t.Fatalf("ImportProducts (no warehouse): %v", err)
+	}
+	if report2.Committed != 1 {
+		t.Fatalf("report2 = %+v, want Committed=1", report2)
+	}
+	if !strings.Contains(report2.Results[0].Message, "no warehouse selected") {
+		t.Fatalf("row Message = %q, want a note explaining opening_qty was skipped for lack of a warehouse", report2.Results[0].Message)
+	}
+
+	list, err := svc.ListProducts(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListProducts: %v", err)
+	}
+	var stocked *cataloguedomain.Product
+	for _, p := range list {
+		if p.Name == stockedName {
+			stocked = p
+		}
+	}
+	if stocked == nil {
+		t.Fatalf("imported product %q not found after commit", stockedName)
+	}
+	variants, err := svc.ListVariantsByProduct(ctx, principal, stocked.ID)
+	if err != nil {
+		t.Fatalf("ListVariantsByProduct: %v", err)
+	}
+	if len(variants) != 1 {
+		t.Fatalf("imported product has %d variants, want exactly 1", len(variants))
+	}
+
+	balance, err := inventorySvc.GetBalance(ctx, principal, boot.WarehouseID, variants[0].ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if !balance.QuantityOnHand.Equal(mustDecimal(t, "10")) {
+		t.Fatalf("QuantityOnHand = %s, want 10 (opening_qty from the CSV row)", balance.QuantityOnHand)
+	}
+	if !balance.AverageCost.Equal(mustDecimal(t, "50")) {
+		t.Fatalf("AverageCost = %s, want 50 (opening_cost from the CSV row)", balance.AverageCost)
 	}
 }
 

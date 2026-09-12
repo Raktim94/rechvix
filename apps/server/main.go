@@ -348,6 +348,19 @@ func run() error {
 		})
 		return err
 	})
+	// catalogue.Service.ImportProducts' optional opening_qty/opening_cost
+	// CSV columns — see SetOpeningStockHookFunc's own doc comment.
+	// inventorySvc.RecordOpeningStock is already principal-gated
+	// (inventory.manage_stock), same as every other hook here; a caller
+	// without that permission just gets a per-row note, not a failed
+	// import (ImportProducts' own "best-effort" doc comment).
+	catalogueSvc.WithOpeningStockHook(func(ctx context.Context, principal permissions.Principal, warehouseID, variantID, unitID uuid.UUID, quantity, unitCost decimal.Decimal) error {
+		_, err := inventorySvc.RecordOpeningStock(ctx, principal, inventoryapp.RecordMovementParams{
+			WarehouseID: warehouseID, ProductVariantID: variantID, UnitID: unitID,
+			Quantity: quantity, UnitCost: &unitCost,
+		})
+		return err
+	})
 	// gstindia.Engine is the TaxEngine implementation taxationSvc drives —
 	// taxation has no HTTP surface of its own (it's a cross-module
 	// library, not an end-user-facing API — docs/architecture.md §5), so

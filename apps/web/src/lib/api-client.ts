@@ -101,12 +101,14 @@ export const api = {
    * explicit Content-Type header below overrides `request`'s normal
    * "any body means application/json" default, since `init.headers` is
    * spread after it. */
-  uploadFile: <T>(path: string, file: File, format: "csv" | "xlsx", dryRun: boolean) =>
-    request<T>(`${path}?format=${format}&dry_run=${dryRun}`, {
+  uploadFile: <T>(path: string, file: File, format: "csv" | "xlsx", dryRun: boolean, extraQuery?: Record<string, string>) => {
+    const params = new URLSearchParams({ format, dry_run: String(dryRun), ...extraQuery });
+    return request<T>(`${path}?${params.toString()}`, {
       method: "POST",
       headers: { "Content-Type": format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
       body: file,
-    }),
+    });
+  },
   /** Same raw-body-upload idea as uploadFile, for an endpoint that
    * doesn't care about format/dry_run query params (e.g. backup
    * restore/inspect, which just reads whatever bytes are in the body). */
