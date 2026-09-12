@@ -470,14 +470,25 @@ func (h *Handlers) lookupBarcode(w http.ResponseWriter, r *http.Request) {
 
 // importProducts bulk-imports products from an uploaded CSV or XLSX file
 // (brief §53). Query params: format=csv|xlsx (required), dry_run=true|false
-// (default false). The request body is the raw file content.
+// (default false), warehouse_id (optional — only needed when the file
+// carries an opening_qty column; see Service.ImportProducts' own doc
+// comment). The request body is the raw file content.
 func (h *Handlers) importProducts(w http.ResponseWriter, r *http.Request) {
 	rows, ok := parseImportBody(w, r)
 	if !ok {
 		return
 	}
 	dryRun := r.URL.Query().Get("dry_run") == "true"
-	report, err := h.svc.ImportProducts(r.Context(), principal(r), rows, dryRun)
+	var warehouseID *uuid.UUID
+	if raw := r.URL.Query().Get("warehouse_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_WAREHOUSE_ID", "warehouse_id is not a valid UUID."))
+			return
+		}
+		warehouseID = &id
+	}
+	report, err := h.svc.ImportProducts(r.Context(), principal(r), rows, dryRun, warehouseID)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

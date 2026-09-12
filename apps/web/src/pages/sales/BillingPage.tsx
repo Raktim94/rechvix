@@ -10,7 +10,7 @@ import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 import styles from "./BillingPage.module.css";
-import { DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, type DocumentType, type SalesDocument, type SalesDocumentLine } from "./types";
+import { DOCUMENT_TYPE_LABELS, type DocumentType, type SalesDocument, type SalesDocumentLine } from "./types";
 
 interface BillingLookupResult {
   ProductID: string;
@@ -733,11 +733,19 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 disabled={lines.length === 0 || finalize.isPending}
                 onClick={() => finalize.mutate()}
               >
-                {finalize.isPending
-                  ? "Saving…"
-                  : EWB_ELIGIBLE_TYPES.has(documentType)
-                    ? "Save & continue to e-Way Bill"
-                    : "Finalize sale"}
+                {/* Always just "Finalize sale" here, regardless of
+                    document type — whether an e-Way Bill is actually
+                    needed depends on the finalized invoice's value vs.
+                    the GST threshold (org-configurable, GstPage), which
+                    isn't known until FinalizeDocument runs its real tax
+                    calculation server-side. Claiming "…continue to
+                    e-Way Bill" on every eligible document type
+                    regardless of value overpromised a step most small
+                    sales never need. The invoice detail page's
+                    EwayBillCard already does the real, accurate
+                    threshold check and only offers e-Way Bill actions
+                    when eligibility.Requirement isn't NOT_REQUIRED. */}
+                {finalize.isPending ? "Saving…" : "Finalize sale"}
               </button>
             </div>
             {finalize.isError ? (

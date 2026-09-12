@@ -14,24 +14,30 @@ import (
 	"rechvix/internal/platform/permissions"
 )
 
-// pendingPriceTax is a committed row whose price and/or gst_rate columns
-// still need setting — collected during the transaction (which has the
-// variant id), applied AFTER it commits (see ImportProducts' own doc
-// comment for why setting them can't happen inside the same
-// transaction: SetPriceHook/SetTaxRateHook call into pricing/gstindia's
-// own Service methods, which open their OWN top-level transaction via
-// the same database.Pool.RunScoped this method is already inside —
-// pgx has no ambient-transaction detection, so nesting would silently
-// open a second, independent connection/transaction instead of
-// participating in this one, breaking atomicity and (under READ
-// COMMITTED) visibility of the not-yet-committed product/variant rows).
-type pendingPriceTax struct {
-	rowNumber  int
-	variantID  uuid.UUID
-	unitID     uuid.UUID
-	hsnSacCode string
-	price      *decimal.Decimal
-	gstRate    *decimal.Decimal
+// pendingPostCommit is a committed row that still has price, gst_rate,
+// and/or opening_qty columns to apply — collected during the transaction
+// (which has the variant id), applied AFTER it commits (see
+// ImportProducts' own doc comment for why setting them can't happen
+// inside the same transaction: SetPriceHook/SetTaxRateHook/
+// SetOpeningStockHook call into pricing/gstindia/inventory's own Service
+// methods, which open their OWN top-level transaction via the same
+// database.Pool.RunScoped this method is already inside — pgx has no
+// ambient-transaction detection, so nesting would silently open a
+// second, independent connection/transaction instead of participating
+// in this one, breaking atomicity and (under READ COMMITTED) visibility
+// of the not-yet-committed product/variant rows). One struct, not three
+// parallel slices, so a row with more than one of these columns set
+// still gets exactly one Committed(rowNumber, notes...) call combining
+// every note instead of double-reporting the same row.
+type pendingPostCommit struct {
+	rowNumber   int
+	variantID   uuid.UUID
+	unitID      uuid.UUID
+	hsnSacCode  string
+	price       *decimal.Decimal
+	gstRate     *decimal.Decimal
+	openingQty  *decimal.Decimal
+	openingCost *decimal.Decimal
 }
 
 // ImportProducts bulk-creates products from parsed spreadsheet rows
@@ -52,12 +58,19 @@ type pendingPriceTax struct {
 // manual form), brand_name (optional, same auto-create behaviour),
 // barcode (optional, must be unique for this organisation, checked
 // against both existing rows in the database and earlier rows in this
-// same file). Opening stock is deliberately NOT an import column — it's
-// edited afterwards on the Inventory page, same path a manually-added
-// product already uses. Every row gets an outcome in the returned
-// Report — a malformed row is recorded as an error, never silently
-// skipped. Duplicate detection is by exact, case-insensitive product
-// name within the organisation.
+// same file), opening_qty (optional, plain decimal — records this
+// variant's opening stock via SetOpeningStockHook, same OPENING movement
+// type the manual "New Product" form's own opening-stock field uses),
+// opening_cost (optional, plain decimal, defaults to "0" when
+// opening_qty is set but opening_cost is blank — ignored if opening_qty
+// itself is blank). opening_qty/opening_cost only take effect when the
+// caller also passes a non-nil warehouseID (the warehouse a CSV row
+// can't itself name) — with warehouseID nil, a present opening_qty is
+// reported as a note on the row rather than silently dropped, same
+// non-fatal treatment as price/gst_rate below. Every row gets an outcome
+// in the returned Report — a malformed row is recorded as an error,
+// never silently skipped. Duplicate detection is by exact,
+// case-insensitive product name within the organisation.
 //
 // Every committed product also gets a real ProductVariant — a product
 // with zero variants is invisible everywhere else in the app (billing
@@ -67,23 +80,27 @@ type pendingPriceTax struct {
 // wiring the first real UI onto this endpoint (docs/TODO.md Stage 14),
 // not a change made for its own sake.
 //
-// price/gst_rate are best-effort, NOT part of what makes a row commit
-// or fail: the product+variant is the row's real content, price/tax are
-// a convenience on top. If SetPriceHook/SetTaxRateHook aren't wired
-// (nil) or either fails for a specific row (e.g. no price list exists
-// yet), that row still shows COMMITTED, just with a note in its Message
-// explaining what wasn't set and needs finishing manually on the
-// Pricing/GST pages — never a silent, invisible gap between "the CSV
-// said this had a price" and "this product still has none."
+// price/gst_rate/opening_qty are best-effort, NOT part of what makes a
+// row commit or fail: the product+variant is the row's real content,
+// price/tax/stock are a convenience on top. If SetPriceHook/
+// SetTaxRateHook/SetOpeningStockHook aren't wired (nil) or any fails for
+// a specific row (e.g. no price list exists yet), that row still shows
+// COMMITTED, just with a note in its Message explaining what wasn't set
+// and needs finishing manually on the Pricing/GST/Inventory pages —
+// never a silent, invisible gap between "the CSV said this had a price"
+// and "this product still has none."
 //
 // dryRun=true validates and reports without writing anything — the
-// caller can show the report to a user before committing.
-func (s *Service) ImportProducts(ctx context.Context, principal permissions.Principal, rows []importer.Row, dryRun bool) (importer.Report, error) {
+// caller can show the report to a user before committing. warehouseID
+// is the warehouse opening_qty rows are recorded against; pass nil when
+// the caller has no warehouse selected (or the file has no opening_qty
+// column at all — it's simply never read in that case).
+func (s *Service) ImportProducts(ctx context.Context, principal permissions.Principal, rows []importer.Row, dryRun bool, warehouseID *uuid.UUID) (importer.Report, error) {
 	if err := s.manage(ctx, principal); err != nil {
 		return importer.Report{}, err
 	}
 	b := importer.NewBuilder(dryRun)
-	var pending []pendingPriceTax
+	var pending []pendingPostCommit
 
 	var existingNames map[string]bool
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
@@ -175,6 +192,23 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 			if err != nil {
 				b.Error(row.Number, "gst_rate %q is not a valid number", row.Fields["gst_rate"])
 				continue
+			}
+			openingQty, err := parseOptionalDecimal(row.Fields["opening_qty"])
+			if err != nil {
+				b.Error(row.Number, "opening_qty %q is not a valid number", row.Fields["opening_qty"])
+				continue
+			}
+			var openingCost *decimal.Decimal
+			if openingQty != nil {
+				openingCost, err = parseOptionalDecimal(row.Fields["opening_cost"])
+				if err != nil {
+					b.Error(row.Number, "opening_cost %q is not a valid number", row.Fields["opening_cost"])
+					continue
+				}
+				if openingCost == nil {
+					zero := decimal.Zero
+					openingCost = &zero
+				}
 			}
 
 			if barcode != "" {
@@ -284,8 +318,11 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 			existingNames[key] = true
 			claimedSKUs[skuCode] = true
 
-			if price != nil || gstRate != nil {
-				pending = append(pending, pendingPriceTax{rowNumber: row.Number, variantID: variantID, unitID: uomID, hsnSacCode: hsnSac, price: price, gstRate: gstRate})
+			if price != nil || gstRate != nil || openingQty != nil {
+				pending = append(pending, pendingPostCommit{
+					rowNumber: row.Number, variantID: variantID, unitID: uomID, hsnSacCode: hsnSac,
+					price: price, gstRate: gstRate, openingQty: openingQty, openingCost: openingCost,
+				})
 			} else {
 				b.Committed(row.Number)
 			}
@@ -297,7 +334,7 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 	}
 
 	// Only reached once the transaction above has actually committed —
-	// see pendingPriceTax's own doc comment for why this can't run
+	// see pendingPostCommit's own doc comment for why this can't run
 	// inside it.
 	for _, pp := range pending {
 		var notes []string
@@ -313,6 +350,15 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 				notes = append(notes, "gst_rate was not set")
 			} else if err := s.setTaxRateHook(ctx, principal, pp.hsnSacCode, *pp.gstRate); err != nil {
 				notes = append(notes, fmt.Sprintf("gst_rate could not be set: %s", err.Error()))
+			}
+		}
+		if pp.openingQty != nil {
+			if warehouseID == nil {
+				notes = append(notes, "opening_qty was not set (no warehouse selected for this import)")
+			} else if s.setOpeningStockHook == nil {
+				notes = append(notes, "opening_qty was not set")
+			} else if err := s.setOpeningStockHook(ctx, principal, *warehouseID, pp.variantID, pp.unitID, *pp.openingQty, *pp.openingCost); err != nil {
+				notes = append(notes, fmt.Sprintf("opening_qty could not be set: %s", err.Error()))
 			}
 		}
 		b.Committed(pp.rowNumber, notes...)

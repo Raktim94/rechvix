@@ -615,6 +615,8 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           "category_name (optional — created automatically if it doesn't exist yet)",
           "brand_name (optional — created automatically if it doesn't exist yet)",
           "barcode (optional — must be unique)",
+          "opening_qty (optional — adds starting stock in your current warehouse)",
+          "opening_cost (optional — per-unit cost for opening_qty, defaults to 0)",
         ]}
         // base_uom_code no longer needs to already exist —
         // catalogue.Service.ImportProducts auto-creates a unit from the
@@ -623,13 +625,14 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
         // own first unit if it has one, otherwise a plain "PCS" that'll
         // be created on import) instead of only appearing once a unit
         // already exists. price/gst_rate/category_name/brand_name/
-        // barcode are every field the single "New product" form lets you
-        // set inline, now all available in bulk too — every one of them
-        // optional, so a minimal 3-column file (name/hsn_sac_code/
-        // base_uom_code) still imports cleanly. Opening stock is
-        // deliberately NOT a column here: it's edited afterward on the
-        // Inventory page, same as a manually-added product with no
-        // starting quantity.
+        // barcode/opening_qty are every field the single "New product"
+        // form lets you set inline, now all available in bulk too —
+        // every one of them optional, so a minimal 3-column file (name/
+        // hsn_sac_code/base_uom_code) still imports cleanly.
+        // opening_qty is recorded against the currently selected
+        // warehouse (extraQuery below) — same single-warehouse
+        // assumption the manual "New product" form's own opening-stock
+        // field already makes (org.warehouse, no separate picker).
         sampleRows={[
           {
             name: "Amul Butter 500g",
@@ -641,8 +644,11 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
             category_name: "Dairy",
             brand_name: "Amul",
             barcode: "8901234567890",
+            opening_qty: "24",
+            opening_cost: "48.00",
           },
         ]}
+        extraQuery={org.warehouse ? { warehouse_id: org.warehouse.ID } : undefined}
         onImported={() => void queryClient.invalidateQueries({ queryKey: ["products"] })}
       />
 

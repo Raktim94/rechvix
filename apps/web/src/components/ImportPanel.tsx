@@ -71,6 +71,7 @@ export function ImportPanel({
   path,
   columns,
   sampleRows,
+  extraQuery,
   onImported,
 }: {
   title: string;
@@ -81,6 +82,13 @@ export function ImportPanel({
    * with no realistic example to offer (or no stable header set) can
    * omit this and keep just the inline `columns` description. */
   sampleRows?: Record<string, string>[];
+  /** Extra query params sent on every Preview/Import request alongside
+   * format/dry_run — e.g. products' warehouse_id, needed only when the
+   * file has an opening_qty column (catalogue.Service.ImportProducts'
+   * own doc comment). Re-read on every run() call (not captured once),
+   * so a value the caller derives from context (like the current
+   * warehouse) stays current across repeated Preview/Import clicks. */
+  extraQuery?: Record<string, string>;
   onImported: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -99,7 +107,7 @@ export function ImportPanel({
     setError(null);
     setBusy(dryRun ? "preview" : "import");
     try {
-      const res = await api.uploadFile<ImportReport>(path, file, format, dryRun);
+      const res = await api.uploadFile<ImportReport>(path, file, format, dryRun, extraQuery);
       setReport(res);
       if (!dryRun) {
         onImported();

@@ -30,6 +30,15 @@ import (
 type SetPriceHookFunc func(ctx context.Context, principal permissions.Principal, variantID, unitID uuid.UUID, amount decimal.Decimal) error
 type SetTaxRateHookFunc func(ctx context.Context, principal permissions.Principal, hsnSacCode string, gstRate decimal.Decimal) error
 
+// SetOpeningStockHookFunc is the same layering-safe wiring as
+// SetPriceHookFunc, one module over: catalogue can't import inventory
+// directly, so the composition root wires this in as a closure over
+// inventory.Service.RecordOpeningStock. Only ImportProducts' optional
+// opening_qty/opening_cost columns call it, and only when the import
+// request also carried a warehouse to record against (see ImportProducts'
+// own doc comment) — same non-fatal-per-row treatment as price/gst_rate.
+type SetOpeningStockHookFunc func(ctx context.Context, principal permissions.Principal, warehouseID, variantID, unitID uuid.UUID, quantity decimal.Decimal, unitCost decimal.Decimal) error
+
 // DeletePriceHookFunc is SetPriceHookFunc's counterpart for hard-deleting
 // a product (DeleteProductsIfUnused below) — best-effort cleanup of any
 // price_list_items row for variantID before the variant itself is
@@ -41,20 +50,21 @@ type SetTaxRateHookFunc func(ctx context.Context, principal permissions.Principa
 type DeletePriceHookFunc func(ctx context.Context, principal permissions.Principal, variantID uuid.UUID) error
 
 type Service struct {
-	pool            database.Runner
-	units           domain.UnitOfMeasureRepository
-	unitConversions domain.UnitConversionRepository
-	categories      domain.CategoryRepository
-	brands          domain.BrandRepository
-	products        domain.ProductRepository
-	variants        domain.ProductVariantRepository
-	barcodes        domain.BarcodeRepository
-	permissions     *permissions.Checker
-	audit           audit.Recorder
-	now             func() time.Time
-	setPriceHook    SetPriceHookFunc
-	setTaxRateHook  SetTaxRateHookFunc
-	deletePriceHook DeletePriceHookFunc
+	pool                database.Runner
+	units               domain.UnitOfMeasureRepository
+	unitConversions     domain.UnitConversionRepository
+	categories          domain.CategoryRepository
+	brands              domain.BrandRepository
+	products            domain.ProductRepository
+	variants            domain.ProductVariantRepository
+	barcodes            domain.BarcodeRepository
+	permissions         *permissions.Checker
+	audit               audit.Recorder
+	now                 func() time.Time
+	setPriceHook        SetPriceHookFunc
+	setTaxRateHook      SetTaxRateHookFunc
+	deletePriceHook     DeletePriceHookFunc
+	setOpeningStockHook SetOpeningStockHookFunc
 }
 
 // WithPriceHook/WithTaxRateHook/WithDeletePriceHook wire the optional
@@ -75,6 +85,10 @@ func (s *Service) WithTaxRateHook(f SetTaxRateHookFunc) *Service {
 }
 func (s *Service) WithDeletePriceHook(f DeletePriceHookFunc) *Service {
 	s.deletePriceHook = f
+	return s
+}
+func (s *Service) WithOpeningStockHook(f SetOpeningStockHookFunc) *Service {
+	s.setOpeningStockHook = f
 	return s
 }
 
