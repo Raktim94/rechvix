@@ -18,7 +18,7 @@ import (
 func newTestGSTIndiaService(t *testing.T) (*gstindiaapp.Service, *gstindiapg.TaxRateRepo) {
 	t.Helper()
 	rateRepo := gstindiapg.NewTaxRateRepo(sharedPool)
-	svc := gstindiaapp.NewService(sharedPool, rateRepo, gstindiapg.NewStateRepo(sharedPool), permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool), audit.NewPGRecorder(sharedPool))
+	svc := gstindiaapp.NewService(sharedPool, rateRepo, gstindiapg.NewStateRepo(sharedPool), nil, nil, permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool), audit.NewPGRecorder(sharedPool))
 	return svc, rateRepo
 }
 
