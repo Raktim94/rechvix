@@ -29,7 +29,11 @@ import (
 func newTestReportingService(t *testing.T, accountingSvc *accountingapp.Service) *reportingapp.Service {
 	t.Helper()
 	checker := permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool)
-	return reportingapp.NewService(sharedPool, reportingpg.NewRepo(sharedPool), accountingSvc, checker)
+	contactsSvc := contactsapp.NewService(
+		sharedPool, contactspg.NewPartyRepo(sharedPool), contactspg.NewAddressRepo(sharedPool), contactspg.NewTaxRegistrationRepo(sharedPool),
+		checker, audit.NewPGRecorder(sharedPool),
+	)
+	return reportingapp.NewService(sharedPool, reportingpg.NewRepo(sharedPool), accountingSvc, contactsSvc, checker)
 }
 
 func finalizePurchase(t *testing.T, ctx context.Context, purchasesSvc *purchasesapp.Service, fx accountingFixture, qty, price string) *purchasesdomain.Document {

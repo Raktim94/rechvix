@@ -108,6 +108,7 @@ func NewService(
 func (s *Service) view(ctx context.Context, principal permissions.Principal) error {
 	return s.permissions.HasAny(ctx, principal, "sales.view")
 }
+
 // create/editDraft/finalizePerm/discountPerm all check their permission
 // scoped to the SPECIFIC company the target document belongs to (create:
 // the new document's; the other three: an existing document's, resolved
