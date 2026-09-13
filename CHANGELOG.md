@@ -4,6 +4,24 @@ Staged per `docs/architecture.md` §16 / `docs/TODO.md`. A stage is listed
 here once it has real passing unit *and* integration tests — see
 `docs/TODO.md` for exactly what's built vs. in progress within a stage.
 
+## Stage 14 — Phone validation/search, WhatsApp PDF share, receivables reminders (2026-09-13)
+- Party (customer/supplier) phone numbers must now be exactly 10 digits
+  and unique within an organisation (DB partial unique index + app-level
+  check); the sale-counter/Contacts search box, which already claimed to
+  search "by name or phone", now actually matches on phone too.
+- Sales documents can be shared via WhatsApp as the real PDF file (native
+  OS/browser share sheet), alongside the existing signed-link share.
+- The "Receivables (who owes you)" report gained a proper panel: customer
+  name, phone, a one-click WhatsApp reminder button, and first/last
+  reminder-sent tracking (`receivable_reminders` table) — previously the
+  report only rendered a raw party UUID with no name at all.
+- Bulk e-Way Bill preparation now shows each invoice's amount.
+- The Tax Rates screen gained a CSV import that bulk-creates HSN/SAC
+  rates and, given a `sku_code` column, can also update that product's
+  HSN/SAC code and stock on hand in the same pass — catalogue's existing
+  product importer only ever creates brand-new products, never updates
+  one that already exists.
+
 ## Stage 13 — First-run activation flow (2026-09-07)
 - A fresh install landed on a bare Sign-in page with no discoverable path
   to `/setup`, even though the full bootstrap form already existed there —
