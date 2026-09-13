@@ -11,7 +11,7 @@ import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
-import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
+import { useShareSalesDocumentOnWhatsApp, useShareSalesDocumentPdf } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
 import { CancelDocumentModal } from "./CancelDocumentModal";
 import { CreateReturnModal } from "./CreateReturnModal";
@@ -58,6 +58,12 @@ export function SalesDetailPage({ id }: { id: string }) {
   // notifications/app.Service.CreateShareLink sets is generous enough
   // that click-to-share doesn't need its own expiry picker.
   const shareViaWhatsApp = useShareSalesDocumentOnWhatsApp();
+  // "Share PDF" is the normal-sharing counterpart to the WhatsApp link
+  // button above: it hands the real PDF file to the OS/browser share
+  // sheet (see useShareSalesDocumentPdf's doc comment) so the user can
+  // pick WhatsApp — or anything else — and send the actual file, not
+  // just a link to it.
+  const sharePdf = useShareSalesDocumentPdf();
 
   if (doc.isPending) {
     return (
@@ -147,12 +153,26 @@ export function SalesDetailPage({ id }: { id: string }) {
                 </button>
               );
             })()}
+            <button
+              type="button"
+              className={ui.btnSecondary}
+              disabled={sharePdf.isPending}
+              title="Share the actual PDF file via WhatsApp, Mail, or any app on this device"
+              onClick={() => sharePdf.mutate({ documentId: document.ID, documentNumber: document.DocumentNumber })}
+            >
+              {sharePdf.isPending ? "Preparing…" : "Share PDF"}
+            </button>
           </div>
         )}
       </div>
       {shareViaWhatsApp.isError ? (
         <p role="alert" style={{ color: "var(--color-negative)" }}>
           {shareViaWhatsApp.error instanceof ApiError ? shareViaWhatsApp.error.message : "Could not create a share link."}
+        </p>
+      ) : null}
+      {sharePdf.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)" }}>
+          Could not share the PDF.
         </p>
       ) : null}
       {convert.isError ? (

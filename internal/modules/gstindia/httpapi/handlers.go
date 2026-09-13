@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"rechvix/internal/modules/gstindia/app"
 	"rechvix/internal/modules/gstindia/domain"
 	httpx "rechvix/internal/platform/http"
+	"rechvix/internal/platform/importer"
 	"rechvix/internal/platform/permissions"
 )
 
@@ -24,6 +26,7 @@ func NewHandlers(svc *app.Service) *Handlers { return &Handlers{svc: svc} }
 
 func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/gst/tax-rates", h.createRate)
+	r.Post("/gst/tax-rates/import", h.importTaxRates)
 	r.Get("/gst/tax-rates/{hsn}", h.listRatesByHSN)
 	r.Get("/gst/state-codes", h.listStateCodes)
 }
@@ -117,6 +120,61 @@ func (h *Handlers) listStateCodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"state_codes": states})
+}
+
+// importTaxRates bulk-imports tax_rate_master rows (and optionally
+// updates a product's HSN/SAC code and stock) from an uploaded CSV or
+// XLSX file (see app.Service.ImportTaxRates' own doc comment). Query
+// params: format=csv|xlsx (required), dry_run=true|false (default
+// false), warehouse_id (optional — only needed when the file carries a
+// quantity column). The request body is the raw file content.
+func (h *Handlers) importTaxRates(w http.ResponseWriter, r *http.Request) {
+	rows, ok := parseImportBody(w, r)
+	if !ok {
+		return
+	}
+	dryRun := r.URL.Query().Get("dry_run") == "true"
+	var warehouseID *uuid.UUID
+	if raw := r.URL.Query().Get("warehouse_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_WAREHOUSE_ID", "warehouse_id is not a valid UUID."))
+			return
+		}
+		warehouseID = &id
+	}
+	report, err := h.svc.ImportTaxRates(r.Context(), principal(r), rows, dryRun, warehouseID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, report)
+}
+
+// parseImportBody reads and parses r.Body per the "format" query
+// parameter, writing an error response and returning ok=false on
+// failure. Same shape as contacts/catalogue httpapi's identical helper —
+// kept per-package rather than shared, same rationale as those.
+func parseImportBody(w http.ResponseWriter, r *http.Request) ([]importer.Row, bool) {
+	switch r.URL.Query().Get("format") {
+	case "csv":
+		rows, err := importer.ParseCSV(r.Body)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_CSV", "Could not parse the uploaded file as CSV: "+err.Error()))
+			return nil, false
+		}
+		return rows, true
+	case "xlsx":
+		rows, err := importer.ParseXLSX(r.Body)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_XLSX", "Could not parse the uploaded file as XLSX: "+err.Error()))
+			return nil, false
+		}
+		return rows, true
+	default:
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FORMAT", `format query parameter must be "csv" or "xlsx".`))
+		return nil, false
+	}
 }
 
 func (h *Handlers) listRatesByHSN(w http.ResponseWriter, r *http.Request) {

@@ -302,10 +302,10 @@ func run() error {
 		auditRecorder,
 	)
 
-	reportingSvc := reportingapp.NewService(pool, reportingpg.NewRepo(pool), accountingSvc, permissionsChecker)
+	reportingSvc := reportingapp.NewService(pool, reportingpg.NewRepo(pool), accountingSvc, contactsSvc, permissionsChecker)
 
 	gstRateRepo := gstindiapg.NewTaxRateRepo(pool)
-	gstindiaSvc := gstindiaapp.NewService(pool, gstRateRepo, gstindiapg.NewStateRepo(pool), permissionsChecker, auditRecorder)
+	gstindiaSvc := gstindiaapp.NewService(pool, gstRateRepo, gstindiapg.NewStateRepo(pool), catalogueSvc, inventorySvc, permissionsChecker, auditRecorder)
 
 	// catalogue.Service.ImportProducts' optional price/gst_rate CSV
 	// columns — see SetPriceHookFunc/SetTaxRateHookFunc's own doc

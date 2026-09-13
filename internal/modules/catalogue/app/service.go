@@ -681,6 +681,31 @@ func (s *Service) GetVariantWithProduct(ctx context.Context, principal permissio
 	return variant, product, nil
 }
 
+// GetVariantBySKU is GetVariantWithProduct's SKU-keyed counterpart —
+// gstindia's tax-rate CSV import (ImportTaxRates) needs to resolve a
+// product from a sku_code CSV column, which names a SKU, not an
+// internal variant ID.
+func (s *Service) GetVariantBySKU(ctx context.Context, principal permissions.Principal, skuCode string) (*domain.ProductVariant, *domain.Product, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, nil, err
+	}
+	var variant *domain.ProductVariant
+	var product *domain.Product
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		variant, err = s.variants.GetBySKU(ctx, principal.OrganisationID, skuCode)
+		if err != nil {
+			return err
+		}
+		product, err = s.products.GetByID(ctx, principal.OrganisationID, variant.ProductID)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return variant, product, nil
+}
+
 func (s *Service) ListVariantsByProduct(ctx context.Context, principal permissions.Principal, productID uuid.UUID) ([]*domain.ProductVariant, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err

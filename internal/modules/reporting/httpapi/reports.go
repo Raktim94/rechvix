@@ -201,6 +201,39 @@ func (h *Handlers) receivables(w http.ResponseWriter, r *http.Request) {
 	writeAgeingTable(w, r, "Receivables as of "+asOf.Format("2006-01-02"), rows)
 }
 
+// receivablesDetailed is the "Receivables (who owes you)" panel's data
+// source — same underlying ageing as receivables above, but as plain
+// JSON with name/phone/reminder history attached per row instead of the
+// generic exportable ageing table.
+func (h *Handlers) receivablesDetailed(w http.ResponseWriter, r *http.Request) {
+	asOf := parseAsOf(r)
+	rows, err := h.svc.ReceivablesDetailed(r.Context(), principal(r), asOf)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"parties": rows})
+}
+
+// recordReminder logs that a WhatsApp payment reminder was just sent to
+// this party — called right after the frontend opens the wa.me link
+// (there's no way to confirm actual delivery, only that the send was
+// initiated, same honesty level as every other WhatsApp integration in
+// this codebase).
+func (h *Handlers) recordReminder(w http.ResponseWriter, r *http.Request) {
+	partyID, err := uuid.Parse(chi.URLParam(r, "partyId"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "partyId must be a UUID."))
+		return
+	}
+	rec, err := h.svc.RecordReminderSent(r.Context(), principal(r), partyID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, rec)
+}
+
 func (h *Handlers) payables(w http.ResponseWriter, r *http.Request) {
 	asOf := parseAsOf(r)
 	rows, err := h.svc.PayablesSummary(r.Context(), principal(r), asOf)

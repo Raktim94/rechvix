@@ -37,6 +37,8 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/reports/inventory/movements", h.stockMovements)
 	r.Get("/reports/accounting/trial-balance", h.trialBalance)
 	r.Get("/reports/accounting/receivables", h.receivables)
+	r.Get("/reports/accounting/receivables/detailed", h.receivablesDetailed)
+	r.Post("/reports/accounting/receivables/{partyId}/reminders", h.recordReminder)
 	r.Get("/reports/accounting/payables", h.payables)
 	r.Get("/reports/accounting/accounts/{id}/ledger", h.accountLedger)
 	r.Get("/reports/tax/hsn-summary", h.hsnSummary)

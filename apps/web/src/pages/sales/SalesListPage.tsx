@@ -8,7 +8,7 @@ import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import { withLegalEntity } from "../../lib/useReportTable";
-import { useShareSalesDocumentOnWhatsApp } from "../../lib/whatsapp";
+import { useShareSalesDocumentOnWhatsApp, useShareSalesDocumentPdf } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
 import { DOCUMENT_TYPE_LABELS, type DocumentStatus, type DocumentType, type SalesDocument } from "./types";
 
@@ -39,6 +39,25 @@ function ShareRowButton({ document, customer }: { document: SalesDocument; custo
       }
     >
       <WhatsAppIcon />
+    </button>
+  );
+}
+
+/** Row-level counterpart to SalesDetailPage's "Share PDF" — shares the
+ * actual PDF file (not just a wa.me link) via the native share sheet;
+ * see useShareSalesDocumentPdf's doc comment. */
+function SharePdfRowButton({ document }: { document: SalesDocument }) {
+  const share = useShareSalesDocumentPdf();
+  return (
+    <button
+      type="button"
+      className={ui.btnGhost}
+      disabled={share.isPending}
+      title="Share PDF"
+      aria-label={`Share ${document.DocumentNumber || "this sale"} as PDF`}
+      onClick={() => share.mutate({ documentId: document.ID, documentNumber: document.DocumentNumber })}
+    >
+      PDF
     </button>
   );
 }
@@ -224,7 +243,14 @@ export function SalesListPage() {
                     </td>
                     <td>{new Date(d.IssueDate).toLocaleDateString()}</td>
                     <td className="num">{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
-                    <td>{d.Status !== "DRAFT" ? <ShareRowButton document={d} customer={customerById.get(d.CustomerPartyID)} /> : null}</td>
+                    <td>
+                      {d.Status !== "DRAFT" ? (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <ShareRowButton document={d} customer={customerById.get(d.CustomerPartyID)} />
+                          <SharePdfRowButton document={d} />
+                        </div>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>

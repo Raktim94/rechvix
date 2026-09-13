@@ -21,7 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	accountingapp "rechvix/internal/modules/accounting/app"
-	accountingdomain "rechvix/internal/modules/accounting/domain"
+	contactsapp "rechvix/internal/modules/contacts/app"
 	"rechvix/internal/modules/reporting/domain"
 	"rechvix/internal/platform/database"
 	"rechvix/internal/platform/permissions"
@@ -31,12 +31,13 @@ type Service struct {
 	pool       database.Runner
 	repo       domain.Repository
 	accounting *accountingapp.Service // reused for per-party ageing (docs/architecture.md §2 — don't reimplement)
+	contacts   *contactsapp.Service   // resolves PartyOutstandingRow's name/phone (GetPartyForOtherModule)
 	perms      *permissions.Checker
 	now        func() time.Time
 }
 
-func NewService(pool database.Runner, repo domain.Repository, accounting *accountingapp.Service, checker *permissions.Checker) *Service {
-	return &Service{pool: pool, repo: repo, accounting: accounting, perms: checker, now: time.Now}
+func NewService(pool database.Runner, repo domain.Repository, accounting *accountingapp.Service, contacts *contactsapp.Service, checker *permissions.Checker) *Service {
+	return &Service{pool: pool, repo: repo, accounting: accounting, contacts: contacts, perms: checker, now: time.Now}
 }
 
 var ErrInvalidGroupDimension = fmt.Errorf("reporting: invalid group dimension")
@@ -267,6 +268,61 @@ func (s *Service) ReceivablesSummary(ctx context.Context, principal permissions.
 	return s.ageingRows(ctx, principal, ids, asOf)
 }
 
+// ReceivablesDetailed is ReceivablesSummary plus each party's phone (for
+// the WhatsApp reminder button) and reminder history (for the "first
+// reminder sent" column) — a separate, richer JSON endpoint rather than
+// a change to ReceivablesSummary itself, so the existing CSV/PDF/Excel
+// export path (httpapi/reports.go's writeAgeingTable) is untouched.
+func (s *Service) ReceivablesDetailed(ctx context.Context, principal permissions.Principal, asOf time.Time) ([]domain.PartyOutstandingWithContact, error) {
+	rows, err := s.ReceivablesSummary(ctx, principal, asOf)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, len(rows))
+	for i, row := range rows {
+		ids[i] = row.PartyID
+	}
+	var reminders map[uuid.UUID]domain.ReminderRecord
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		reminders, err = s.repo.RemindersByParty(ctx, principal.OrganisationID, ids)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.PartyOutstandingWithContact, len(rows))
+	for i, row := range rows {
+		out[i] = domain.PartyOutstandingWithContact{PartyOutstandingRow: row}
+		if rec, ok := reminders[row.PartyID]; ok {
+			firstSent, lastSent := rec.FirstSentAt, rec.LastSentAt
+			out[i].FirstReminderSentAt = &firstSent
+			out[i].LastReminderSentAt = &lastSent
+			out[i].ReminderCount = rec.SentCount
+		}
+	}
+	return out, nil
+}
+
+// RecordReminderSent logs that a payment reminder was sent to this party
+// (brief follow-up: the receivables screen's WhatsApp reminder button
+// calls this right after opening the wa.me link) — gated on the same
+// reports.view permission as the receivables screen itself, since this
+// is a lightweight annotation on that same report rather than a
+// standalone write-capable feature warranting its own permission code.
+func (s *Service) RecordReminderSent(ctx context.Context, principal permissions.Principal, partyID uuid.UUID) (domain.ReminderRecord, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return domain.ReminderRecord{}, err
+	}
+	var rec domain.ReminderRecord
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		rec, err = s.repo.RecordReminderSent(ctx, principal.OrganisationID, partyID, s.now())
+		return err
+	})
+	return rec, err
+}
+
 func (s *Service) PayablesSummary(ctx context.Context, principal permissions.Principal, asOf time.Time) ([]domain.PartyOutstandingRow, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
@@ -294,21 +350,33 @@ func (s *Service) ageingRows(ctx context.Context, principal permissions.Principa
 			continue // fully settled — not "outstanding"
 		}
 		out = append(out, domain.PartyOutstandingRow{
-			PartyID: id, PartyName: partyNameLookup(bucket),
+			PartyID: id,
 			Current: bucket.Current, Days1To30: bucket.Days1To30, Days31To60: bucket.Days31To60,
 			Days61To90: bucket.Days61To90, Days90Plus: bucket.Days90Plus, Total: bucket.Total,
 		})
 	}
+	// accountingdomain.AgeingBucket carries no name/phone (it's a pure
+	// amounts bucket) — resolved separately here via contacts'
+	// cross-module read, batched into a single RunScoped block since
+	// GetPartyForOtherModule doesn't open its own (see its doc comment).
+	if len(out) > 0 {
+		err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+			for i := range out {
+				party, err := s.contacts.GetPartyForOtherModule(ctx, principal.OrganisationID, out[i].PartyID)
+				if err != nil {
+					return fmt.Errorf("reporting: resolving party %s: %w", out[i].PartyID, err)
+				}
+				out[i].PartyName = party.LegalName
+				out[i].Phone = party.Phone
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
 }
-
-// partyNameLookup: accountingdomain.AgeingBucket does not carry the
-// party's name (it's a pure amounts bucket) — this report shows PartyID
-// only for now rather than adding a second lookup per party purely for a
-// display label; a caller that needs the name already has it from
-// whatever screen listed the party. Flagged as a small follow-up if a
-// name-inline report is wanted later.
-func partyNameLookup(_ accountingdomain.AgeingBucket) string { return "" }
 
 func (s *Service) AccountLedger(ctx context.Context, principal permissions.Principal, accountID uuid.UUID, f domain.Filter) ([]domain.AccountLedgerRow, error) {
 	if err := s.view(ctx, principal); err != nil {

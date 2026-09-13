@@ -1,0 +1,1 @@
+DROP INDEX idx_parties_org_phone_unique;

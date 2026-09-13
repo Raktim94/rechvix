@@ -54,6 +54,10 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ADDRESS_TYPE", "address_type must be BILLING, SHIPPING, WAREHOUSE, or REGISTERED_OFFICE."))
 	case errors.Is(err, domain.ErrLegalNameRequired):
 		httpx.WriteError(w, r, httpx.NewBadRequest("LEGAL_NAME_REQUIRED", "legal_name is required."))
+	case errors.Is(err, domain.ErrInvalidPhone):
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_PHONE", "phone must be exactly 10 digits."))
+	case errors.Is(err, domain.ErrDuplicatePhone):
+		httpx.WriteError(w, r, httpx.NewConflict("DUPLICATE_PHONE", "This phone number is already used by another customer/supplier."))
 	case errors.As(err, &forbidden):
 		httpx.WriteError(w, r, httpx.NewForbidden("FORBIDDEN", "You do not have permission to perform this action."))
 	default:

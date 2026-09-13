@@ -180,6 +180,7 @@ type TrialBalanceRow struct {
 type PartyOutstandingRow struct {
 	PartyID    uuid.UUID
 	PartyName  string
+	Phone      string
 	Current    money.Money
 	Days1To30  money.Money
 	Days31To60 money.Money
@@ -300,4 +301,31 @@ type Repository interface {
 	// mistaken for a confirmed one.
 	GSTR3B(ctx context.Context, f Filter) ([]GSTR3BLine, error)
 	Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) (DashboardSummary, error)
+	// RecordReminderSent upserts receivable_reminders (migrations/0042):
+	// FirstSentAt is set only the first time this (org, party) pair is
+	// seen, LastSentAt always moves to sentAt, SentCount always
+	// increments. Returns the row as it stands after the upsert.
+	RecordReminderSent(ctx context.Context, orgID, partyID uuid.UUID, sentAt time.Time) (ReminderRecord, error)
+	// RemindersByParty batch-loads reminder history for the given
+	// parties in one query (used by ReceivablesDetailed) — a party with
+	// no row yet simply doesn't appear in the returned map.
+	RemindersByParty(ctx context.Context, orgID uuid.UUID, partyIDs []uuid.UUID) (map[uuid.UUID]ReminderRecord, error)
+}
+
+// ReminderRecord is one receivable_reminders row (migrations/0042).
+type ReminderRecord struct {
+	PartyID     uuid.UUID
+	FirstSentAt time.Time
+	LastSentAt  time.Time
+	SentCount   int
+}
+
+// PartyOutstandingWithContact is ReceivablesDetailed's row shape: a
+// PartyOutstandingRow (name/phone/total already resolved) plus this
+// party's reminder history, if any has been sent.
+type PartyOutstandingWithContact struct {
+	PartyOutstandingRow
+	FirstReminderSentAt *time.Time
+	LastReminderSentAt  *time.Time
+	ReminderCount       int
 }

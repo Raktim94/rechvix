@@ -27,14 +27,19 @@ func (s *Service) ImportParties(ctx context.Context, principal permissions.Princ
 	b := importer.NewBuilder(dryRun)
 
 	var seen map[string]bool
+	var seenPhones map[string]bool
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		existing, err := s.parties.ListByOrganisation(ctx, principal.OrganisationID)
 		if err != nil {
 			return err
 		}
 		seen = make(map[string]bool, len(existing))
+		seenPhones = make(map[string]bool, len(existing))
 		for _, p := range existing {
 			seen[dedupeKey(string(p.PartyType), p.LegalName)] = true
+			if p.Phone != "" {
+				seenPhones[p.Phone] = true
+			}
 		}
 
 		for _, row := range rows {
@@ -56,6 +61,14 @@ func (s *Service) ImportParties(ctx context.Context, principal permissions.Princ
 				b.Error(row.Number, "currency_code is required")
 				continue
 			}
+			if phone != "" && !phonePattern.MatchString(phone) {
+				b.Error(row.Number, "phone %q must be exactly 10 digits", phone)
+				continue
+			}
+			if phone != "" && seenPhones[phone] {
+				b.Duplicate(row.Number, "phone %q is already used by another customer/supplier", phone)
+				continue
+			}
 			key := dedupeKey(string(partyType), legalName)
 			if seen[key] {
 				b.Duplicate(row.Number, "a %s named %q already exists", partyType, legalName)
@@ -65,6 +78,9 @@ func (s *Service) ImportParties(ctx context.Context, principal permissions.Princ
 			if dryRun {
 				b.Valid(row.Number)
 				seen[key] = true
+				if phone != "" {
+					seenPhones[phone] = true
+				}
 				continue
 			}
 
@@ -80,6 +96,9 @@ func (s *Service) ImportParties(ctx context.Context, principal permissions.Princ
 				return err
 			}
 			seen[key] = true
+			if phone != "" {
+				seenPhones[phone] = true
+			}
 			b.Committed(row.Number)
 		}
 		return nil

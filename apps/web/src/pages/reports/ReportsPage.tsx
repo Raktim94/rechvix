@@ -1,4 +1,5 @@
 import ReactECharts from "echarts-for-react";
+import { ReceivablesPanel } from "../../components/ReceivablesPanel";
 import { ReportTable } from "../../components/ReportTable";
 import { formatMoney, moneyToApproxNumber } from "../../lib/money";
 import { useOrgContext } from "../../lib/useOrgContext";
@@ -68,7 +69,7 @@ export function ReportsPage() {
       </div>
       <div className={layout.panel}>
         <h2>Receivables (who owes you)</h2>
-        <ReportTable path="/reports/accounting/receivables?format=json" emptyLabel="Nobody owes you anything right now." />
+        <ReceivablesPanel />
       </div>
       <div className={layout.panel}>
         <h2>Payables (what you owe)</h2>
