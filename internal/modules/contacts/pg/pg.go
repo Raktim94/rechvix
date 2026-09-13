@@ -32,9 +32,25 @@ func (r *PartyRepo) Create(ctx context.Context, p *domain.Party) error {
 	_, err := r.pool.Q(ctx).Exec(ctx, q, p.ID, p.OrganisationID, string(p.PartyType), p.LegalName, nullIfEmpty(p.TradeName),
 		nullIfEmpty(p.Phone), nullIfEmpty(p.Email), p.CurrencyCode, p.CreditLimitAmount, p.PaymentTermsDays, nullIfEmpty(p.Notes), string(p.Status), p.CreatedAt)
 	if err != nil {
+		if pgUniqueViolation(err) {
+			return domain.ErrDuplicatePhone
+		}
 		return fmt.Errorf("contacts: inserting party: %w", err)
 	}
 	return nil
+}
+
+// ExistsByPhone is the app-layer uniqueness check that runs before the
+// insert, so a duplicate phone comes back as domain.ErrDuplicatePhone
+// from CreateParty's validation step rather than only from the race-safe
+// unique-index translation in Create above.
+func (r *PartyRepo) ExistsByPhone(ctx context.Context, orgID uuid.UUID, phone string) (bool, error) {
+	const q = `SELECT EXISTS(SELECT 1 FROM parties WHERE organisation_id = $1 AND phone = $2)`
+	var exists bool
+	if err := r.pool.Q(ctx).QueryRow(ctx, q, orgID, phone).Scan(&exists); err != nil {
+		return false, fmt.Errorf("contacts: checking phone uniqueness: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *PartyRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Party, error) {
@@ -59,12 +75,15 @@ func (r *PartyRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]
 	return scanParties(rows)
 }
 
+// SearchByName matches on name similarity (trigram) as well as a plain
+// substring match on phone, so the sale-counter search box can find a
+// customer by typing part of their phone number, not just their name.
 func (r *PartyRepo) SearchByName(ctx context.Context, orgID uuid.UUID, query string, limit int) ([]*domain.Party, error) {
 	const q = `
 		SELECT id, organisation_id, party_type, legal_name, COALESCE(trade_name,''), COALESCE(phone,''), COALESCE(email,''),
 		       currency_code, credit_limit_amount, payment_terms_days, COALESCE(notes,''), status, created_at, updated_at
 		FROM parties
-		WHERE organisation_id = $1 AND (legal_name % $2 OR trade_name % $2)
+		WHERE organisation_id = $1 AND (legal_name % $2 OR trade_name % $2 OR phone ILIKE '%' || $2 || '%')
 		ORDER BY GREATEST(similarity(legal_name, $2), similarity(COALESCE(trade_name, ''), $2)) DESC
 		LIMIT $3`
 	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, query, limit)

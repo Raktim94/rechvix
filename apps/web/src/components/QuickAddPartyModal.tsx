@@ -101,7 +101,16 @@ export function QuickAddPartyModal({
             </div>
             <div className={ui.field}>
               <label htmlFor="qap-phone">Phone</label>
-              <input id="qap-phone" className={ui.input} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile number" />
+              <input
+                id="qap-phone"
+                className={ui.input}
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="10-digit mobile number"
+              />
             </div>
 
             {!showMore ? (

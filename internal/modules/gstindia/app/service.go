@@ -13,7 +13,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	catalogueapp "rechvix/internal/modules/catalogue/app"
 	"rechvix/internal/modules/gstindia/domain"
+	inventoryapp "rechvix/internal/modules/inventory/app"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/database"
 	"rechvix/internal/platform/permissions"
@@ -23,13 +25,15 @@ type Service struct {
 	pool        database.Runner
 	rates       domain.TaxRateRepository
 	states      domain.StateRepository
+	catalogue   *catalogueapp.Service // ImportTaxRates' sku_code column: resolve+update a product's HSN/SAC code
+	inventory   *inventoryapp.Service // ImportTaxRates' quantity column: record a stock adjustment
 	permissions *permissions.Checker
 	audit       audit.Recorder
 	now         func() time.Time
 }
 
-func NewService(pool database.Runner, rates domain.TaxRateRepository, states domain.StateRepository, checker *permissions.Checker, recorder audit.Recorder) *Service {
-	return &Service{pool: pool, rates: rates, states: states, permissions: checker, audit: recorder, now: time.Now}
+func NewService(pool database.Runner, rates domain.TaxRateRepository, states domain.StateRepository, catalogue *catalogueapp.Service, inventory *inventoryapp.Service, checker *permissions.Checker, recorder audit.Recorder) *Service {
+	return &Service{pool: pool, rates: rates, states: states, catalogue: catalogue, inventory: inventory, permissions: checker, audit: recorder, now: time.Now}
 }
 
 // ListStateCodes returns every GST state/UT code — global reference

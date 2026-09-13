@@ -142,7 +142,7 @@ func run() error {
 		accountingpg.NewReceiptRepo(pool), accountingpg.NewPaymentRepo(pool), accountingpg.NewReconciliationRepo(pool),
 		accountingpg.NewExpenseAttachmentRepo(pool),
 		permissionsChecker, auditRecorder)
-	reportingSvc := reportingapp.NewService(pool, reportingpg.NewRepo(pool), accountingSvc, permissionsChecker)
+	reportingSvc := reportingapp.NewService(pool, reportingpg.NewRepo(pool), accountingSvc, contactsSvc, permissionsChecker)
 
 	gstRateRepo := gstindiapg.NewTaxRateRepo(pool)
 	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(pool))

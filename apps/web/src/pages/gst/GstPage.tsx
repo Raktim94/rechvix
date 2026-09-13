@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { ImportPanel } from "../../components/ImportPanel";
 import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
 import { api, apiUrl, ApiError } from "../../lib/api-client";
+import { formatMoney } from "../../lib/money";
 import { useOrgContext, type Organisation } from "../../lib/useOrgContext";
 import { withLegalEntity } from "../../lib/useReportTable";
 import layout from "../DashboardPage.module.css";
@@ -241,6 +243,7 @@ function TransportersSection() {
 
 function TaxRatesSection() {
   const queryClient = useQueryClient();
+  const org = useOrgContext();
   const [hsn, setHsn] = useState("");
   const [lookupHsn, setLookupHsn] = useState("");
   const [gstRate, setGstRate] = useState("");
@@ -317,6 +320,23 @@ function TaxRatesSection() {
           {createRate.error instanceof ApiError ? createRate.error.message : "Could not save this tax rate."}
         </p>
       ) : null}
+
+      <div style={{ marginTop: 16 }}>
+        <ImportPanel
+          title="Bulk import tax rates"
+          path="/gst/tax-rates/import"
+          columns={["hsn_sac_code", "gst_rate", "sku_code", "quantity"]}
+          sampleRows={[
+            { hsn_sac_code: "1006", gst_rate: "5", sku_code: "", quantity: "" },
+            { hsn_sac_code: "8471", gst_rate: "18", sku_code: "LAPTOP-001", quantity: "10" },
+          ]}
+          extraQuery={org.warehouse ? { warehouse_id: org.warehouse.ID } : undefined}
+          onImported={() => {
+            queryClient.invalidateQueries({ queryKey: ["tax-rates"] });
+            queryClient.invalidateQueries({ queryKey: ["products"] });
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -410,6 +430,7 @@ function BulkEwayBillPanel({ legalEntityId }: { legalEntityId: string | undefine
                   <th scope="col">Number</th>
                   <th scope="col">Type</th>
                   <th scope="col">Date</th>
+                  <th scope="col">Amount</th>
                 </tr>
               </thead>
               <tbody>
@@ -426,6 +447,7 @@ function BulkEwayBillPanel({ legalEntityId }: { legalEntityId: string | undefine
                     <td>{d.DocumentNumber}</td>
                     <td>{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
                     <td>{new Date(d.IssueDate).toLocaleDateString()}</td>
+                    <td className="num">{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
                   </tr>
                 ))}
               </tbody>

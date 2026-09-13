@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { ReceivablesPanel } from "../../components/ReceivablesPanel";
 import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
@@ -199,6 +200,11 @@ export function AccountingPage() {
 
       <div className={layout.panel}>
         <h2>Receivables (who owes you)</h2>
+        <ReceivablesPanel />
+      </div>
+
+      <div className={layout.panel}>
+        <h2>Receivables export</h2>
         <ReportTable path="/reports/accounting/receivables?format=json" emptyLabel="Nobody owes you anything right now." />
       </div>
 

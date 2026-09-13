@@ -111,8 +111,14 @@ type PartyRepository interface {
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Party, error)
 	ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]*Party, error)
 	// SearchByName is the fast fuzzy lookup used by billing-counter
-	// customer search and supplier lookup (brief §24/§25).
+	// customer search and supplier lookup (brief §24/§25); also matches
+	// on phone (see pg.PartyRepo.SearchByName) despite the name.
 	SearchByName(ctx context.Context, orgID uuid.UUID, query string, limit int) ([]*Party, error)
+	// ExistsByPhone reports whether another party in this organisation
+	// already has this exact phone number on file — the app-layer half
+	// of the uniqueness check the idx_parties_org_phone_unique partial
+	// index (migrations/0041) enforces at the database level.
+	ExistsByPhone(ctx context.Context, orgID uuid.UUID, phone string) (bool, error)
 }
 
 type AddressRepository interface {

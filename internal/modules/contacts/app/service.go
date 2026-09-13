@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,11 @@ import (
 	"rechvix/internal/platform/database"
 	"rechvix/internal/platform/permissions"
 )
+
+// phonePattern is the 10-digit-only phone format enforced on every party
+// (brief follow-up: phone doubles as the sale-counter customer lookup
+// key, so it needs a fixed, predictable shape).
+var phonePattern = regexp.MustCompile(`^\d{10}$`)
 
 type Service struct {
 	pool             database.Runner
@@ -73,6 +79,9 @@ func ValidateCreateParty(p CreatePartyParams) error {
 	if p.LegalName == "" {
 		return domain.ErrLegalNameRequired
 	}
+	if p.Phone != "" && !phonePattern.MatchString(p.Phone) {
+		return domain.ErrInvalidPhone
+	}
 	return nil
 }
 
@@ -95,6 +104,15 @@ func (s *Service) CreateParty(ctx context.Context, principal permissions.Princip
 		Status: domain.StatusActive, CreatedAt: now, UpdatedAt: now,
 	}
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if p.Phone != "" {
+			exists, err := s.parties.ExistsByPhone(ctx, principal.OrganisationID, p.Phone)
+			if err != nil {
+				return err
+			}
+			if exists {
+				return domain.ErrDuplicatePhone
+			}
+		}
 		if err := s.parties.Create(ctx, party); err != nil {
 			return err
 		}

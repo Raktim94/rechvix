@@ -108,7 +108,15 @@ export function ContactsPage() {
             </div>
             <div className={ui.field}>
               <label htmlFor="party-phone">Phone</label>
-              <input id="party-phone" className={ui.input} value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <input
+                id="party-phone"
+                className={ui.input}
+                inputMode="numeric"
+                maxLength={10}
+                placeholder="10-digit mobile number"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              />
             </div>
             <div className={ui.field}>
               <label htmlFor="party-email">Email</label>

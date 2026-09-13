@@ -821,3 +821,49 @@ func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) 
 		OverdueReceivable:     inr(overdue),
 	}, nil
 }
+
+// RecordReminderSent upserts receivable_reminders (migrations/0042) — the
+// id is only ever consumed on the INSERT branch of the upsert; the
+// UPDATE branch never touches it, since the unique (organisation_id,
+// party_id) constraint is what ON CONFLICT keys off, not id.
+func (r *Repo) RecordReminderSent(ctx context.Context, orgID, partyID uuid.UUID, sentAt time.Time) (domain.ReminderRecord, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return domain.ReminderRecord{}, fmt.Errorf("reporting: generating receivable_reminder id: %w", err)
+	}
+	const q = `
+		INSERT INTO receivable_reminders (id, organisation_id, party_id, first_sent_at, last_sent_at, sent_count)
+		VALUES ($1, $2, $3, $4, $4, 1)
+		ON CONFLICT (organisation_id, party_id) DO UPDATE
+			SET last_sent_at = $4, sent_count = receivable_reminders.sent_count + 1
+		RETURNING first_sent_at, last_sent_at, sent_count`
+	rec := domain.ReminderRecord{PartyID: partyID}
+	if err := r.pool.Q(ctx).QueryRow(ctx, q, id, orgID, partyID, sentAt).Scan(&rec.FirstSentAt, &rec.LastSentAt, &rec.SentCount); err != nil {
+		return domain.ReminderRecord{}, fmt.Errorf("reporting: recording reminder sent: %w", err)
+	}
+	return rec, nil
+}
+
+func (r *Repo) RemindersByParty(ctx context.Context, orgID uuid.UUID, partyIDs []uuid.UUID) (map[uuid.UUID]domain.ReminderRecord, error) {
+	out := make(map[uuid.UUID]domain.ReminderRecord, len(partyIDs))
+	if len(partyIDs) == 0 {
+		return out, nil
+	}
+	const q = `
+		SELECT party_id, first_sent_at, last_sent_at, sent_count
+		FROM receivable_reminders
+		WHERE organisation_id = $1 AND party_id = ANY($2)`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, partyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("reporting: listing receivable_reminders: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var rec domain.ReminderRecord
+		if err := rows.Scan(&rec.PartyID, &rec.FirstSentAt, &rec.LastSentAt, &rec.SentCount); err != nil {
+			return nil, fmt.Errorf("reporting: scanning receivable_reminder row: %w", err)
+		}
+		out[rec.PartyID] = rec
+	}
+	return out, rows.Err()
+}
