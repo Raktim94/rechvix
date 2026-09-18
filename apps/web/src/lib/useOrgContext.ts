@@ -15,6 +15,7 @@ export interface LegalEntity {
   Email: string;
   Website: string;
   Address: string;
+  Pincode: string;
   BankName: string;
   BankAccountNumber: string;
   BankIFSC: string;

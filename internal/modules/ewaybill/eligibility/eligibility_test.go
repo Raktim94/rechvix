@@ -28,6 +28,12 @@ func mkBill(grandTotal string, supplyState string, vehicle, distance string, hsn
 	return canonical.CanonicalEWayBill{
 		InvoiceDate: time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC), SupplyPlaceCode: supplyState,
 		Items: items, ShipTo: canonical.Party{StateCode: supplyState},
+		// A real GSTIN/PIN code by default — every test below that isn't
+		// specifically about a missing supplier field gets a "complete"
+		// supplier, same as ShipTo above already being populated by
+		// default so ship-to-state tests could stay focused on their own
+		// one missing field.
+		Supplier:  canonical.Party{GSTIN: "22AAAAA0000A1Z5", PostalCode: "700001"},
 		Tax:       canonical.TaxTotals{GrandTotal: decimal.RequireFromString(grandTotal)},
 		Transport: canonical.Transport{VehicleNumber: vehicle, DistanceKM: dist},
 	}

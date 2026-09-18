@@ -406,6 +406,7 @@ interface InvoiceBrandingFields {
   email: string;
   website: string;
   address: string;
+  pincode: string;
   bankName: string;
   bankAccountNumber: string;
   bankIfsc: string;
@@ -420,6 +421,7 @@ function invoiceBrandingFieldsFrom(le: LegalEntity): InvoiceBrandingFields {
     email: le.Email,
     website: le.Website,
     address: le.Address,
+    pincode: le.Pincode,
     bankName: le.BankName,
     bankAccountNumber: le.BankAccountNumber,
     bankIfsc: le.BankIFSC,
@@ -452,6 +454,7 @@ function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
         email: fields.email,
         website: fields.website,
         address: fields.address,
+        pincode: fields.pincode,
         bank_name: fields.bankName,
         bank_account_number: fields.bankAccountNumber,
         bank_ifsc: fields.bankIfsc,
@@ -574,6 +577,22 @@ function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
             onChange={setField("address")}
             placeholder="Shown under your business name on every printed document"
           />
+        </div>
+        <div className={ui.field}>
+          <label htmlFor="ib-pincode">PIN code</label>
+          <input
+            id="ib-pincode"
+            className={ui.input}
+            inputMode="numeric"
+            maxLength={6}
+            value={fields.pincode}
+            onChange={setField("pincode")}
+            placeholder="6-digit PIN code"
+          />
+          <p className={ui.muted} style={{ marginTop: 4 }}>
+            Required by the government e-Way Bill portal — without this, prepared e-Way Bill files will be missing
+            your business's PIN code.
+          </p>
         </div>
         <div className={ui.field}>
           <label htmlFor="ib-bank-name">Bank name</label>

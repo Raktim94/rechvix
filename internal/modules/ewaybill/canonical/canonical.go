@@ -18,15 +18,18 @@ import (
 // Party is the supplier/recipient/dispatch/delivery shape shared across
 // all four roles a canonical e-Way Bill carries.
 //
-// NOTE (known gap, documented rather than silently worked around): this
-// codebase does not yet model a postal address on legal_entities,
-// branches, or warehouses (checked as of Stage 8c) — only GSTIN and
-// GSTStateCode exist on LegalEntity. AddressLine1/City/PostalCode are
-// therefore best-effort/empty for the Supplier and DispatchFrom roles
-// until that's added (a real, bounded follow-up, not this stage's scope
-// to redesign organisation's schema). StateCode is always populated where
-// available and is what the eligibility/intra-vs-inter-state logic
-// actually depends on functionally.
+// NOTE (known gap, documented rather than silently worked around):
+// legal_entities only has a single free-text Address field, no
+// structured line1/line2/city — migrations/0043 added a dedicated
+// Pincode column specifically because the e-Way Bill portal validates it
+// as a real 6-digit number, not reliably extractable from free text, so
+// PostalCode IS populated for the Supplier/DispatchFrom roles (from
+// LegalEntity.Pincode, Settings → Invoice branding). AddressLine1/
+// AddressLine2/City remain best-effort/empty for those two roles until
+// legal_entities gets a structured address (a real, bounded follow-up,
+// not this stage's scope to redesign organisation's schema). StateCode
+// is always populated where available and is what the eligibility/
+// intra-vs-inter-state logic actually depends on functionally.
 type Party struct {
 	LegalName    string `json:"legal_name"`
 	TradeName    string `json:"trade_name,omitempty"`

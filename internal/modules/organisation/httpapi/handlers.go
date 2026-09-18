@@ -221,6 +221,7 @@ type updateInvoiceBrandingRequest struct {
 	Email                     string `json:"email"`
 	Website                   string `json:"website"`
 	Address                   string `json:"address"`
+	Pincode                   string `json:"pincode"`
 	BankName                  string `json:"bank_name"`
 	BankAccountNumber         string `json:"bank_account_number"`
 	BankIFSC                  string `json:"bank_ifsc"`
@@ -256,7 +257,7 @@ func (h *Handlers) updateInvoiceBranding(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	le, err := h.svc.UpdateLegalEntityInvoiceBranding(r.Context(), principal(r), id, domain.InvoiceBrandingUpdate{
-		Phone: req.Phone, Email: req.Email, Website: req.Website, Address: req.Address,
+		Phone: req.Phone, Email: req.Email, Website: req.Website, Address: req.Address, Pincode: req.Pincode,
 		BankName: req.BankName, BankAccountNumber: req.BankAccountNumber, BankIFSC: req.BankIFSC,
 		UPIID: req.UPIID, AuthorizedSignatoryName: req.AuthorizedSignatoryName,
 		DefaultTermsAndConditions: req.DefaultTermsAndConditions,
