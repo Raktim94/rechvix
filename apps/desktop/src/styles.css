@@ -1,0 +1,89 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1c1c1c;
+  background-color: #f4f4f5;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+}
+
+.container {
+  margin: auto;
+  padding: 2rem;
+  max-width: 420px;
+  text-align: left;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.hint {
+  color: #555;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.hint code {
+  background: #e8e8ea;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}
+
+#server-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+#server-url {
+  flex: 1;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid #c8c8cc;
+  font-size: 0.95rem;
+}
+
+#connect-button {
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  border: none;
+  background: #0f6e5c;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#connect-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#server-error {
+  color: #b3261e;
+  min-height: 1.2em;
+  margin-top: 0.6rem;
+  font-size: 0.9rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f0f0f0;
+    background-color: #1a1a1a;
+  }
+  .hint {
+    color: #a8a8a8;
+  }
+  .hint code {
+    background: #2e2e30;
+  }
+  #server-url {
+    background: #242426;
+    border-color: #3a3a3c;
+    color: #f0f0f0;
+  }
+}
