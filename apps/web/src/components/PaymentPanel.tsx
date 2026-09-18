@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import layout from "../pages/DashboardPage.module.css";
 import ui from "./ui.module.css";
 import { api, ApiError } from "../lib/api-client";
@@ -30,6 +30,11 @@ const METHOD_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
+const QUICK_PICK_ACTIVE_STYLE: CSSProperties = {
+  background: "var(--color-accent)",
+  color: "var(--color-on-accent)",
+};
+
 /** "How much of THIS invoice/bill has actually been paid" — direction
  * "RECEIVE" is SalesDetailPage (money coming in from a customer),
  * "PAY" is PurchasesPage's in-progress view (money going out to a
@@ -52,6 +57,10 @@ export function PaymentPanel({
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState("");
+  // Which quick-pick button (if any) last set `amount` — purely a visual
+  // "pressed" state so the cashier can see what they picked; typing in the
+  // amount field by hand always wins and clears it back to unselected.
+  const [quickPick, setQuickPick] = useState<"FULL" | 25 | 50 | 75 | null>(null);
   const [method, setMethod] = useState("CASH");
   const [reference, setReference] = useState("");
   // Empty string means "no bank_account_id" — RecordReceipt/RecordPayment
@@ -83,6 +92,19 @@ export function PaymentPanel({
   const outstanding = Math.max(0, grandTotalNumber - totalPaid);
   const currency = grandTotal?.currency ?? "INR";
 
+  // Sets `amount` from a fraction of what's still outstanding — always a
+  // clean, decimal.Decimal-parseable string (toFixed(2), never a raw float
+  // or something with a stray "%"), which is what the backend's
+  // RecordReceipt/RecordPayment actually need: their Amount field is a
+  // decimal.Decimal, and an unparseable value there is exactly what turns
+  // into a 400 "Could not parse the request body." on save.
+  function pickQuickAmount(pick: "FULL" | 25 | 50 | 75) {
+    const pct = pick === "FULL" ? 100 : pick;
+    const value = (outstanding * pct) / 100;
+    setAmount(value > 0 ? value.toFixed(2) : "");
+    setQuickPick(pick);
+  }
+
   const record = useMutation({
     mutationFn: () =>
       api.post(isReceive ? "/accounting/receipts" : "/accounting/payments", {
@@ -98,6 +120,7 @@ export function PaymentPanel({
       void queryClient.invalidateQueries({ queryKey: ["party-ledger", partyId] });
       void queryClient.invalidateQueries({ queryKey: ["party-ageing", partyId] });
       setAmount("");
+      setQuickPick(null);
       setReference("");
       setBankAccountId("");
       setShowForm(false);
@@ -139,6 +162,43 @@ export function PaymentPanel({
 
       {showForm ? (
         <div style={{ marginBottom: 20 }}>
+          {outstanding > 0 ? (
+            <div className={ui.field} style={{ marginBottom: 12 }}>
+              <label>Quick amount</label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className={ui.btnGhost}
+                  style={quickPick === "FULL" ? QUICK_PICK_ACTIVE_STYLE : undefined}
+                  onClick={() => pickQuickAmount("FULL")}
+                >
+                  Full payment
+                </button>
+                {([25, 50, 75] as const).map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    className={ui.btnGhost}
+                    style={quickPick === pct ? QUICK_PICK_ACTIVE_STYLE : undefined}
+                    onClick={() => pickQuickAmount(pct)}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className={ui.btnGhost}
+                  style={quickPick === null ? QUICK_PICK_ACTIVE_STYLE : undefined}
+                  onClick={() => {
+                    setQuickPick(null);
+                    setAmount("");
+                  }}
+                >
+                  Custom
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className={ui.formGrid}>
             <div className={ui.field}>
               <label htmlFor="payment-amount">Amount</label>
@@ -147,7 +207,10 @@ export function PaymentPanel({
                 className={ui.input}
                 inputMode="decimal"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setQuickPick(null);
+                }}
                 placeholder={outstanding > 0 ? outstanding.toFixed(2) : "0.00"}
               />
             </div>
@@ -180,10 +243,18 @@ export function PaymentPanel({
             ) : null}
           </div>
           <div className={ui.formActions} style={{ marginTop: 12 }}>
-            <button type="button" className={ui.btnSecondary} onClick={() => setShowForm(false)}>
+            <button
+              type="button"
+              className={ui.btnSecondary}
+              onClick={() => {
+                setShowForm(false);
+                setAmount("");
+                setQuickPick(null);
+              }}
+            >
               Cancel
             </button>
-            <button type="button" className={ui.btnPrimary} disabled={!amount || Number(amount) <= 0 || record.isPending} onClick={() => record.mutate()}>
+            <button type="button" className={ui.btnPrimary} disabled={!amount || !(Number(amount) > 0) || record.isPending} onClick={() => record.mutate()}>
               {record.isPending ? "Saving…" : "Save"}
             </button>
           </div>

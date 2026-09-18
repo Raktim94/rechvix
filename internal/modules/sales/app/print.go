@@ -198,7 +198,7 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		DocumentNumber:    doc.DocumentNumber,
 		IssueDate:         doc.IssueDate,
 		DueDate:           doc.DueDate,
-		PlaceOfSupply:     doc.PlaceOfSupplyStateCode,
+		PlaceOfSupply:     placeOfSupplyLabel(doc.PlaceOfSupplyStateCode),
 		CustomerReference: doc.CustomerReference,
 		Transporter:       doc.Transporter,
 		VehicleNumber:     doc.VehicleNumber,
