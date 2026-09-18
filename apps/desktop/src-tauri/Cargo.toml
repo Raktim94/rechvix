@@ -1,0 +1,42 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+description = "Rechvix desktop shell — a thin native window around your self-hosted rechvix server, no business logic duplicated here (see docs/architecture.md §13 in the main rechvix repo)."
+authors = ["NodeDR Infotech Private Limited"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+
+# Desktop-only: a second launch (double-clicking the Start Menu tile while
+# it's already running) should focus the existing window, not spawn a
+# second process pointed at the same server — meaningless on mobile, which
+# has no concept of "another instance" the OS would even allow.
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

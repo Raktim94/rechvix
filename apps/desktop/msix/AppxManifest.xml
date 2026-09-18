@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rechvix desktop shell, MSIX manifest — follows Microsoft's own manual
+  Desktop Bridge packaging guide exactly:
+  https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion
+
+  This wraps the plain Win32 exe that a release build of src-tauri
+  already produces at src-tauri/target/release/desktop.exe, NOT the
+  NSIS/WiX installer Tauri can also produce, which is a separate,
+  unrelated distribution path. build-msix.ps1 assembles the package
+  layout this manifest describes.
+
+  BEFORE building for real, replace every REPLACE_ME below:
+    - Identity Name/Publisher: from your reserved app in Partner Center
+      (Partner Center, App identity). Publisher MUST match your code
+      signing certificate's Subject exactly, or signing/submission fails.
+    - Identity Version: bump this on every release (Windows requires a
+      strictly increasing 4 part version for MSIX to treat it as an
+      update rather than a conflicting duplicate).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+
+  <Identity
+    Name="REPLACE_ME.PartnerCenterReservedName"
+    Version="0.1.0.0"
+    Publisher="CN=REPLACE_ME, O=REPLACE_ME, L=REPLACE_ME, S=REPLACE_ME, C=IN"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Rechvix</DisplayName>
+    <PublisherDisplayName>NodeDR Infotech Private Limited</PublisherDisplayName>
+    <Description>Self-hosted billing, inventory, accounting, and India GST: a thin desktop window onto your own rechvix server. No data leaves your server; this app has no logic of its own beyond showing it.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <!-- 10.0.19041.0 is Windows 10 version 2004, the first build that
+         supports uap10:RuntimeBehavior below (see the Application
+         element). WebView2's evergreen runtime itself needs Windows 10
+         1803 or later; 2004 is the tighter constraint here. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22631.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <!-- Required for any packaged classic Win32 app; without it the app
+         cannot run at all under Desktop Bridge. -->
+    <rescap:Capability Name="runFullTrust" />
+    <!-- The webview needs to reach whatever server URL the user enters
+         (their own self-hosted rechvix instance). No other capability
+         is declared: this app has no filesystem/camera/etc. access
+         beyond what a packaged full-trust app already gets. -->
+    <Capability Name="internetClient" />
+  </Capabilities>
+
+  <Applications>
+    <Application
+      Id="Rechvix"
+      Executable="desktop.exe"
+      uap10:RuntimeBehavior="packagedClassicApp"
+      uap10:TrustLevel="mediumIL">
+      <uap:VisualElements
+        DisplayName="Rechvix"
+        Description="Self-hosted billing, inventory, accounting, and India GST"
+        BackgroundColor="#0F6E5C"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <!-- No uap:DefaultTile wide tile override: Tauri's default icon
+           scaffold only generated square assets, no true 310x150 wide
+           logo. The square tile above is a fully valid Start Menu tile
+           on its own; add a real Wide310x150Logo image here later if a
+           wide tile is ever wanted. -->
+    </Application>
+  </Applications>
+</Package>

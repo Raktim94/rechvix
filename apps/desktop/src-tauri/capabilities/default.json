@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the app's own windows — the main window only while it's still showing the bundled settings page (before a server URL is picked, it never gets Tauri API access once navigated to the external rechvix site), and the secondary settings window opened via \"Change Server…\".",
+  "windows": ["main", "settings"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "store:default"
+  ]
+}
