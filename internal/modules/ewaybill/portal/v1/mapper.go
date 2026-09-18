@@ -1,37 +1,63 @@
 // Package v1 is the first FREE_PORTAL export mapper version.
 //
 // HONEST CAVEAT, do not remove this comment without re-verifying against
-// current official documentation: the field names below were rewritten
-// against the real government e-Way Bill generation schema — verified by
-// cross-checking two independent descriptions of NIC's actual "Generate
-// e-Way Bill" request schema (developer.sandbox.co.in's API reference and
-// gsthelp.charteredinfo.com's sample JSON documentation, 2026-09-04), which
-// agreed exactly on the field list below. This is a real improvement over
-// the previous version of this file, which used entirely invented
-// snake_case/nested field names that would have been rejected outright.
+// current official documentation: verified 2026-09-18 against three
+// independent sources, cross-checked against each other for agreement
+// rather than trusted individually:
+//  1. National Informatics Centre's own "EWB-API Technical Document"
+//     (ewbapi_1.01.pdf, NIC, v1.01 dtd 24.03.2018) — a real sample "Generate
+//     e-Way Bill" request/response JSON with an official govt letterhead,
+//     fetched and read directly (docs.ewaybillgst.gov.in's own pages
+//     403 automated fetches, but this NIC-authored PDF is mirrored
+//     elsewhere and was readable in full).
+//  2. gsthelp.charteredinfo.com's "Request Sample Json of eWayBill" page
+//     (a GSP reference dated with a 2026 sample docDate, so current, not
+//     stale) — the more complete sample (adds actFromStateCode/
+//     actToStateCode/transactionType/shipToGSTIN, absent from source 1's
+//     simpler example).
+//  3. LogiTax's "CREATE E-WAY BILL API DOCUMENTATION FOR ERP INTEGRATION"
+//     (v1.01 with Amendment 5, dated 17 Jul 2024) — a GSP document that
+//     explicitly cross-references NIC's own docs.ewaybillgst.gov.in specs
+//     and flags where its own dialect diverges from them; its field-type
+//     table (Text/Number/Decimal per field) and a concrete "billLists"
+//     bulk-array JSON sample independently confirm source 1 & 2's field
+//     names AND resolve what neither of those showed: which fields are
+//     bare JSON numbers vs quoted strings.
 //
-// What is still NOT independently verified against a live official sample
-// or the current NIC "EWB Generation Tool and Attributes and JSON Schema"
-// PDF (docs.ewaybillgst.gov.in blocks automated fetches with a 403 — a
-// human with browser access should pull it directly before this ships):
-//   - subSupplyType's exact numeric code mapping (this file uses a
-//     best-effort mapping documented inline, not independently confirmed)
-//   - vehicleType (defaulted to "R"/Regular — this system doesn't track
-//     Over Dimensional Cargo at all)
-//   - whether state codes are transmitted as JSON strings or numbers (this
-//     file uses strings, matching every other numeric-looking code in the
-//     schema, e.g. docNo/pincode, which are documented as strings)
-//   - the exact top-level wrapper key (if any) the "Generate Bulk" bulk-
-//     upload tool expects around an array of these documents — what's
-//     verified here is the single-document "Generate e-Way Bill" API
-//     schema; the bulk JSON tool's own wrapper has not been separately
-//     confirmed, since BULK_EWB_NOTE.pdf (the specific bulk-tool doc) also
-//     403'd on fetch.
+// The real, confirmed finding from cross-checking all three: this file
+// previously marshaled EVERY field as a quoted JSON string (including
+// pincode/state code/HSN code/quantity/tax amounts) — wrong. All three
+// sources agree these are bare numbers, not strings; see portalDocument/
+// portalItem's own field-level comments below for exactly which. This
+// was a real, shipped bug, not just an unconfirmed caveat — a file this
+// package generated before this fix could have been rejected by the
+// actual portal for the numeric fields being the wrong JSON type.
 //
-// Treat every field name as provisional until checked against a real
-// sample; update ewaybill_portal_schema_versions with a new dated row
-// (never edit this file's field names in place) when it's verified or
-// when the government changes it.
+// What is STILL not independently verified, do not claim otherwise:
+//   - subSupplyType's exact numeric code mapping (best-effort, inline)
+//   - vehicleType (defaulted to "R"/Regular — no ODC tracking)
+//   - the exact top-level wrapper key the web portal's own "Generate
+//     Bulk" Excel-to-JSON tool expects for multiple documents in one
+//     file (BULK_EWB_NOTE.pdf, the one document that would settle this,
+//     404/403'd on every fetch attempt, including via two different
+//     search-engine-indexed mirrors). Source 3's "billLists" wrapper is
+//     LogiTax's own GSP API convention, explicitly documented by LogiTax
+//     itself as sometimes diverging from the raw NIC schema — it is
+//     evidence multi-document-in-one-array is the right general shape,
+//     not confirmation of NIC's own exact wrapper key. SplitBatch below
+//     deliberately produces a plain JSON array with no wrapper key at
+//     all, which is the most conservative choice pending a real
+//     confirmed sample, but IS NOT ITSELF CONFIRMED against the actual
+//     web portal bulk-upload tool either. If bulk upload is rejected,
+//     the reliable fallback already supported today is uploading one
+//     single-document file per invoice via the portal's ordinary
+//     (non-bulk) "Generate e-Way Bill" JSON upload option instead —
+//     source 1 & 2's schema, which this file DOES now match with high
+//     confidence.
+//
+// Treat every field name/type as re-verify-before-relying-on-it, not
+// gospel. Update this comment (never silently edit the field list out
+// from under it) when it's re-checked or the government changes it.
 package v1
 
 import (
@@ -46,54 +72,73 @@ import (
 	"rechvix/internal/modules/ewaybill/portal"
 )
 
-const SchemaVersion = "v2-verified-field-names"
+const SchemaVersion = "v3-numeric-field-types-verified-2026-09-18"
 
 // portalDocument is the real NIC e-Way Bill generation request shape —
 // flat, camelCase, root-level from/to fields (NOT nested party objects —
 // the previous version of this file nested them under "from"/"to"/
 // "ship_to" objects, which does not match the real schema at all).
+// json.Number marshals as a bare JSON number (no quotes) while still being
+// backed by a plain Go string — exactly what's needed to emit
+// decimal-precise numeric fields (an amount, a state code) without the
+// float64 round-off risk a plain float64 field would carry, and without
+// wrongly quoting them as strings like this file used to. encoding/json
+// validates it's actually a syntactically valid number at Marshal time,
+// so a corrupt/non-numeric value fails loudly (a Go error) instead of
+// silently producing broken JSON — the same "fail rather than guess"
+// posture the rest of this codebase already holds to.
 type portalDocument struct {
-	SupplyType    string `json:"supplyType"`              // "O" outward / "I" inward — this system only ever generates outward EWBs for its own sales
-	SubSupplyType string `json:"subSupplyType"`           // see subSupplyTypeFor's caveat comment
-	SubSupplyDesc string `json:"subSupplyDesc,omitempty"` // required only when SubSupplyType is the "Others" code
-	DocType       string `json:"docType"`                 // INV/CHL/BIL/CRN/DBN/OTH
-	DocNo         string `json:"docNo"`
-	DocDate       string `json:"docDate"` // DD/MM/YYYY
+	SupplyType        string `json:"supplyType"`              // "O" outward / "I" inward — this system only ever generates outward EWBs for its own sales
+	SubSupplyType     string `json:"subSupplyType"`           // see subSupplyTypeFor's caveat comment
+	SubSupplyTypeDesc string `json:"subSupplyTypeDesc,omitempty"` // required only when SubSupplyType is the "Others" code — field name corrected from this file's previous "subSupplyDesc" (wrong; not the schema's actual name, per source 2 & 3's cross-agreement)
+	DocType           string `json:"docType"`                 // INV/CHL/BIL/CRN/DBN/OTH
+	DocNo             string `json:"docNo"`
+	DocDate           string `json:"docDate"` // DD/MM/YYYY
 
-	FromGSTIN       string `json:"fromGstin,omitempty"`
-	FromTradeName   string `json:"fromTrdName,omitempty"`
-	FromAddress1    string `json:"fromAddr1,omitempty"`
-	FromAddress2    string `json:"fromAddr2,omitempty"`
-	FromPlace       string `json:"fromPlace,omitempty"`
-	FromPincode     string `json:"fromPincode,omitempty"`
-	ActualFromState string `json:"actFromStateCode,omitempty"`
-	FromStateCode   string `json:"fromStateCode"`
+	FromGSTIN       string      `json:"fromGstin,omitempty"`
+	FromTradeName   string      `json:"fromTrdName,omitempty"`
+	FromAddress1    string      `json:"fromAddr1,omitempty"`
+	FromAddress2    string      `json:"fromAddr2,omitempty"`
+	FromPlace       string      `json:"fromPlace,omitempty"`
+	FromPincode     json.Number `json:"fromPincode,omitempty"`
+	ActualFromState json.Number `json:"actFromStateCode,omitempty"`
+	FromStateCode   json.Number `json:"fromStateCode"`
 
-	ToGSTIN       string `json:"toGstin,omitempty"`
-	ToTradeName   string `json:"toTrdName,omitempty"`
-	ToAddress1    string `json:"toAddr1,omitempty"`
-	ToAddress2    string `json:"toAddr2,omitempty"`
-	ToPlace       string `json:"toPlace,omitempty"`
-	ToPincode     string `json:"toPincode,omitempty"`
-	ActualToState string `json:"actToStateCode,omitempty"`
-	ToStateCode   string `json:"toStateCode"`
+	ToGSTIN       string      `json:"toGstin,omitempty"`
+	ToTradeName   string      `json:"toTrdName,omitempty"`
+	ToAddress1    string      `json:"toAddr1,omitempty"`
+	ToAddress2    string      `json:"toAddr2,omitempty"`
+	ToPlace       string      `json:"toPlace,omitempty"`
+	ToPincode     json.Number `json:"toPincode,omitempty"`
+	ActualToState json.Number `json:"actToStateCode,omitempty"`
+	ToStateCode   json.Number `json:"toStateCode"`
 
 	// TransactionType: 1 Regular, 2 Bill To-Ship To, 3 Bill From-Dispatch
 	// From, 4 Combination of 2 and 3 — derived in PrepareUpload by
 	// comparing ShipTo/DispatchFrom against Recipient/Supplier, never
-	// hardcoded.
+	// hardcoded. Kept as a string: source 3's own concrete bulk sample
+	// ships it quoted ("TransType":"1") despite that same source's prose
+	// table claiming Number(1) — a live sample outweighs a table when
+	// they disagree, since the sample is closer to what a real server
+	// actually parses.
 	TransactionType string `json:"transactionType"`
 	ShipToGSTIN     string `json:"shipToGSTIN,omitempty"`
 	ShipToTradeName string `json:"shipToTradeName,omitempty"`
+	// DispatchFromGSTIN/DispatchFromTradeName: only meaningful (and only
+	// sent) when TransactionType is 3 or 4 — dispatch point differs from
+	// the registered supplier, same conditional pattern as ShipToGSTIN
+	// above for the mirror "Bill From-Dispatch From" case.
+	DispatchFromGSTIN     string `json:"dispatchFromGSTIN,omitempty"`
+	DispatchFromTradeName string `json:"dispatchFromTradeName,omitempty"`
 
-	OtherValue        string `json:"otherValue"`
-	TotalValue        string `json:"totalValue"` // taxable value total, pre-tax
-	CGSTValue         string `json:"cgstValue"`
-	SGSTValue         string `json:"sgstValue"`
-	IGSTValue         string `json:"igstValue"`
-	CessValue         string `json:"cessValue"`
-	CessNonAdvolValue string `json:"cessNonAdvolValue"`
-	TotalInvoiceValue string `json:"totInvValue"` // grand total, the field the portal actually validates against the consignment-value threshold
+	OtherValue        string      `json:"otherValue"` // kept as string: this specific field's type conflicts across sources (quoted in one concrete sample, bare in another) and its value is always "0.00" here regardless, so the ambiguity has no practical effect
+	TotalValue        json.Number `json:"totalValue"` // taxable value total, pre-tax
+	CGSTValue         json.Number `json:"cgstValue"`
+	SGSTValue         json.Number `json:"sgstValue"`
+	IGSTValue         json.Number `json:"igstValue"`
+	CessValue         json.Number `json:"cessValue"`
+	CessNonAdvolValue json.Number `json:"cessNonAdvolValue"`
+	TotalInvoiceValue json.Number `json:"totInvValue"` // grand total, the field the portal actually validates against the consignment-value threshold
 
 	TransporterID   string `json:"transporterId,omitempty"`
 	TransporterName string `json:"transporterName,omitempty"`
@@ -108,17 +153,31 @@ type portalDocument struct {
 }
 
 type portalItem struct {
-	ProductName   string `json:"productName,omitempty"`
-	ProductDesc   string `json:"productDesc,omitempty"`
-	HSNCode       string `json:"hsnCode"`
-	Quantity      string `json:"quantity"`
-	QtyUnit       string `json:"qtyUnit,omitempty"`
-	TaxableAmount string `json:"taxableAmount"`
-	CGSTRate      string `json:"cgstRate"`
-	SGSTRate      string `json:"sgstRate"`
-	IGSTRate      string `json:"igstRate"`
-	CessRate      string `json:"cessRate"`
-	CessNonAdvol  string `json:"cessNonadvol"`
+	// ItemNo: 1-based sequential position in ItemList — absent from the
+	// simpler source-1/2 samples but present (and populated from 1, not
+	// 0) in source 3's current concrete sample; harmless to include even
+	// if it turns out optional.
+	ItemNo        int         `json:"itemNo"`
+	ProductName   string      `json:"productName,omitempty"`
+	ProductDesc   string      `json:"productDesc,omitempty"`
+	// HSNCode: sent as a bare number per the verified schema (Number(8) —
+	// source 3's field table), which means a real HSN chapter-01 code
+	// ("Live animals", e.g. "0101") loses its leading zero on the wire
+	// (becomes 101) exactly like a leading-zero state code does — see
+	// numericCode's own comment. Unlike the state-code case this isn't
+	// this codebase's choice to make: every source that documents this
+	// field's type agrees it's numeric, so a chapter-01 HSN code hitting
+	// this same limitation is the verified schema's own constraint, not
+	// a gap in this implementation.
+	HSNCode json.Number `json:"hsnCode"`
+	Quantity      json.Number `json:"quantity"`
+	QtyUnit       string      `json:"qtyUnit,omitempty"`
+	TaxableAmount json.Number `json:"taxableAmount"`
+	CGSTRate      json.Number `json:"cgstRate"`
+	SGSTRate      json.Number `json:"sgstRate"`
+	IGSTRate      json.Number `json:"igstRate"`
+	CessRate      json.Number `json:"cessRate"`
+	CessNonAdvol  json.Number `json:"cessNonadvol"`
 }
 
 // MaxFileSizeBytes is a documented, configurable placeholder ceiling
@@ -145,8 +204,8 @@ func (m *Mapper) PrepareUpload(_ context.Context, bill canonical.CanonicalEWayBi
 
 		FromGSTIN: bill.Supplier.GSTIN, FromTradeName: firstNonEmpty(bill.Supplier.TradeName, bill.Supplier.LegalName),
 		FromAddress1: bill.Supplier.AddressLine1, FromAddress2: bill.Supplier.AddressLine2,
-		FromPlace: bill.Supplier.City, FromPincode: bill.Supplier.PostalCode,
-		FromStateCode: bill.Supplier.StateCode, ActualFromState: bill.DispatchFrom.StateCode,
+		FromPlace: bill.Supplier.City, FromPincode: numericCode(bill.Supplier.PostalCode),
+		FromStateCode: numericCode(bill.Supplier.StateCode), ActualFromState: numericCode(bill.DispatchFrom.StateCode),
 
 		// toGstin/toStateCode/toPincode/toAddr*/toPlace describe where the
 		// goods are actually going, not necessarily the registered
@@ -161,39 +220,46 @@ func (m *Mapper) PrepareUpload(_ context.Context, bill canonical.CanonicalEWayBi
 		ToAddress1: firstNonEmpty(bill.ShipTo.AddressLine1, bill.Recipient.AddressLine1),
 		ToAddress2: firstNonEmpty(bill.ShipTo.AddressLine2, bill.Recipient.AddressLine2),
 		ToPlace:    firstNonEmpty(bill.ShipTo.City, bill.Recipient.City),
-		ToPincode:  firstNonEmpty(bill.ShipTo.PostalCode, bill.Recipient.PostalCode),
-		ToStateCode: firstNonEmpty(bill.ShipTo.StateCode, bill.Recipient.StateCode), ActualToState: bill.ShipTo.StateCode,
+		ToPincode:  numericCode(firstNonEmpty(bill.ShipTo.PostalCode, bill.Recipient.PostalCode)),
+		ToStateCode: numericCode(firstNonEmpty(bill.ShipTo.StateCode, bill.Recipient.StateCode)), ActualToState: numericCode(bill.ShipTo.StateCode),
 
 		TransactionType: transactionTypeFor(bill),
 
 		OtherValue:        "0.00",
-		TotalValue:        bill.Tax.TaxableValue.StringFixed(2),
-		CGSTValue:         bill.Tax.CGST.StringFixed(2),
-		SGSTValue:         bill.Tax.SGST.StringFixed(2),
-		IGSTValue:         bill.Tax.IGST.StringFixed(2),
-		CessValue:         bill.Tax.CESS.StringFixed(2),
+		TotalValue:        json.Number(bill.Tax.TaxableValue.StringFixed(2)),
+		CGSTValue:         json.Number(bill.Tax.CGST.StringFixed(2)),
+		SGSTValue:         json.Number(bill.Tax.SGST.StringFixed(2)),
+		IGSTValue:         json.Number(bill.Tax.IGST.StringFixed(2)),
+		CessValue:         json.Number(bill.Tax.CESS.StringFixed(2)),
 		CessNonAdvolValue: "0.00",
-		TotalInvoiceValue: bill.Tax.GrandTotal.StringFixed(2),
+		TotalInvoiceValue: json.Number(bill.Tax.GrandTotal.StringFixed(2)),
 
 		TransporterID: bill.Transport.TransporterID, TransporterName: bill.Transport.TransporterName,
 		TransDistance: bill.Transport.DistanceKM.StringFixed(0), // the real field is a whole-number km, not a decimal
 		VehicleNo:     bill.Transport.VehicleNumber, VehicleType: "R",
 	}
-	// transactionType 2/4 carries a separate ship-to GSTIN/name; 1/3 don't.
+	// transactionType 2/4 carries a separate ship-to GSTIN/name; 3/4 a
+	// separate dispatch-from GSTIN/name — never hardcoded, mirrors
+	// transactionTypeFor's own comparison.
 	if doc.TransactionType == "2" || doc.TransactionType == "4" {
 		doc.ShipToGSTIN = firstNonEmpty(bill.ShipTo.GSTIN, "URP")
 		doc.ShipToTradeName = firstNonEmpty(bill.ShipTo.TradeName, bill.ShipTo.LegalName)
 	}
+	if doc.TransactionType == "3" || doc.TransactionType == "4" {
+		doc.DispatchFromGSTIN = bill.DispatchFrom.GSTIN
+		doc.DispatchFromTradeName = firstNonEmpty(bill.DispatchFrom.TradeName, bill.DispatchFrom.LegalName)
+	}
 
-	for _, it := range bill.Items {
+	for i, it := range bill.Items {
 		doc.ItemList = append(doc.ItemList, portalItem{
+			ItemNo:      i + 1,
 			ProductName: it.Description, ProductDesc: it.Description,
-			HSNCode: it.HSNSACCode, Quantity: it.Quantity.StringFixed(3), QtyUnit: it.UnitCode,
-			TaxableAmount: it.TaxableAmount.StringFixed(2),
-			CGSTRate:      it.CGSTRate.StringFixed(2),
-			SGSTRate:      it.SGSTRate.StringFixed(2),
-			IGSTRate:      it.IGSTRate.StringFixed(2),
-			CessRate:      it.CessRate.StringFixed(2),
+			HSNCode: numericCode(it.HSNSACCode), Quantity: json.Number(it.Quantity.StringFixed(3)), QtyUnit: it.UnitCode,
+			TaxableAmount: json.Number(it.TaxableAmount.StringFixed(2)),
+			CGSTRate:      json.Number(it.CGSTRate.StringFixed(2)),
+			SGSTRate:      json.Number(it.SGSTRate.StringFixed(2)),
+			IGSTRate:      json.Number(it.IGSTRate.StringFixed(2)),
+			CessRate:      json.Number(it.CessRate.StringFixed(2)),
 			CessNonAdvol:  "0.00",
 		})
 	}
@@ -273,6 +339,28 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// numericCode turns a code this codebase stores as a string (a 2-digit
+// GST state code, a 6-digit pincode, an HSN/SAC code) into a json.Number
+// — stripping any leading zero first, since JSON's own number grammar
+// forbids one on anything but a bare "0" (confirmed directly: Go's
+// encoding/json rejects json.Number("01") as invalid at Marshal time,
+// not just a style nitpick). This matters for real, common values here:
+// GST state codes "01" through "09" (Jammu & Kashmir through Uttar
+// Pradesh) and HSN chapter 01 ("Live animals", e.g. "0101") both have a
+// genuine leading zero. An empty input returns an empty json.Number,
+// which the field's own `omitempty` tag then drops — for a field with no
+// omitempty (a schema-mandatory one), an empty result here means
+// eligibility.Evaluate's own check for that same field failed to catch a
+// gap it should have; PrepareUpload's "Requirement != Ready" guard is the
+// real defense, this is not a substitute for it.
+func numericCode(code string) json.Number {
+	trimmed := strings.TrimLeft(code, "0")
+	if trimmed == "" && code != "" {
+		trimmed = "0" // the value WAS all zeros (e.g. literally "0") — keep it as one, not drop it
+	}
+	return json.Number(trimmed)
 }
 
 var filenameUnsafe = regexp.MustCompile(`[^A-Za-z0-9_.-]`)

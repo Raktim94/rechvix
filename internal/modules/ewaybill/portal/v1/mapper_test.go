@@ -61,8 +61,16 @@ func TestPrepareUpload_ProducesNonEmptyValidJSON(t *testing.T) {
 	if file.FileName == "" || !strings.HasPrefix(file.FileName, "EWB-") {
 		t.Fatalf("unexpected filename %q", file.FileName)
 	}
+	// UseNumber(): totInvValue/igstRate/etc. are now bare JSON numbers
+	// (this file's real fix — see mapper.go's package doc comment), not
+	// quoted strings. Decoding with UseNumber() preserves the exact
+	// digit string (json.Number) instead of collapsing through float64,
+	// so these assertions can still check the precise "18.00" formatting
+	// was preserved on the wire, not just "the numeric value is 18".
+	dec := json.NewDecoder(strings.NewReader(string(file.Content)))
+	dec.UseNumber()
 	var decoded map[string]any
-	if err := json.Unmarshal(file.Content, &decoded); err != nil {
+	if err := dec.Decode(&decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if decoded["docNo"] != "INV-1" {
@@ -74,16 +82,68 @@ func TestPrepareUpload_ProducesNonEmptyValidJSON(t *testing.T) {
 	if decoded["transactionType"] != "1" {
 		t.Fatalf("transactionType = %v, want \"1\" (Regular — ShipTo/DispatchFrom match Recipient/Supplier in this fixture)", decoded["transactionType"])
 	}
-	if decoded["totInvValue"] != "1180.00" {
-		t.Fatalf("totInvValue = %v, want 1180.00", decoded["totInvValue"])
+	// fromStateCode/toStateCode must be bare JSON numbers, not quoted
+	// strings — json.Number("27") in the decoded map (via UseNumber)
+	// proves that; a plain Go string "27" would also print identically
+	// via %v, so check the concrete type instead of just the value.
+	if _, ok := decoded["fromStateCode"].(json.Number); !ok {
+		t.Fatalf("fromStateCode = %#v (%T), want a bare JSON number, not a quoted string", decoded["fromStateCode"], decoded["fromStateCode"])
+	}
+	if decoded["totInvValue"] != json.Number("1180.00") {
+		t.Fatalf("totInvValue = %v, want the bare JSON number 1180.00", decoded["totInvValue"])
 	}
 	items, ok := decoded["itemList"].([]any)
 	if !ok || len(items) != 1 {
 		t.Fatalf("itemList = %v, want exactly 1 item", decoded["itemList"])
 	}
 	item := items[0].(map[string]any)
-	if item["igstRate"] != "18.00" || item["cgstRate"] != "0.00" {
+	if item["igstRate"] != json.Number("18.00") || item["cgstRate"] != json.Number("0.00") {
 		t.Fatalf("item rates = %+v, want the per-component split preserved (igstRate=18.00, cgstRate=0.00), not collapsed into one combined rate", item)
+	}
+	if item["itemNo"] != json.Number("1") {
+		t.Fatalf("itemNo = %v, want 1 (1-based)", item["itemNo"])
+	}
+}
+
+// TestPrepareUpload_StateCodeLeadingZero_StaysValidJSON is a real
+// regression test for a real bug this file's own fix caught: a bare
+// JSON number can never have a leading zero except when the whole
+// number IS zero (confirmed directly against encoding/json before
+// shipping this fix — json.Number("01") fails to marshal at all). GST
+// state codes 01 through 09 (Jammu & Kashmir through Uttar Pradesh) are
+// exactly this case. Without numericCode's leading-zero strip,
+// PrepareUpload would return a marshal error for any of those nine
+// states — not a wrong file, a totally failed one.
+func TestPrepareUpload_StateCodeLeadingZero_StaysValidJSON(t *testing.T) {
+	m := New()
+	bill := canonical.CanonicalEWayBill{
+		InvoiceNumber: "INV-3", InvoiceDate: time.Now(),
+		Supplier:     canonical.Party{GSTIN: "07AAAAA0000A1Z5", StateCode: "07", PostalCode: "110001"}, // Delhi
+		Recipient:    canonical.Party{StateCode: "07"},
+		ShipTo:       canonical.Party{StateCode: "07"},
+		DispatchFrom: canonical.Party{GSTIN: "07AAAAA0000A1Z5", StateCode: "07"},
+		Items:        []canonical.Item{{LineRef: "1", HSNSACCode: "0101", Quantity: decimal.NewFromInt(1), TaxableAmount: decimal.NewFromInt(100)}},
+		Tax:          canonical.TaxTotals{GrandTotal: decimal.NewFromInt(100)},
+	}
+	file, err := m.PrepareUpload(context.Background(), bill)
+	if err != nil {
+		t.Fatalf("PrepareUpload with a leading-zero state code (07) and HSN code (0101): %v", err)
+	}
+	if !json.Valid(file.Content) {
+		t.Fatal("prepared file content is not valid JSON")
+	}
+	dec := json.NewDecoder(strings.NewReader(string(file.Content)))
+	dec.UseNumber()
+	var decoded map[string]any
+	if err := dec.Decode(&decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded["fromStateCode"] != json.Number("7") {
+		t.Fatalf("fromStateCode = %v, want the leading zero stripped (7, not 07 — invalid as a bare JSON number)", decoded["fromStateCode"])
+	}
+	items := decoded["itemList"].([]any)
+	if items[0].(map[string]any)["hsnCode"] != json.Number("101") {
+		t.Fatalf("hsnCode = %v, want the leading zero stripped (101, not 0101)", items[0].(map[string]any)["hsnCode"])
 	}
 }
 

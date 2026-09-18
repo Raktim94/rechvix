@@ -73,6 +73,14 @@ type MissingInfo struct {
 // never reports it Ready.
 const MaxInvoiceAgeForGeneration = 180 * 24 * time.Hour
 
+// reconciliationTolerance is a heuristic, not a government-specified
+// figure (none was found) — a deliberately generous ₹1 grace band for
+// the taxable-value-plus-tax-equals-grand-total check below, matching
+// the order of magnitude gstindia.Engine's own doc comment already
+// documents as normal rounding drift between an intra-state split and
+// an inter-state whole.
+var reconciliationTolerance = decimal.NewFromInt(1)
+
 // Evaluate implements EvaluateEWayBillRequirement(invoice) (docs/
 // architecture.md §9b). rules should be every currently-loaded Rule
 // (typically all of Repository.ListActive's result); Evaluate itself
@@ -104,6 +112,8 @@ func Evaluate(rules []Rule, c canonical.CanonicalEWayBill, now time.Time) (Requi
 	}
 	if c.Transport.VehicleNumber == "" {
 		missing = append(missing, MissingInfo{Field: "vehicle_number", Reason: "no vehicle selected"})
+	} else if !isValidVehicleNumber(c.Transport.VehicleNumber) {
+		missing = append(missing, MissingInfo{Field: "vehicle_number", Reason: "vehicle number doesn't look like a valid Indian registration (e.g. MH12AB1234)"})
 	}
 	if c.Transport.DistanceKM.IsZero() {
 		missing = append(missing, MissingInfo{Field: "distance_km", Reason: "transport distance not entered"})
@@ -111,6 +121,8 @@ func Evaluate(rules []Rule, c canonical.CanonicalEWayBill, now time.Time) (Requi
 	for _, item := range c.Items {
 		if item.HSNSACCode == "" {
 			missing = append(missing, MissingInfo{Field: "items[" + item.LineRef + "].hsn_sac_code", Reason: "product is missing an HSN/SAC code"})
+		} else if !isValidHSN(item.HSNSACCode) {
+			missing = append(missing, MissingInfo{Field: "items[" + item.LineRef + "].hsn_sac_code", Reason: "HSN/SAC code must be 4–8 digits"})
 		}
 	}
 	if c.ShipTo.StateCode == "" {
@@ -123,9 +135,50 @@ func Evaluate(rules []Rule, c canonical.CanonicalEWayBill, now time.Time) (Requi
 	// Bill" schema requires these on.
 	if c.Supplier.GSTIN == "" {
 		missing = append(missing, MissingInfo{Field: "supplier.gstin", Reason: "your business has no GSTIN configured (Settings → Legal entity)"})
+	} else if !isValidGSTIN(c.Supplier.GSTIN) {
+		missing = append(missing, MissingInfo{Field: "supplier.gstin", Reason: "your business's GSTIN doesn't look valid — check Settings → Legal entity"})
 	}
 	if c.Supplier.PostalCode == "" {
 		missing = append(missing, MissingInfo{Field: "supplier.postal_code", Reason: "your business has no PIN code configured (Settings → Invoice branding)"})
+	} else if !isValidPincode(c.Supplier.PostalCode) {
+		missing = append(missing, MissingInfo{Field: "supplier.postal_code", Reason: "your business's PIN code doesn't look valid — check Settings → Invoice branding"})
+	}
+	// Recipient/ship-to GSTIN are genuinely optional (a real B2C sale has
+	// none) — only validated when actually present, never required.
+	if c.Recipient.GSTIN != "" && !isValidGSTIN(c.Recipient.GSTIN) {
+		missing = append(missing, MissingInfo{Field: "recipient.gstin", Reason: "customer's GSTIN doesn't look valid"})
+	}
+	if c.ShipTo.GSTIN != "" && !isValidGSTIN(c.ShipTo.GSTIN) {
+		missing = append(missing, MissingInfo{Field: "ship_to.gstin", Reason: "ship-to party's GSTIN doesn't look valid"})
+	}
+
+	// Reconciliation: taxable value plus every tax component should equal
+	// (or come very close to — a few paise/rupees of rounding drift
+	// across many lines is normal, not a bug; gstindia.Engine's own doc
+	// comment notes an intra-state split and an inter-state whole can
+	// legitimately differ by about a currency unit) the grand total
+	// already computed by the tax engine. A real mismatch means
+	// something upstream is broken, not ordinary rounding — generating a
+	// government filing document from inconsistent numbers is worse
+	// than blocking it here.
+	reconciled := c.Tax.TaxableValue.Add(c.Tax.CGST).Add(c.Tax.SGST).Add(c.Tax.IGST).Add(c.Tax.CESS)
+	if !c.Tax.GrandTotal.IsZero() && reconciled.Sub(c.Tax.GrandTotal).Abs().GreaterThan(reconciliationTolerance) {
+		missing = append(missing, MissingInfo{Field: "tax.grand_total", Reason: "taxable value plus tax doesn't add up to the grand total — this invoice's tax snapshot looks inconsistent"})
+	}
+	// CGST+SGST vs IGST must follow from comparing the supplier's state
+	// to the place of supply (gstindia.Engine's own rule, engine.go:
+	// intraState := SupplierStateCode == SupplyPlace.StateCode) — a
+	// safety net for exactly the tax-treatment bug a real generated file
+	// once surfaced (place of supply defaulting to the seller's own
+	// state regardless of the actual customer, fixed at the source in
+	// BillingPage): if the two ever disagree again for any reason, block
+	// here rather than silently filing the wrong tax type.
+	intraState := c.Supplier.StateCode != "" && c.Supplier.StateCode == c.SupplyPlaceCode
+	if intraState && !c.Tax.IGST.IsZero() {
+		missing = append(missing, MissingInfo{Field: "tax.igst", Reason: "IGST is set on what looks like an intra-state sale (same supplier and place-of-supply state) — expected CGST+SGST instead"})
+	}
+	if !intraState && c.Supplier.StateCode != "" && c.SupplyPlaceCode != "" && (!c.Tax.CGST.IsZero() || !c.Tax.SGST.IsZero()) {
+		missing = append(missing, MissingInfo{Field: "tax.cgst_sgst", Reason: "CGST/SGST is set on what looks like an inter-state sale (different supplier and place-of-supply state) — expected IGST instead"})
 	}
 
 	if len(missing) > 0 {

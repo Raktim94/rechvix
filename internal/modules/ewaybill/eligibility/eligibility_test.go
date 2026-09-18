@@ -33,8 +33,12 @@ func mkBill(grandTotal string, supplyState string, vehicle, distance string, hsn
 		// supplier, same as ShipTo above already being populated by
 		// default so ship-to-state tests could stay focused on their own
 		// one missing field.
-		Supplier:  canonical.Party{GSTIN: "22AAAAA0000A1Z5", PostalCode: "700001"},
-		Tax:       canonical.TaxTotals{GrandTotal: decimal.RequireFromString(grandTotal)},
+		Supplier: canonical.Party{GSTIN: "22AAAAA0000A1Z5", PostalCode: "700001"},
+		// TaxableValue mirrors GrandTotal (zero tax) rather than being left
+		// unset — the reconciliation check added alongside the tax-
+		// treatment safety-net check below needs these to actually agree
+		// for a fixture meant to represent a complete, consistent invoice.
+		Tax:       canonical.TaxTotals{TaxableValue: decimal.RequireFromString(grandTotal), GrandTotal: decimal.RequireFromString(grandTotal)},
 		Transport: canonical.Transport{VehicleNumber: vehicle, DistanceKM: dist},
 	}
 }
@@ -160,5 +164,125 @@ func TestEvaluate_NoApplicableRule_NeedsInformation(t *testing.T) {
 	req, missing := Evaluate(nil, bill, bill.InvoiceDate)
 	if req != NeedsInformation || len(missing) == 0 {
 		t.Fatalf("got req=%s missing=%v, want NEEDS_INFORMATION (never silently skip a legally-required e-Way Bill for lack of configured rules)", req, missing)
+	}
+}
+
+func TestEvaluate_InvalidGSTINFormat_NeedsInformation(t *testing.T) {
+	rules := []Rule{mkRule(nil, "50000", "2018-04-01", nil)}
+	bill := mkBill("100000", "27", "KA01AB1234", "50", "998877")
+	bill.Supplier.GSTIN = "not-a-gstin"
+	req, missing := Evaluate(rules, bill, bill.InvoiceDate)
+	if req != NeedsInformation {
+		t.Fatalf("got req=%s, want NEEDS_INFORMATION for a malformed supplier GSTIN", req)
+	}
+	found := false
+	for _, m := range missing {
+		if m.Field == "supplier.gstin" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing = %v, want a supplier.gstin entry for the malformed GSTIN", missing)
+	}
+}
+
+func TestEvaluate_InvalidPincodeFormat_NeedsInformation(t *testing.T) {
+	rules := []Rule{mkRule(nil, "50000", "2018-04-01", nil)}
+	bill := mkBill("100000", "27", "KA01AB1234", "50", "998877")
+	bill.Supplier.PostalCode = "12345" // 5 digits, not 6
+	req, _ := Evaluate(rules, bill, bill.InvoiceDate)
+	if req != NeedsInformation {
+		t.Fatalf("got req=%s, want NEEDS_INFORMATION for a malformed PIN code", req)
+	}
+}
+
+func TestEvaluate_InvalidVehicleNumberFormat_NeedsInformation(t *testing.T) {
+	rules := []Rule{mkRule(nil, "50000", "2018-04-01", nil)}
+	bill := mkBill("100000", "27", "NOTAPLATE", "50", "998877")
+	req, _ := Evaluate(rules, bill, bill.InvoiceDate)
+	if req != NeedsInformation {
+		t.Fatalf("got req=%s, want NEEDS_INFORMATION for a vehicle number that doesn't match the Indian registration format", req)
+	}
+}
+
+func TestEvaluate_InvalidHSNFormat_NeedsInformation(t *testing.T) {
+	rules := []Rule{mkRule(nil, "50000", "2018-04-01", nil)}
+	bill := mkBill("100000", "27", "KA01AB1234", "50", "AB12") // letters, not digits
+	req, _ := Evaluate(rules, bill, bill.InvoiceDate)
+	if req != NeedsInformation {
+		t.Fatalf("got req=%s, want NEEDS_INFORMATION for a non-numeric HSN/SAC code", req)
+	}
+}
+
+func TestEvaluate_InterStateSaleWithCGSTSGST_NeedsInformation(t *testing.T) {
+	// A real regression case: the exact bug class a real generated e-Way
+	// Bill file once surfaced (place of supply wrongly defaulted to the
+	// seller's own state, so an inter-state sale got taxed CGST+SGST
+	// instead of IGST). Supplier in Odisha (21), place of supply West
+	// Bengal (19) — genuinely inter-state — but CGST/SGST are non-zero
+	// and IGST is zero, exactly the wrong combination.
+	rules := []Rule{mkRule(nil, "50000", "2018-04-01", nil)}
+	bill := mkBill("100000", "19", "KA01AB1234", "50", "998877")
+	bill.Supplier.StateCode = "21"
+	bill.Tax.CGST = decimal.RequireFromString("9000")
+	bill.Tax.SGST = decimal.RequireFromString("9000")
+	bill.Tax.TaxableValue = decimal.RequireFromString("100000")
+	bill.Tax.GrandTotal = decimal.RequireFromString("118000")
+	req, missing := Evaluate(rules, bill, bill.InvoiceDate)
+	if req != NeedsInformation {
+		t.Fatalf("got req=%s, want NEEDS_INFORMATION for CGST+SGST on an inter-state sale", req)
+	}
+	found := false
+	for _, m := range missing {
+		if m.Field == "tax.cgst_sgst" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing = %v, want a tax.cgst_sgst entry", missing)
+	}
+}
+
+func TestEvaluate_IntraStateSaleWithIGST_NeedsInformation(t *testing.T) {
+	rules := []Rule{mkRule(nil, "50000", "2018-04-01", nil)}
+	bill := mkBill("100000", "21", "KA01AB1234", "50", "998877")
+	bill.Supplier.StateCode = "21"
+	bill.Tax.IGST = decimal.RequireFromString("18000")
+	bill.Tax.TaxableValue = decimal.RequireFromString("100000")
+	bill.Tax.GrandTotal = decimal.RequireFromString("118000")
+	req, missing := Evaluate(rules, bill, bill.InvoiceDate)
+	if req != NeedsInformation {
+		t.Fatalf("got req=%s, want NEEDS_INFORMATION for IGST on an intra-state sale", req)
+	}
+	found := false
+	for _, m := range missing {
+		if m.Field == "tax.igst" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing = %v, want a tax.igst entry", missing)
+	}
+}
+
+func TestEvaluate_TaxReconciliationMismatch_NeedsInformation(t *testing.T) {
+	rules := []Rule{mkRule(nil, "50000", "2018-04-01", nil)}
+	bill := mkBill("100000", "27", "KA01AB1234", "50", "998877")
+	// GrandTotal deliberately doesn't match TaxableValue + tax (which is
+	// still 0/0/0 from mkBill) by a wide margin — not a rounding-sized
+	// drift.
+	bill.Tax.GrandTotal = decimal.RequireFromString("999999")
+	req, missing := Evaluate(rules, bill, bill.InvoiceDate)
+	if req != NeedsInformation {
+		t.Fatalf("got req=%s, want NEEDS_INFORMATION for a grand total that doesn't reconcile with taxable value + tax", req)
+	}
+	found := false
+	for _, m := range missing {
+		if m.Field == "tax.grand_total" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing = %v, want a tax.grand_total entry", missing)
 	}
 }
