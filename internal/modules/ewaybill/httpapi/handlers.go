@@ -241,6 +241,7 @@ type updateTransportInfoRequest struct {
 	TransporterID   *string `json:"transporter_id"`
 	TransporterName *string `json:"transporter_name"`
 	DistanceKM      *string `json:"distance_km"`
+	ShipToStateCode *string `json:"ship_to_state_code"`
 }
 
 func (h *Handlers) updateTransportInfo(w http.ResponseWriter, r *http.Request) {
@@ -254,7 +255,10 @@ func (h *Handlers) updateTransportInfo(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
 		return
 	}
-	params := app.TransportInfoParams{VehicleNumber: req.VehicleNumber, TransporterID: req.TransporterID, TransporterName: req.TransporterName}
+	params := app.TransportInfoParams{
+		VehicleNumber: req.VehicleNumber, TransporterID: req.TransporterID, TransporterName: req.TransporterName,
+		ShipToStateCode: req.ShipToStateCode,
+	}
 	if req.DistanceKM != nil {
 		d, err := decimal.NewFromString(*req.DistanceKM)
 		if err != nil {
