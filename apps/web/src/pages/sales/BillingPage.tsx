@@ -5,6 +5,7 @@ import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
 import { SearchIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
+import { GST_STATE_CODES } from "../../lib/gstStateCodes";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
@@ -25,6 +26,11 @@ interface BillingLookupResult {
 
 interface AgeingBucket {
   Total: { amount: string; currency: string };
+}
+
+interface TaxRegistration {
+  StateCode: string;
+  IsPrimary: boolean;
 }
 
 /** One cart line's quantity, editable in place — committed on blur or
@@ -162,6 +168,15 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const [customerQuery, setCustomerQuery] = useState("");
   const [customer, setCustomer] = useState<Party | null>(null);
   const [showCustomerResults, setShowCustomerResults] = useState(false);
+  // null = "use the derived default" (customer's own registered GST
+  // state, falling back to the seller's own state for an unregistered/
+  // walk-in customer) — a cashier can still override it before Start
+  // Sale, but the default is no longer just "always the seller's state"
+  // (see placeOfSupplyDefault below for why that was a real bug: it
+  // silently forced CGST+SGST on every single inter-state sale,
+  // gstindia.Engine's intra/inter-state split is purely
+  // SupplierStateCode == SupplyPlace.StateCode).
+  const [placeOfSupplyOverride, setPlaceOfSupplyOverride] = useState<string | null>(null);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
@@ -231,6 +246,26 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     enabled: !!customer && customer.ID !== resumeDocumentId,
   });
 
+  // Place of supply drives CGST+SGST vs. IGST (gstindia.Engine: purely
+  // SupplierStateCode == SupplyPlace.StateCode) and is immutable once a
+  // document is created (sales/app.CreateDocumentParams's own doc
+  // comment) — it has to be right *before* Start Sale, not fixable after.
+  // Defaults to the customer's own registered GST state (their primary
+  // registration if they have more than one) rather than blindly the
+  // seller's own state, which used to silently force every single
+  // inter-state sale to intra-state tax treatment.
+  const customerTaxRegistrations = useQuery({
+    queryKey: ["party-tax-registrations", customer?.ID],
+    queryFn: () => api.getListField<TaxRegistration>(`/contacts/parties/${customer?.ID}/tax-registrations`, "tax_registrations"),
+    enabled: !!customer && !documentId,
+  });
+  const placeOfSupplyDefault =
+    customerTaxRegistrations.data?.find((r) => r.IsPrimary)?.StateCode ||
+    customerTaxRegistrations.data?.[0]?.StateCode ||
+    org.legalEntity?.GSTStateCode ||
+    "";
+  const placeOfSupply = placeOfSupplyOverride ?? placeOfSupplyDefault;
+
   // Shared by the debounced-as-you-type search below AND the barcode-
   // scan Enter handler, which can't just read productResults state — a
   // scanner types its whole code and sends Enter fast enough that the
@@ -275,7 +310,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
         warehouse_id: org.warehouse.ID,
         customer_party_id: customer.ID,
         document_type: documentType,
-        place_of_supply_state_code: org.legalEntity.GSTStateCode || "00",
+        place_of_supply_state_code: placeOfSupply || org.legalEntity.GSTStateCode || "00",
         currency_code: org.organisation.DefaultCurrencyCode || "INR",
         base_currency_code: org.organisation.DefaultCurrencyCode || "INR",
         exchange_rate: "1",
@@ -343,6 +378,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     },
     onSuccess: (party) => {
       setCustomer(party);
+      setPlaceOfSupplyOverride(null);
       setCustomerQuery("");
       setShowCustomerResults(false);
     },
@@ -492,7 +528,14 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                     {customer.CreditLimitAmount ? ` · Credit limit: ₹${customer.CreditLimitAmount}` : ""}
                   </span>
                 ) : null}
-                <button type="button" className={ui.btnSecondary} onClick={() => setCustomer(null)}>
+                <button
+                  type="button"
+                  className={ui.btnSecondary}
+                  onClick={() => {
+                    setCustomer(null);
+                    setPlaceOfSupplyOverride(null);
+                  }}
+                >
                   Change
                 </button>
               </div>
@@ -523,6 +566,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                               className={styles.dropdownItem}
                               onClick={() => {
                                 setCustomer(p);
+                                setPlaceOfSupplyOverride(null);
                                 setShowCustomerResults(false);
                               }}
                             >
@@ -561,11 +605,35 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             )}
           </div>
 
+          {customer && !documentId ? (
+            <div className={ui.field}>
+              <label htmlFor="place-of-supply">Place of supply</label>
+              <select
+                id="place-of-supply"
+                className={ui.select}
+                value={placeOfSupply}
+                onChange={(e) => setPlaceOfSupplyOverride(e.target.value)}
+              >
+                <option value="" disabled>
+                  Select a state…
+                </option>
+                {GST_STATE_CODES.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <p className={ui.muted} style={{ marginTop: 4 }}>
+                Decides CGST+SGST vs. IGST — cannot be changed after Start Sale.
+              </p>
+            </div>
+          ) : null}
+
           {!documentId ? (
             <button
               type="button"
               className={ui.btnPrimary}
-              disabled={!customer || org.isPending || startSale.isPending}
+              disabled={!customer || !placeOfSupply || org.isPending || startSale.isPending}
               onClick={() => startSale.mutate()}
             >
               {startSale.isPending ? "Starting…" : "Start sale"}
@@ -828,6 +896,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
         initialLegalName={customerQuery.trim()}
         onCreated={(party) => {
           setCustomer(party);
+          setPlaceOfSupplyOverride(null);
           setCustomerQuery("");
           setShowCustomerResults(false);
         }}
