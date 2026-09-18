@@ -16,6 +16,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"rechvix/internal/modules/einvoice/domain"
+	sandboxprovider "rechvix/internal/modules/einvoice/v1/sandbox"
+	appcrypto "rechvix/internal/platform/crypto"
 	"rechvix/internal/platform/outbox"
 
 	contactsapp "rechvix/internal/modules/contacts/app"
@@ -24,6 +26,13 @@ import (
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxdomain "rechvix/internal/modules/taxation/domain"
 )
+
+// ProviderNICSandboxV1 identifies the real, network-calling NIC e-Invoice
+// adapter (internal/modules/einvoice/v1/sandbox) — both as the value
+// stored in einvoice_provider_credentials.provider and the one
+// buildEInvoiceProvider-equivalent resolveProvider below recognizes as
+// "use these DB-stored credentials, not the env-var default".
+const ProviderNICSandboxV1 = "nic-sandbox-v1"
 
 type Service struct {
 	records      domain.Repository
@@ -37,7 +46,13 @@ type Service struct {
 	// before Stage 9) — every enqueue call below is nil-guarded, exactly
 	// like sales.Service.outbox's existing nil guard.
 	outbox outbox.Writer
-	now    func() time.Time
+	// credentials/aead are optional (nil until WithCredentialsStore is
+	// called) — same nil-guarded pattern as outbox above. Until wired,
+	// resolveProvider always falls back to the single env-var-configured
+	// provider/providerName below, exactly the pre-existing behavior.
+	credentials domain.CredentialsRepository
+	aead        *appcrypto.AEAD
+	now         func() time.Time
 }
 
 func NewService(
@@ -55,6 +70,154 @@ func NewService(
 		sales: salesSvc, taxation: taxationSvc, organisation: organisationSvc, contacts: contactsSvc,
 		outbox: outboxWriter, now: time.Now,
 	}
+}
+
+// WithCredentialsStore returns a copy of s with per-legal-entity encrypted
+// provider credentials wired in (Settings screen support) — a separate
+// step, not a NewService parameter, so every existing call site keeps
+// compiling unchanged (same convention as ewaybill/app.Service.
+// WithFreePortal).
+func (s *Service) WithCredentialsStore(repo domain.CredentialsRepository, aead *appcrypto.AEAD) *Service {
+	cp := *s
+	cp.credentials, cp.aead = repo, aead
+	return &cp
+}
+
+// SandboxCredentials is the plaintext shape saved/loaded for
+// ProviderNICSandboxV1 — encrypted as JSON via AEAD before it ever
+// touches the database, decrypted only inside resolveProvider (never
+// returned from any HTTP handler; GetCredentialsStatus below returns a
+// separate, deliberately-thin status type instead).
+type SandboxCredentials struct {
+	ClientID     string
+	ClientSecret string
+	GSTIN        string
+	Username     string
+	Password     string
+	// BaseURL is optional — empty uses sandboxprovider.DefaultBaseURL
+	// (NIC's actual sandbox host). Set explicitly to point at a real
+	// production/GSP endpoint once an operator has real credentials for
+	// one — the adapter itself doesn't care which host it's talking to.
+	BaseURL string
+}
+
+// CredentialsStatus is what a Settings screen is allowed to see — never
+// ClientSecret or Password. GSTIN/Username are already visible elsewhere
+// on a real invoice/login screen, not secrets in the same sense.
+type CredentialsStatus struct {
+	Configured bool
+	GSTIN      string
+	Username   string
+	BaseURL    string
+}
+
+// SaveSandboxCredentials encrypts and upserts a legal entity's
+// ProviderNICSandboxV1 credentials. Requires WithCredentialsStore to have
+// been called (returns an error otherwise — a nil credentials/aead pair
+// is a composition-root wiring bug, not a normal runtime state).
+func (s *Service) SaveSandboxCredentials(ctx context.Context, orgID, legalEntityID uuid.UUID, creds SandboxCredentials) error {
+	if s.credentials == nil || s.aead == nil {
+		return fmt.Errorf("einvoice: credential storage is not configured on this server")
+	}
+	// Same org-ownership check organisation/pg.LegalEntityRepo.
+	// UpdateInvoiceBranding's own `WHERE organisation_id = $1 AND id = $2`
+	// enforces directly — without it, nothing stops the caller's own org
+	// id being paired with a legal_entity_id belonging to a different
+	// organisation in the row this upserts.
+	if _, err := s.organisation.GetLegalEntityForOtherModule(ctx, orgID, legalEntityID); err != nil {
+		return fmt.Errorf("einvoice: loading legal entity: %w", err)
+	}
+	plaintext, err := json.Marshal(creds)
+	if err != nil {
+		return fmt.Errorf("einvoice: marshaling credentials: %w", err)
+	}
+	sealed, err := s.aead.Seal(plaintext, credentialsAAD(orgID, legalEntityID, ProviderNICSandboxV1))
+	if err != nil {
+		return fmt.Errorf("einvoice: encrypting credentials: %w", err)
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("einvoice: generating credentials id: %w", err)
+	}
+	return s.credentials.Upsert(ctx, &domain.ProviderCredentials{
+		ID: id, OrganisationID: orgID, LegalEntityID: legalEntityID,
+		Provider: ProviderNICSandboxV1, EncryptedCredentials: sealed,
+	})
+}
+
+// GetCredentialsStatus reports whether NIC sandbox credentials are on file
+// for a legal entity, without ever exposing the secret fields.
+func (s *Service) GetCredentialsStatus(ctx context.Context, orgID, legalEntityID uuid.UUID) (CredentialsStatus, error) {
+	if s.credentials == nil || s.aead == nil {
+		return CredentialsStatus{}, nil
+	}
+	row, err := s.credentials.Get(ctx, orgID, legalEntityID, ProviderNICSandboxV1)
+	if err == domain.ErrNotFound {
+		return CredentialsStatus{}, nil
+	}
+	if err != nil {
+		return CredentialsStatus{}, fmt.Errorf("einvoice: loading credentials: %w", err)
+	}
+	plaintext, err := s.aead.Open(row.EncryptedCredentials, credentialsAAD(orgID, legalEntityID, ProviderNICSandboxV1))
+	if err != nil {
+		return CredentialsStatus{}, fmt.Errorf("einvoice: decrypting credentials: %w", err)
+	}
+	var creds SandboxCredentials
+	if err := json.Unmarshal(plaintext, &creds); err != nil {
+		return CredentialsStatus{}, fmt.Errorf("einvoice: unmarshaling credentials: %w", err)
+	}
+	return CredentialsStatus{Configured: true, GSTIN: creds.GSTIN, Username: creds.Username, BaseURL: creds.BaseURL}, nil
+}
+
+// DeleteCredentials removes a legal entity's NIC sandbox credentials —
+// resolveProvider then falls straight back to the env-var-configured
+// default provider for that legal entity's future documents.
+func (s *Service) DeleteCredentials(ctx context.Context, orgID, legalEntityID uuid.UUID) error {
+	if s.credentials == nil {
+		return fmt.Errorf("einvoice: credential storage is not configured on this server")
+	}
+	return s.credentials.Delete(ctx, orgID, legalEntityID, ProviderNICSandboxV1)
+}
+
+// resolveProvider picks which EInvoiceProvider a specific legal entity's
+// document should use: DB-stored NIC sandbox credentials (Settings screen)
+// take priority when present, falling back to the single env-var-
+// configured provider (s.provider/s.providerName, apps/worker's
+// buildEInvoiceProvider) every call already used before this existed —
+// so a deployment that never touches the new Settings screen behaves
+// exactly as before.
+func (s *Service) resolveProvider(ctx context.Context, orgID, legalEntityID uuid.UUID) (domain.EInvoiceProvider, string, error) {
+	if s.credentials == nil || s.aead == nil {
+		return s.provider, s.providerName, nil
+	}
+	row, err := s.credentials.Get(ctx, orgID, legalEntityID, ProviderNICSandboxV1)
+	if err == domain.ErrNotFound {
+		return s.provider, s.providerName, nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("einvoice: loading provider credentials: %w", err)
+	}
+	plaintext, err := s.aead.Open(row.EncryptedCredentials, credentialsAAD(orgID, legalEntityID, ProviderNICSandboxV1))
+	if err != nil {
+		return nil, "", fmt.Errorf("einvoice: decrypting provider credentials: %w", err)
+	}
+	var creds SandboxCredentials
+	if err := json.Unmarshal(plaintext, &creds); err != nil {
+		return nil, "", fmt.Errorf("einvoice: unmarshaling provider credentials: %w", err)
+	}
+	return sandboxprovider.New(creds.BaseURL, sandboxprovider.Credentials{
+		ClientID: creds.ClientID, ClientSecret: creds.ClientSecret, GSTIN: creds.GSTIN,
+		Username: creds.Username, Password: creds.Password,
+	}, nil), ProviderNICSandboxV1, nil
+}
+
+// credentialsAAD binds an encrypted credentials blob to the exact row it
+// belongs to (same reasoning as backup/app.Service's header-binding use of
+// AEAD.Seal's additionalData) — a ciphertext copied into a different
+// legal_entity_id/provider row fails to decrypt instead of silently
+// "working" against the wrong business's credentials.
+func credentialsAAD(orgID, legalEntityID uuid.UUID, provider string) []byte {
+	return []byte(orgID.String() + ":" + legalEntityID.String() + ":" + provider)
 }
 
 // GetRecordForDocument returns the e-Invoice record for a sales
@@ -180,7 +343,7 @@ func (s *Service) generate(ctx context.Context, orgID, salesDocumentID uuid.UUID
 		existing = rec
 	}
 
-	req, err := s.buildIRNRequest(ctx, orgID, salesDocumentID)
+	req, legalEntityID, err := s.buildIRNRequest(ctx, orgID, salesDocumentID)
 	if err != nil {
 		msg := err.Error()
 		_ = s.records.UpdateStatus(ctx, existing.ID, domain.StatusFailedFinal, domain.UpdateFields{ErrorMessage: &msg})
@@ -191,11 +354,23 @@ func (s *Service) generate(ctx context.Context, orgID, salesDocumentID uuid.UUID
 		return outbox.Permanent(fmt.Errorf("einvoice: building IRN request: %w", err))
 	}
 
-	if err := s.records.UpdateStatus(ctx, existing.ID, domain.StatusSubmitting, domain.UpdateFields{}); err != nil {
+	provider, resolvedProviderName, err := s.resolveProvider(ctx, orgID, legalEntityID)
+	if err != nil {
+		msg := err.Error()
+		_ = s.records.UpdateStatus(ctx, existing.ID, domain.StatusFailedRetryable, domain.UpdateFields{ErrorMessage: &msg})
+		// Retryable, not Permanent: a decrypt/lookup failure here is
+		// infrastructure trouble (e.g. AEAD_ENCRYPTION_KEY rotated
+		// without re-saving credentials), not a fact about this
+		// document — worth trying again, unlike a genuinely missing
+		// GSTIN above.
+		return fmt.Errorf("einvoice: resolving provider: %w", err)
+	}
+
+	if err := s.records.UpdateStatus(ctx, existing.ID, domain.StatusSubmitting, domain.UpdateFields{Provider: &resolvedProviderName}); err != nil {
 		return fmt.Errorf("einvoice: marking submitting: %w", err)
 	}
 
-	resp, genErr := s.provider.GenerateIRN(ctx, req)
+	resp, genErr := provider.GenerateIRN(ctx, req)
 	if genErr != nil {
 		msg := genErr.Error()
 		if updErr := s.records.UpdateStatus(ctx, existing.ID, domain.StatusFailedRetryable, domain.UpdateFields{ErrorMessage: &msg}); updErr != nil {
@@ -246,21 +421,25 @@ func (s *Service) enqueueWebhookEvent(ctx context.Context, orgID uuid.UUID, even
 // adapter boundary, it doesn't own tax/sales/organisation logic, only
 // orchestrates a call using their already-computed, already-finalized
 // numbers).
-func (s *Service) buildIRNRequest(ctx context.Context, orgID, salesDocumentID uuid.UUID) (domain.IRNRequest, error) {
+// buildIRNRequest's second return value is the document's legal entity ID
+// — generate() needs it to resolveProvider before actually calling
+// GenerateIRN, and every caller already loads the legal entity here
+// anyway, so returning the id costs nothing extra.
+func (s *Service) buildIRNRequest(ctx context.Context, orgID, salesDocumentID uuid.UUID) (domain.IRNRequest, uuid.UUID, error) {
 	doc, lines, err := s.sales.GetDocumentForOtherModule(ctx, orgID, salesDocumentID)
 	if err != nil {
-		return domain.IRNRequest{}, fmt.Errorf("loading sales document: %w", err)
+		return domain.IRNRequest{}, uuid.Nil, fmt.Errorf("loading sales document: %w", err)
 	}
 	if doc.TaxDocumentID == nil {
-		return domain.IRNRequest{}, fmt.Errorf("sales document %s has no tax snapshot (not finalized?)", salesDocumentID)
+		return domain.IRNRequest{}, uuid.Nil, fmt.Errorf("sales document %s has no tax snapshot (not finalized?)", salesDocumentID)
 	}
 
 	legalEntity, err := s.organisation.GetLegalEntityForOtherModule(ctx, orgID, doc.LegalEntityID)
 	if err != nil {
-		return domain.IRNRequest{}, fmt.Errorf("loading supplier legal entity: %w", err)
+		return domain.IRNRequest{}, uuid.Nil, fmt.Errorf("loading supplier legal entity: %w", err)
 	}
 	if legalEntity.GSTIN == "" {
-		return domain.IRNRequest{}, fmt.Errorf("legal entity %s has no GSTIN configured", legalEntity.ID)
+		return domain.IRNRequest{}, uuid.Nil, fmt.Errorf("legal entity %s has no GSTIN configured", legalEntity.ID)
 	}
 
 	buyerGSTIN, buyerState := "", ""
@@ -276,7 +455,7 @@ func (s *Service) buildIRNRequest(ctx context.Context, orgID, salesDocumentID uu
 
 	taxDoc, taxLines, componentsByLine, err := s.taxation.GetByReference(ctx, orgID, "sales_document", doc.ID)
 	if err != nil {
-		return domain.IRNRequest{}, fmt.Errorf("loading tax snapshot: %w", err)
+		return domain.IRNRequest{}, uuid.Nil, fmt.Errorf("loading tax snapshot: %w", err)
 	}
 
 	taxLineByRef := make(map[string]*taxLineWithComponents, len(taxLines))
@@ -295,7 +474,7 @@ func (s *Service) buildIRNRequest(ctx context.Context, orgID, salesDocumentID uu
 		ref := fmt.Sprintf("%d", l.LineNumber)
 		tl, ok := taxLineByRef[ref]
 		if !ok {
-			return domain.IRNRequest{}, fmt.Errorf("no tax line found for sales document line %d", l.LineNumber)
+			return domain.IRNRequest{}, uuid.Nil, fmt.Errorf("no tax line found for sales document line %d", l.LineNumber)
 		}
 		items = append(items, domain.IRNLineItem{
 			HSNSACCode: l.HSNSACCode, Quantity: l.Quantity, UnitPrice: l.UnitPrice.Decimal(),
@@ -319,7 +498,7 @@ func (s *Service) buildIRNRequest(ctx context.Context, orgID, salesDocumentID uu
 		TaxableValue: taxDoc.TotalTaxableAmount.Decimal(), TotalTax: taxDoc.TotalTaxAmount.Decimal(),
 		GrandTotal: taxDoc.TotalTaxableAmount.Decimal().Add(taxDoc.TotalTaxAmount.Decimal()),
 		Lines:      items,
-	}, nil
+	}, legalEntity.ID, nil
 }
 
 type taxLineWithComponents struct {

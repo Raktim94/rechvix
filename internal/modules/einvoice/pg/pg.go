@@ -74,20 +74,21 @@ func (repo *RecordRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status d
 	const q = `
 		UPDATE einvoice_records SET
 			status = $2,
-			response_payload = COALESCE($3, response_payload),
-			irn = COALESCE($4, irn),
-			ack_number = COALESCE($5, ack_number),
-			ack_date = COALESCE($6, ack_date),
-			signed_invoice = COALESCE($7, signed_invoice),
-			signed_qr_payload = COALESCE($8, signed_qr_payload),
-			error_code = COALESCE($9, error_code),
-			error_message = COALESCE($10, error_message),
-			correlation_id = COALESCE($11, correlation_id),
-			cancelled_at = COALESCE($12, cancelled_at),
-			cancel_reason = COALESCE($13, cancel_reason),
+			provider = COALESCE($3, provider),
+			response_payload = COALESCE($4, response_payload),
+			irn = COALESCE($5, irn),
+			ack_number = COALESCE($6, ack_number),
+			ack_date = COALESCE($7, ack_date),
+			signed_invoice = COALESCE($8, signed_invoice),
+			signed_qr_payload = COALESCE($9, signed_qr_payload),
+			error_code = COALESCE($10, error_code),
+			error_message = COALESCE($11, error_message),
+			correlation_id = COALESCE($12, correlation_id),
+			cancelled_at = COALESCE($13, cancelled_at),
+			cancel_reason = COALESCE($14, cancel_reason),
 			updated_at = now()
 		WHERE id = $1`
-	n, err := repo.pool.Q(ctx).Exec(ctx, q, id, string(status),
+	n, err := repo.pool.Q(ctx).Exec(ctx, q, id, string(status), f.Provider,
 		nilIfEmptyBytes(f.ResponsePayload), f.IRN, f.AckNumber, f.AckDate, f.SignedInvoice, f.SignedQRPayload,
 		f.ErrorCode, f.ErrorMessage, f.CorrelationID, f.CancelledAt, f.CancelReason)
 	if err != nil {
@@ -104,4 +105,60 @@ func nilIfEmptyBytes(b []byte) []byte {
 		return nil
 	}
 	return b
+}
+
+type CredentialsRepo struct {
+	pool *database.Pool
+}
+
+func NewCredentialsRepo(pool *database.Pool) *CredentialsRepo {
+	return &CredentialsRepo{pool: pool}
+}
+
+var _ domain.CredentialsRepository = (*CredentialsRepo)(nil)
+
+func (repo *CredentialsRepo) Get(ctx context.Context, orgID, legalEntityID uuid.UUID, provider string) (*domain.ProviderCredentials, error) {
+	row := repo.pool.Q(ctx).QueryRow(ctx,
+		`SELECT id, organisation_id, legal_entity_id, provider, encrypted_credentials, created_at, updated_at
+		 FROM einvoice_provider_credentials
+		 WHERE organisation_id = $1 AND legal_entity_id = $2 AND provider = $3`,
+		orgID, legalEntityID, provider)
+	var c domain.ProviderCredentials
+	err := row.Scan(&c.ID, &c.OrganisationID, &c.LegalEntityID, &c.Provider, &c.EncryptedCredentials, &c.CreatedAt, &c.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("einvoice: querying provider credentials: %w", err)
+	}
+	return &c, nil
+}
+
+// Upsert relies on the table's own UNIQUE (organisation_id, legal_entity_id,
+// provider) constraint (migrations/0024) — one credentials row per legal
+// entity per provider, replacing whatever was there before rather than
+// accumulating stale rows across re-saves.
+func (repo *CredentialsRepo) Upsert(ctx context.Context, c *domain.ProviderCredentials) error {
+	const q = `
+		INSERT INTO einvoice_provider_credentials
+			(id, organisation_id, legal_entity_id, provider, encrypted_credentials)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (organisation_id, legal_entity_id, provider) DO UPDATE SET
+			encrypted_credentials = EXCLUDED.encrypted_credentials,
+			updated_at = now()`
+	_, err := repo.pool.Q(ctx).Exec(ctx, q, c.ID, c.OrganisationID, c.LegalEntityID, c.Provider, c.EncryptedCredentials)
+	if err != nil {
+		return fmt.Errorf("einvoice: upserting provider credentials: %w", err)
+	}
+	return nil
+}
+
+func (repo *CredentialsRepo) Delete(ctx context.Context, orgID, legalEntityID uuid.UUID, provider string) error {
+	_, err := repo.pool.Q(ctx).Exec(ctx,
+		`DELETE FROM einvoice_provider_credentials WHERE organisation_id = $1 AND legal_entity_id = $2 AND provider = $3`,
+		orgID, legalEntityID, provider)
+	if err != nil {
+		return fmt.Errorf("einvoice: deleting provider credentials: %w", err)
+	}
+	return nil
 }
