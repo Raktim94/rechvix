@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"image"
 	_ "image/gif"  // registers GIF decoding with image.Decode, for decodeAndReencodeLogo
 	_ "image/jpeg" // registers JPEG decoding with image.Decode, for decodeAndReencodeLogo
@@ -16,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	xdraw "golang.org/x/image/draw"
 
 	"rechvix/internal/modules/organisation/app"
 	"rechvix/internal/modules/organisation/domain"
@@ -272,18 +272,32 @@ func (h *Handlers) updateInvoiceBranding(w http.ResponseWriter, r *http.Request)
 
 const (
 	maxLogoBase64Bytes = 2_800_000 // ~2MB decoded, base64 runs ~4/3 larger
-	maxLogoDimensionPx = 1000
+	// logoCanvasPx is the fixed square side every stored logo is
+	// normalized to. Whatever shape/size actually gets uploaded — a wide
+	// banner-style logo, a tall crest, a 4000x4000 phone photo — used to
+	// either get stretched into pdf.go's fixed-width header slot (a
+	// non-square source at a fixed width renders squashed or absurdly
+	// tall) or rejected outright past 1000x1000px, pushing the "please
+	// pre-resize your own logo" problem onto the user. Scaling (down
+	// only — a small logo stays crisp rather than getting blurrily
+	// upscaled) onto a transparent square this size means every
+	// consumer (the settings preview box, the PDF header) always
+	// receives a consistently well-proportioned image.
+	logoCanvasPx = 512
 )
 
 // decodeAndReencodeLogo turns a client-supplied base64 image into a safe,
-// stored PNG — never trusting the uploaded bytes directly (brief's own
-// "don't blindly trust uploaded images" rule, same reasoning as the OCR
-// pipeline elsewhere in this project). Decoding via the standard image
-// package IS the validation: a file that isn't a real, well-formed
-// PNG/JPEG/GIF fails right here rather than being stored and only
-// discovered broken the first time someone tries to print an invoice.
-// Re-encoding to PNG afterward means the print layer (and every other
-// consumer of LegalEntity.LogoPNG) only ever has one format to handle.
+// consistently-shaped, stored PNG — never trusting the uploaded bytes
+// directly (brief's own "don't blindly trust uploaded images" rule, same
+// reasoning as the OCR pipeline elsewhere in this project). Decoding via
+// the standard image package IS the validation: a file that isn't a real,
+// well-formed PNG/JPEG/GIF fails right here rather than being stored and
+// only discovered broken the first time someone tries to print an
+// invoice. Beyond format validation, this also normalizes the image
+// itself: scaled (aspect ratio preserved, never distorted) to fit within
+// logoCanvasPx and centered on a transparent square that size, then
+// re-encoded to PNG — so the print layer (and every other consumer of
+// LegalEntity.LogoPNG) only ever has one format AND one shape to handle.
 func decodeAndReencodeLogo(b64 string) ([]byte, error) {
 	if len(b64) > maxLogoBase64Bytes {
 		return nil, errors.New("logo image is too large — please use a file under 2MB")
@@ -297,11 +311,27 @@ func decodeAndReencodeLogo(b64 string) ([]byte, error) {
 		return nil, errors.New("logo image could not be read — please use a PNG, JPEG, or GIF file")
 	}
 	bounds := img.Bounds()
-	if bounds.Dx() > maxLogoDimensionPx || bounds.Dy() > maxLogoDimensionPx {
-		return nil, fmt.Errorf("logo image is too large — please use one under %dx%d pixels", maxLogoDimensionPx, maxLogoDimensionPx)
+	w, h := bounds.Dx(), bounds.Dy()
+	if w <= 0 || h <= 0 {
+		return nil, errors.New("logo image could not be read — please use a PNG, JPEG, or GIF file")
 	}
+
+	scale := 1.0
+	if longest := max(w, h); longest > logoCanvasPx {
+		scale = float64(logoCanvasPx) / float64(longest)
+	}
+	scaledW, scaledH := max(1, int(float64(w)*scale)), max(1, int(float64(h)*scale))
+	offsetX, offsetY := (logoCanvasPx-scaledW)/2, (logoCanvasPx-scaledH)/2
+
+	// Zero-valued RGBA is fully transparent — the padding around a
+	// non-square logo stays see-through (renders as the page's white
+	// background once printed) rather than a visible colored box.
+	canvas := image.NewRGBA(image.Rect(0, 0, logoCanvasPx, logoCanvasPx))
+	dstRect := image.Rect(offsetX, offsetY, offsetX+scaledW, offsetY+scaledH)
+	xdraw.CatmullRom.Scale(canvas, dstRect, img, bounds, xdraw.Over, nil)
+
 	var out bytes.Buffer
-	if err := png.Encode(&out, img); err != nil {
+	if err := png.Encode(&out, canvas); err != nil {
 		return nil, errors.New("could not process this logo image")
 	}
 	return out.Bytes(), nil
