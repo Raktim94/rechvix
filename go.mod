@@ -20,7 +20,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/crypto v0.55.0
-	golang.org/x/image v0.38.0
+	golang.org/x/image v0.41.0
 )
 
 require (
