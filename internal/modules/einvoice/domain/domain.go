@@ -151,6 +151,32 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status Status, fields UpdateFields) error
 }
 
+// ProviderCredentials is one (organisation, legal entity, provider) row
+// of einvoice_provider_credentials (migrations/0024) — EncryptedCredentials
+// is opaque ciphertext here on purpose; only app.Service (which holds the
+// AEAD key) ever seals/opens it. Never logged, never marshaled into any
+// HTTP response.
+type ProviderCredentials struct {
+	ID                   uuid.UUID
+	OrganisationID       uuid.UUID
+	LegalEntityID        uuid.UUID
+	Provider             string
+	EncryptedCredentials []byte
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+// CredentialsRepository persists ProviderCredentials. Optional dependency
+// of app.Service (nil in any composition that hasn't wired credential
+// storage up — same nil-guarded convention as Service.outbox) — until
+// wired, GenerateForDocument/RetryDocument fall back to the single
+// env-var-configured provider every call already used.
+type CredentialsRepository interface {
+	Get(ctx context.Context, orgID, legalEntityID uuid.UUID, provider string) (*ProviderCredentials, error)
+	Upsert(ctx context.Context, c *ProviderCredentials) error
+	Delete(ctx context.Context, orgID, legalEntityID uuid.UUID, provider string) error
+}
+
 // UpdateFields is a sparse set of optional updates applied alongside a
 // status transition — nil fields are left unchanged, mirroring the
 // established .partial()-without-defaults convention this codebase uses
@@ -158,6 +184,12 @@ type Repository interface {
 // never let an "unset" field silently become NULL/zero on a partial
 // update).
 type UpdateFields struct {
+	// Provider corrects Record.Provider (set to app.Service's env-var
+	// default at Create time, before the actual per-legal-entity
+	// provider is known) once resolveProvider has actually decided —
+	// nil leaves it unchanged, same COALESCE convention as every other
+	// field here.
+	Provider        *string
 	ResponsePayload []byte
 	IRN             *string
 	AckNumber       *string

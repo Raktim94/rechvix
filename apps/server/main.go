@@ -6,8 +6,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -178,7 +176,7 @@ func run() error {
 		return err
 	}
 
-	aeadKey, err := loadOrGenerateAEADKey(logger)
+	aeadKey, err := appcrypto.LoadOrGenerateAEADKey(logger)
 	if err != nil {
 		return err
 	}
@@ -418,13 +416,21 @@ func run() error {
 	)
 
 	// einvoiceSvc here is read-only from the API server's perspective —
-	// only GetRecordForDocument is ever called from httpapi below, never
-	// GenerateForDocument (that's apps/worker's outbox-driven job,
-	// apps/worker/main.go's own buildEInvoiceProvider). The mock provider
-	// is wired only because NewService requires one; it is never invoked
-	// from this binary.
+	// only GetRecordForDocument/RetryDocument/the credentials Save/Get/
+	// Delete methods below are ever called from httpapi, never
+	// GenerateForDocument directly (that's apps/worker's outbox-driven
+	// job, apps/worker/main.go's own buildEInvoiceProvider). The mock
+	// provider is wired only because NewService requires one; it is
+	// never invoked from this binary except via RetryDocument, which
+	// itself resolves the real per-legal-entity provider below first.
+	//
+	// WithCredentialsStore reuses this same process's `aead` (identitySvc
+	// below already does) — apps/worker wires the identical
+	// AEAD_ENCRYPTION_KEY, so a credential saved here decrypts correctly
+	// over there.
 	einvoiceSvc := einvoiceapp.NewService(einvoicepg.NewRecordRepo(pool), einvoicemock.New(), "mock",
-		salesSvc, taxationSvc, orgSvc, contactsSvc, outboxStore)
+		salesSvc, taxationSvc, orgSvc, contactsSvc, outboxStore).
+		WithCredentialsStore(einvoicepg.NewCredentialsRepo(pool), aead)
 
 	// ewaybillSvc's AUTOMATIC_API path (einvoicemock.New()) is wired but not
 	// exposed via any httpapi route in this pass — only the FREE_PORTAL
@@ -624,29 +630,3 @@ func run() error {
 	return server.Shutdown(shutdownCtx)
 }
 
-// loadOrGenerateAEADKey reads a base64-encoded 32-byte key from
-// AEAD_ENCRYPTION_KEY. In production this must be set from secrets
-// management (brief §60) — generating an ephemeral key is only
-// acceptable for local development, where losing already-encrypted MFA
-// secrets on restart is a non-issue, and this path logs loudly so it's
-// never silently relied on in a real deployment.
-func loadOrGenerateAEADKey(logger *slog.Logger) ([]byte, error) {
-	if encoded := os.Getenv("AEAD_ENCRYPTION_KEY"); encoded != "" {
-		key, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil {
-			return nil, errors.New("config: AEAD_ENCRYPTION_KEY is not valid base64")
-		}
-		if len(key) != 32 {
-			return nil, errors.New("config: AEAD_ENCRYPTION_KEY must decode to exactly 32 bytes")
-		}
-		return key, nil
-	}
-	logger.Warn("AEAD_ENCRYPTION_KEY not set — generating an EPHEMERAL key for this process only. " +
-		"Any MFA secret encrypted with it becomes unreadable on restart. Set AEAD_ENCRYPTION_KEY " +
-		"(32 random bytes, base64-encoded) before running this in production.")
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, err
-	}
-	return key, nil
-}

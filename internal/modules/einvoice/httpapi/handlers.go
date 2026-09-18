@@ -21,6 +21,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -44,9 +45,24 @@ func NewHandlers(svc *app.Service, pool *database.Pool, checker *permissions.Che
 	return &Handlers{svc: svc, pool: pool, permissions: checker}
 }
 
+// decodeJSON mirrors every other module's own identically-shaped helper
+// (e.g. accounting/httpapi's) — same DisallowUnknownFields strictness,
+// duplicated per package rather than shared, matching the existing
+// convention across this codebase.
+func decodeJSON[T any](r *http.Request) (T, error) {
+	var v T
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	err := dec.Decode(&v)
+	return v, err
+}
+
 func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/sales/documents/{id}/einvoice", h.getStatus)
 	r.Post("/sales/documents/{id}/einvoice/retry", h.retryDocument)
+	r.Get("/legal-entities/{id}/einvoice-credentials", h.getCredentialsStatus)
+	r.Put("/legal-entities/{id}/einvoice-credentials", h.saveCredentials)
+	r.Delete("/legal-entities/{id}/einvoice-credentials", h.deleteCredentials)
 }
 
 func principal(r *http.Request) permissions.Principal {
@@ -145,4 +161,121 @@ func (h *Handlers) retryDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"record": rec})
+}
+
+// requireSettingsManage is shared by all three credentials endpoints below
+// — GST API credentials are exactly the kind of thing "settings.manage"
+// (the same permission organisation/httpapi's own updateInvoiceBranding
+// requires) already exists to gate, not general sales.view territory.
+func (h *Handlers) requireSettingsManage(w http.ResponseWriter, r *http.Request) bool {
+	if err := h.permissions.Require(r.Context(), principal(r), "settings.manage", permissions.Scope{}); err != nil {
+		var forbidden *permissions.ErrForbidden
+		if errors.As(err, &forbidden) {
+			httpx.WriteError(w, r, httpx.NewForbidden("FORBIDDEN", "You do not have permission to perform this action."))
+			return false
+		}
+		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "An unexpected error occurred.", Cause: err})
+		return false
+	}
+	return true
+}
+
+func legalEntityID(r *http.Request) (uuid.UUID, error) {
+	return uuid.Parse(chi.URLParam(r, "id"))
+}
+
+// getCredentialsStatus never returns ClientSecret/Password — see
+// app.Service.CredentialsStatus's own doc comment.
+func (h *Handlers) getCredentialsStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := legalEntityID(r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	if !h.requireSettingsManage(w, r) {
+		return
+	}
+	p := principal(r)
+	var status app.CredentialsStatus
+	err = h.pool.RunScoped(r.Context(), p.OrganisationID, func(ctx context.Context) error {
+		var err error
+		status, err = h.svc.GetCredentialsStatus(ctx, p.OrganisationID, id)
+		return err
+	})
+	if err != nil {
+		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "An unexpected error occurred.", Cause: err})
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, status)
+}
+
+type saveCredentialsRequest struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	GSTIN        string `json:"gstin"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	BaseURL      string `json:"base_url"`
+}
+
+func (h *Handlers) saveCredentials(w http.ResponseWriter, r *http.Request) {
+	id, err := legalEntityID(r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[saveCredentialsRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	if req.ClientID == "" || req.ClientSecret == "" || req.GSTIN == "" || req.Username == "" || req.Password == "" {
+		httpx.WriteError(w, r, httpx.NewBadRequest("MISSING_FIELDS", "client_id, client_secret, gstin, username, and password are all required."))
+		return
+	}
+	if !h.requireSettingsManage(w, r) {
+		return
+	}
+	p := principal(r)
+	err = h.pool.RunScoped(r.Context(), p.OrganisationID, func(ctx context.Context) error {
+		return h.svc.SaveSandboxCredentials(ctx, p.OrganisationID, id, app.SandboxCredentials{
+			ClientID: req.ClientID, ClientSecret: req.ClientSecret, GSTIN: req.GSTIN,
+			Username: req.Username, Password: req.Password, BaseURL: req.BaseURL,
+		})
+	})
+	if err != nil {
+		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "An unexpected error occurred.", Cause: err})
+		return
+	}
+	var status app.CredentialsStatus
+	err = h.pool.RunScoped(r.Context(), p.OrganisationID, func(ctx context.Context) error {
+		var err error
+		status, err = h.svc.GetCredentialsStatus(ctx, p.OrganisationID, id)
+		return err
+	})
+	if err != nil {
+		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "An unexpected error occurred.", Cause: err})
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, status)
+}
+
+func (h *Handlers) deleteCredentials(w http.ResponseWriter, r *http.Request) {
+	id, err := legalEntityID(r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	if !h.requireSettingsManage(w, r) {
+		return
+	}
+	p := principal(r)
+	err = h.pool.RunScoped(r.Context(), p.OrganisationID, func(ctx context.Context) error {
+		return h.svc.DeleteCredentials(ctx, p.OrganisationID, id)
+	})
+	if err != nil {
+		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "An unexpected error occurred.", Cause: err})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

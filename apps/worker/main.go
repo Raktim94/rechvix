@@ -43,6 +43,7 @@ import (
 	webhookspg "rechvix/internal/modules/webhooks/pg"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/config"
+	appcrypto "rechvix/internal/platform/crypto"
 	"rechvix/internal/platform/database"
 	"rechvix/internal/platform/logging"
 	"rechvix/internal/platform/numbering"
@@ -79,6 +80,20 @@ func run() error {
 	numberingSvc := numbering.NewService(pool, numbering.NewPGRepository(pool))
 	outboxStore := outbox.NewPGStore(pool)
 
+	// Same AEAD_ENCRYPTION_KEY apps/server uses — required to decrypt
+	// einvoice provider credentials apps/server's Settings screen saved
+	// (einvoiceSvc.WithCredentialsStore below); a mismatched key would
+	// make every saved credential silently undecryptable at generation
+	// time, not just here.
+	aeadKey, err := appcrypto.LoadOrGenerateAEADKey(logger)
+	if err != nil {
+		return err
+	}
+	aead, err := appcrypto.NewAEAD(aeadKey)
+	if err != nil {
+		return err
+	}
+
 	orgSvc := orgapp.NewService(pool, orgpg.NewOrganisationRepo(pool), orgpg.NewLegalEntityRepo(pool),
 		orgpg.NewBranchRepo(pool), orgpg.NewWarehouseRepo(pool), permissionsChecker, auditRecorder)
 	catalogueSvc := catalogueapp.NewService(pool, cataloguepg.NewUnitOfMeasureRepo(pool), cataloguepg.NewUnitConversionRepo(pool),
@@ -109,7 +124,8 @@ func run() error {
 	provider, providerName := buildEInvoiceProvider(logger)
 
 	einvoiceSvc := einvoiceapp.NewService(einvoicepg.NewRecordRepo(pool), provider, providerName,
-		salesSvc, taxationSvc, orgSvc, contactsSvc, outboxStore)
+		salesSvc, taxationSvc, orgSvc, contactsSvc, outboxStore).
+		WithCredentialsStore(einvoicepg.NewCredentialsRepo(pool), aead)
 
 	webhooksSvc := webhooksapp.NewService(pool, webhookspg.NewEndpointRepo(pool), webhookspg.NewDeliveryLogRepo(pool),
 		outboxStore, permissionsChecker, auditRecorder)
