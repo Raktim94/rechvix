@@ -10,12 +10,22 @@
   unrelated distribution path. build-msix.ps1 assembles the package
   layout this manifest describes.
 
-  BEFORE building for real, replace every REPLACE_ME below:
-    - Identity Name/Publisher: from your reserved app in Partner Center
-      (Partner Center, App identity). Publisher MUST match your code
-      signing certificate's Subject exactly, or signing/submission fails.
+  BEFORE submitting to Partner Center for real, replace:
+    - Identity Name: Partner Center assigns this exact string when you
+      reserve the app name (Partner Center → App identity → "Package/
+      Identity/Name"). It must match letter-for-letter or submission is
+      rejected. The placeholder below ("NodeDRInfotech.Rechvix") is
+      schema-valid (MSIX only allows letters/digits/hyphen/dot in this
+      field — no underscores, which is what broke the very first CI
+      packaging run against a literal "REPLACE_ME" placeholder) so the
+      CI install/uninstall test below can actually run end to end, but
+      it is NOT a real reserved identity — swap it for yours.
+    - Identity Publisher: Partner Center assigns this too ("Package/
+      Identity/Publisher", a fixed CN= string, not something you choose)
+      — must match exactly, and must also match your code-signing
+      certificate's Subject if you sign locally for sideload testing.
     - Identity Version: bump this on every release (Windows requires a
-      strictly increasing 4 part version for MSIX to treat it as an
+      strictly increasing 4-part version for MSIX to treat it as an
       update rather than a conflicting duplicate).
 -->
 <Package
@@ -25,7 +35,7 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
 
   <Identity
-    Name="REPLACE_ME.PartnerCenterReservedName"
+    Name="NodeDRInfotech.Rechvix"
     Version="0.1.0.0"
     Publisher="CN=REPLACE_ME, O=REPLACE_ME, L=REPLACE_ME, S=REPLACE_ME, C=IN"
     ProcessorArchitecture="x64" />
