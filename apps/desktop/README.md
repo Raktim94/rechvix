@@ -21,15 +21,24 @@ npm run tauri build          # produces an NSIS/WiX installer (Windows), a .dmg 
 
 ## Microsoft Store (MSIX)
 
-See `msix/` — `AppxManifest.xml`, `build-msix.ps1`, and `../TESTING.md`
-for the full install/uninstall/lifecycle checklist. Requires Windows (the
-Windows SDK's `makeappx.exe`/`signtool.exe`, plus Rust's
-`x86_64-pc-windows-msvc` target) — this can't be built or tested from
-this repo's Linux dev environment.
+See `msix/` — `AppxManifest.xml`, `build-msix.ps1`, `test-install.ps1`,
+and `../TESTING.md` for the full install/uninstall/lifecycle checklist.
+Building and packaging needs Windows (the Windows SDK's
+`makeappx.exe`/`signtool.exe`, plus Rust's `x86_64-pc-windows-msvc`
+target), which this repo's Linux dev environment doesn't have — so
+`.github/workflows/desktop-msix.yml` does the actual build, packaging,
+and install/open/minimize/maximize/single-instance/close/uninstall
+testing on a real `windows-latest` GitHub Actions runner on every push
+that touches `apps/desktop/**`, and on demand via `workflow_dispatch`.
+It uploads both an unsigned Store-submission `.msix` and a signed
+sideload-test `.msix` + test certificate as workflow artifacts.
+
+`src-tauri/icons/*` is Rechvix's real logo mark (cropped from
+`rechvix.nodedr.com/public/brand/logo-square.webp`, background removed),
+not Tauri's generic scaffold icon.
 
 Before submitting to Partner Center:
 
-1. Reserve the app name in [Partner Center](https://partner.microsoft.com/dashboard) and copy its exact `Identity.Name`/`Publisher` into `msix/AppxManifest.xml` (currently placeholder `REPLACE_ME` values).
-2. Replace `src-tauri/icons/*` with rechvix's real logo — the current set is Tauri's generic scaffold icon.
-3. Run through every item in `../TESTING.md`.
-4. Build the final `.msix` with `msix/build-msix.ps1`, then follow Microsoft's own [manual upload-package guide](https://learn.microsoft.com/en-us/windows/msix/packaging/packaging-uwp-apps#create-your-app-package-upload-file-manually) to wrap it into the `.msixupload` Partner Center's submission form expects (`makeappx.exe` alone doesn't produce that wrapper format).
+1. Reserve the app name in [Partner Center](https://partner.microsoft.com/dashboard) and copy its exact `Identity.Name`/`Publisher` into `msix/AppxManifest.xml` (currently placeholder `REPLACE_ME` values — everything else in the manifest is real).
+2. Download the `rechvix-desktop-msix` artifact from the latest successful run of `desktop-msix.yml` (Actions tab) — confirms the build actually compiled and passed the install/uninstall/lifecycle test on real Windows before you ever touch it.
+3. Take `Rechvix-StoreSubmission.msix` from that artifact and follow Microsoft's own [manual upload-package guide](https://learn.microsoft.com/en-us/windows/msix/packaging/packaging-uwp-apps#create-your-app-package-upload-file-manually) to wrap it into the `.msixupload` Partner Center's submission form expects (`makeappx.exe` alone doesn't produce that wrapper format).

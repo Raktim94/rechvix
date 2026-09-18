@@ -1,0 +1,81 @@
+name: Desktop MSIX (build, package, install/uninstall test)
+
+# Builds apps/desktop (Tauri 2), packages it as an MSIX per
+# apps/desktop/msix/AppxManifest.xml, then actually installs it, launches
+# it, and exercises minimize/maximize/single-instance/close/uninstall —
+# not just "compiles", real Windows behavior, since apps/desktop was
+# developed on Linux with no Windows machine or GTK libs available to even
+# `cargo check` it locally. windows-latest is the only honest way to
+# verify this app actually works before anyone downloads it.
+#
+# Produces two artifacts:
+#   - Rechvix-StoreSubmission.msix: unsigned, upload as-is to Partner
+#     Center (swap Identity/Publisher in msix/AppxManifest.xml for your
+#     reserved app identity first — see that file's header comment).
+#   - Rechvix-SideloadTest.msix + RechvixTestCert.pfx: self-signed, for
+#     installing on a machine that isn't the one that built it (import the
+#     .pfx into Trusted People first — see msix/build-msix.ps1 -Sign).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-msix.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: desktop-msix
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-package-test:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build + package (unsigned)
+        working-directory: apps/desktop/msix
+        run: .\build-msix.ps1
+
+      - name: Save unsigned copy for Store submission
+        working-directory: apps/desktop/msix
+        run: Copy-Item Rechvix.msix Rechvix-StoreSubmission.msix
+
+      - name: Sign for local install/sideload testing
+        working-directory: apps/desktop/msix
+        run: .\build-msix.ps1 -Sign
+
+      - name: Save signed copy for sideload testing
+        working-directory: apps/desktop/msix
+        run: Copy-Item Rechvix.msix Rechvix-SideloadTest.msix
+
+      - name: Install / open / minimize / maximize / single-instance / close / uninstall test
+        working-directory: apps/desktop/msix
+        run: .\test-install.ps1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rechvix-desktop-msix
+          path: |
+            apps/desktop/msix/Rechvix-StoreSubmission.msix
+            apps/desktop/msix/Rechvix-SideloadTest.msix
+            apps/desktop/msix/RechvixTestCert.pfx
+          retention-days: 30
