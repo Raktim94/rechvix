@@ -1,9 +1,17 @@
 # Testing the Rechvix desktop shell
 
-Everything below runs on Windows — this app was written without a Windows
-machine available to build or run it on (see the note at the bottom).
-Nothing here has actually been executed; treat this as the checklist to
-run through once, not a report of results.
+`.github/workflows/desktop-msix.yml` now runs the checklist below for
+real, automatically, on a Windows GitHub Actions runner: it builds the
+app, packages the MSIX, installs it, launches it, and scripts
+minimize/maximize/single-instance/close/uninstall/reinstall through real
+Win32 calls — throwing (failing the run) the instant any of those don't
+hold. Check the Actions tab for the latest `Desktop MSIX` run before
+trusting anything below by hand; `msix/test-install.ps1` is what it runs.
+
+Everything below still runs on Windows and is useful for interactive
+testing (the CI job can't click a title-bar button with a mouse), but the
+install/uninstall/lifecycle behavior itself is no longer unverified —
+see the note at the bottom for exactly what CI does and doesn't cover.
 
 ## Quick loop (no packaging, no signing)
 
@@ -76,24 +84,28 @@ against this real .msix install.
    uninstall/reinstall) — the app should go straight to the connected
    server, not back to the settings page.
 
-## What wasn't verified here
+## What CI verifies, what it doesn't
 
-This shell's Rust code (`src-tauri/src/lib.rs`) was written against
-Tauri v2's and Microsoft's own current documentation (fetched live, not
-from memory) for every API used — `WebviewWindow::navigate`,
-`WebviewWindowBuilder`, the menu APIs, `tauri-plugin-store`, and
-`tauri-plugin-single-instance` — and the frontend (`index.html`,
-`src/main.ts`) was built and typechecked for real (`npm run build`,
-zero errors). Cargo dependency resolution for every crate (including
-both plugins) was also verified for real on Linux, with no version
-conflicts.
+`.github/workflows/desktop-msix.yml` (`windows-latest`) now actually:
+compiles `src-tauri` for real (`x86_64-pc-windows-msvc`), packages
+`Rechvix.msix` twice (unsigned Store copy + self-signed sideload-test
+copy), and runs `msix/test-install.ps1`, which installs it, launches it
+via its real Start Menu identity (`shell:AppsFolder\...`), and drives
+Win32 `ShowWindow`/`IsIconic`/`IsZoomed`/`CloseMainWindow` to prove
+minimize, maximize, single-instance (a second launch focuses the
+existing process instead of spawning one), and close (the process
+actually exits, not just the window hiding) — then uninstalls,
+confirms the install directory and `Get-AppxPackage` entry are gone,
+and reinstalls to confirm the update/reset flow. Any of those failing
+fails the workflow run — check the Actions tab before trusting a build.
 
-What was **not** verified: an actual compile of `src-tauri`'s own Rust
-code. The Linux machine this was built on has no GTK/WebKitGTK system
-libraries installed (and no root access to install them), which Tauri's
-Linux backend requires just to run `cargo check` — an unrelated
-requirement to the Windows build, which uses WebView2 instead, but it
-meant `cargo check`/`cargo build` never actually ran against this code.
-Run `npm run tauri dev` (first item above) before anything else — if
-there's a real compile error in `lib.rs`, that's where it will surface,
-immediately and cheaply, before any packaging work.
+What CI does **not** cover, because it drives the window programmatically
+rather than with a mouse: actually clicking the title-bar buttons,
+visually confirming the icon/branding render correctly, the first-run
+"Connect to your server" form's real UX, and "Change Server…"/"Reload"
+menu items (those are exercised by hand — see "Quick loop" above). The
+Rust code itself was also written against Tauri v2's and Microsoft's own
+current documentation (fetched live, not from memory) for every API used
+— `WebviewWindow::navigate`, `WebviewWindowBuilder`, the menu APIs,
+`tauri-plugin-store`, `tauri-plugin-single-instance` — which CI's real
+compile now confirms actually holds together.

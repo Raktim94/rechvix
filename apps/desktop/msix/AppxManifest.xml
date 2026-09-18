@@ -69,7 +69,7 @@
       <uap:VisualElements
         DisplayName="Rechvix"
         Description="Self-hosted billing, inventory, accounting, and India GST"
-        BackgroundColor="#0F6E5C"
+        BackgroundColor="#2F3870"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />
       <!-- No uap:DefaultTile wide tile override: Tauri's default icon
