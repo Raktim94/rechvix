@@ -175,4 +175,9 @@ var (
 	ErrNotFound             = errors.New("einvoice: record not found")
 	ErrAlreadyTerminal      = errors.New("einvoice: record already in a terminal state")
 	ErrProviderCredsMissing = errors.New("einvoice: no provider credentials configured for this legal entity")
+	// ErrNotRetryable: Service.RetryDocument only makes sense against a
+	// FAILED_FINAL or FAILED_RETRYABLE record — anything else (still
+	// QUEUED/SUBMITTING, or already GENERATED/CANCELLED/CANCEL_PENDING)
+	// has nothing to retry.
+	ErrNotRetryable = errors.New("einvoice: record is not in a failed state, nothing to retry")
 )

@@ -120,14 +120,52 @@ func (s *Service) GenerateForDocument(ctx context.Context, orgID, salesDocumentI
 	if err != nil && err != domain.ErrNotFound {
 		return fmt.Errorf("einvoice: loading existing record: %w", err)
 	}
-	if existing != nil {
-		if existing.Status.Terminal() {
-			return nil // already handled — see idempotency note above
+	if existing != nil && existing.Status.Terminal() {
+		return nil // already handled — see idempotency note above
+	}
+	return s.generate(ctx, orgID, salesDocumentID, existing)
+}
+
+// RetryDocument re-attempts IRN generation for a document whose e-Invoice
+// record is currently FAILED_FINAL or FAILED_RETRYABLE — an explicit,
+// user-triggered action for exactly the case GenerateForDocument's own
+// Terminal() guard above exists to prevent happening automatically. A
+// FAILED_FINAL record (e.g. "legal entity has no GSTIN configured") is
+// wrapped in outbox.Permanent specifically so the outbox poller never
+// retries it — that's correct as long as the underlying problem is still
+// unfixed, but once someone actually adds the missing GSTIN in Settings,
+// there was previously no way to get an IRN for that already-finalized
+// invoice at all short of a database edit. This is that path, called
+// from an explicit "Retry" action, never from the outbox.
+func (s *Service) RetryDocument(ctx context.Context, orgID, salesDocumentID uuid.UUID) error {
+	existing, err := s.records.GetBySalesDocumentID(ctx, salesDocumentID)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			return fmt.Errorf("einvoice: %w: no e-Invoice record exists yet for this document", domain.ErrNotFound)
 		}
-		// A FAILED_RETRYABLE record from a prior attempt: retry using the
-		// same record row rather than creating a second one (the UNIQUE
-		// constraint would reject a second Create anyway).
-	} else {
+		return fmt.Errorf("einvoice: loading existing record: %w", err)
+	}
+	if existing.OrganisationID != orgID {
+		return domain.ErrNotFound
+	}
+	switch existing.Status {
+	case domain.StatusFailedFinal, domain.StatusFailedRetryable:
+		// only a failed record has anything to retry
+	default:
+		return fmt.Errorf("%w: currently %s", domain.ErrNotRetryable, existing.Status)
+	}
+	return s.generate(ctx, orgID, salesDocumentID, existing)
+}
+
+// generate is GenerateForDocument/RetryDocument's shared core: create the
+// record row if this is the very first attempt (existing == nil), or
+// reuse it if this is a retry (whether an automatic FAILED_RETRYABLE
+// reprocess or an explicit RetryDocument call) — the UNIQUE constraint on
+// einvoice_records.sales_document_id would reject a second Create
+// either way, so this always writes onto the one row a document can ever
+// have.
+func (s *Service) generate(ctx context.Context, orgID, salesDocumentID uuid.UUID, existing *domain.Record) error {
+	if existing == nil {
 		id, err := uuid.NewV7()
 		if err != nil {
 			return fmt.Errorf("einvoice: generating record id: %w", err)

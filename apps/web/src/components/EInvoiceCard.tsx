@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ui from "./ui.module.css";
-import { api } from "../lib/api-client";
+import { api, ApiError } from "../lib/api-client";
 import styles from "./EwayBillCard.module.css";
 
 type EInvoiceStatus = "DRAFT" | "QUEUED" | "SUBMITTING" | "GENERATED" | "FAILED_RETRYABLE" | "FAILED_FINAL" | "CANCEL_PENDING" | "CANCELLED";
@@ -21,11 +21,14 @@ interface StatusResponse {
  * callers — IRN generation itself is fully automatic (sales.
  * FinalizeDocument enqueues einvoice.generate, apps/worker's outbox
  * poller does the rest, internal/modules/einvoice/app.Service's own doc
- * comment) so this card is read-only by design, the einvoice
- * equivalent of EwayBillCard.tsx but with nothing to submit or
- * prepare — just a result to show, or a failure to surface so it's not
- * silently invisible. */
+ * comment), so this card is read-only for everything except one case:
+ * a FAILED_FINAL record is deliberately never retried by the outbox
+ * (that's what "final" means — see RetryDocument's doc comment), which
+ * used to be a permanent dead end even after fixing the actual problem
+ * (e.g. adding the legal entity's missing GSTIN in Settings). The Retry
+ * button below is the only mutation this card has. */
 export function EInvoiceCard({ documentId }: { documentId: string }) {
+  const queryClient = useQueryClient();
   const status = useQuery({
     queryKey: ["einvoice-status", documentId],
     queryFn: () => api.get<StatusResponse>(`/sales/documents/${documentId}/einvoice`),
@@ -35,6 +38,20 @@ export function EInvoiceCard({ documentId }: { documentId: string }) {
     refetchInterval: (query) => {
       const s = query.state.data?.record?.Status;
       return s === "QUEUED" || s === "SUBMITTING" ? 4000 : false;
+    },
+  });
+
+  const retry = useMutation({
+    mutationFn: () => api.post<StatusResponse>(`/sales/documents/${documentId}/einvoice/retry`),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["einvoice-status", documentId], data);
+    },
+    // A retry that fails again (still no GSTIN, provider rejected it
+    // once more, ...) comes back as a non-2xx — the record was still
+    // updated server-side with the new failure though, so refetch
+    // rather than leaving the stale pre-retry error message showing.
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ["einvoice-status", documentId] });
     },
   });
 
@@ -114,32 +131,32 @@ export function EInvoiceCard({ documentId }: { documentId: string }) {
     );
   }
 
-  if (record.Status === "FAILED_RETRYABLE") {
+  if (record.Status === "FAILED_RETRYABLE" || record.Status === "FAILED_FINAL") {
+    const isFinal = record.Status === "FAILED_FINAL";
     return (
       <div className={styles.card}>
         <div className={styles.header}>
           <h2>e-Invoice</h2>
-          <span className={ui.badge} data-tone="warning">
-            Retrying
+          <span className={ui.badge} data-tone={isFinal ? "negative" : "warning"}>
+            {isFinal ? "Failed" : "Retrying"}
           </span>
         </div>
-        <p className={styles.explainer}>e-Invoice generation failed and will be retried automatically.</p>
+        <p className={styles.explainer}>
+          {isFinal
+            ? "e-Invoice generation failed and won't be retried automatically."
+            : "e-Invoice generation failed and will be retried automatically."}
+        </p>
         {record.ErrorMessage ? <p className={styles.detail}>{record.ErrorMessage}</p> : null}
-      </div>
-    );
-  }
-
-  if (record.Status === "FAILED_FINAL") {
-    return (
-      <div className={styles.card}>
-        <div className={styles.header}>
-          <h2>e-Invoice</h2>
-          <span className={ui.badge} data-tone="negative">
-            Failed
-          </span>
+        <div className={ui.formActions}>
+          <button type="button" className={ui.btnSecondary} disabled={retry.isPending} onClick={() => retry.mutate()}>
+            {retry.isPending ? "Retrying…" : isFinal ? "Fixed it — retry now" : "Retry now"}
+          </button>
         </div>
-        <p className={styles.explainer}>e-Invoice generation failed and won't be retried automatically.</p>
-        {record.ErrorMessage ? <p className={styles.detail}>{record.ErrorMessage}</p> : null}
+        {retry.isError ? (
+          <p className={styles.errorText} role="alert">
+            {retry.error instanceof ApiError ? retry.error.message : "Retry failed."}
+          </p>
+        ) : null}
       </div>
     );
   }
