@@ -1,0 +1,12 @@
+-- Additive extension to legal_entities (migrations/0001, extended by
+-- 0017's gstin/gst_state_code, 0034's invoice-branding fields) — closes
+-- a gap canonical.Party's own doc comment already flagged explicitly:
+-- "this codebase does not yet model a postal address on legal_entities
+-- ... AddressLine1/City/PostalCode are therefore best-effort/empty for
+-- the Supplier and DispatchFrom roles." The government e-Way Bill
+-- schema requires fromPincode as a real 6-digit PIN code — not
+-- extractable reliably from the free-text `address` column (migrations/
+-- 0034), which has no guaranteed structure. A dedicated column, same
+-- precedent as gstin/gst_state_code getting their own columns rather
+-- than being parsed out of free text.
+ALTER TABLE legal_entities ADD COLUMN pincode text;

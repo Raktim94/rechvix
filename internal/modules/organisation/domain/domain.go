@@ -62,6 +62,11 @@ type LegalEntity struct {
 	Email                     string
 	Website                   string
 	Address                   string
+	// Pincode (migrations/0043) is separate from the free-text Address
+	// above on purpose — the one government e-Way Bill actually validates
+	// as a structured 6-digit PIN code (ewaybill/portal/v1's
+	// fromPincode), not reliably extractable from free text.
+	Pincode                   string
 	BankName                  string
 	BankAccountNumber         string
 	BankIFSC                  string
@@ -91,6 +96,7 @@ type InvoiceBrandingUpdate struct {
 	Email                     string
 	Website                   string
 	Address                   string
+	Pincode                   string
 	BankName                  string
 	BankAccountNumber         string
 	BankIFSC                  string

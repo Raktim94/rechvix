@@ -148,10 +148,21 @@ func (m *Mapper) PrepareUpload(_ context.Context, bill canonical.CanonicalEWayBi
 		FromPlace: bill.Supplier.City, FromPincode: bill.Supplier.PostalCode,
 		FromStateCode: bill.Supplier.StateCode, ActualFromState: bill.DispatchFrom.StateCode,
 
-		ToGSTIN: bill.Recipient.GSTIN, ToTradeName: firstNonEmpty(bill.Recipient.TradeName, bill.Recipient.LegalName),
-		ToAddress1: bill.Recipient.AddressLine1, ToAddress2: bill.Recipient.AddressLine2,
-		ToPlace: bill.Recipient.City, ToPincode: bill.Recipient.PostalCode,
-		ToStateCode: bill.Recipient.StateCode, ActualToState: bill.ShipTo.StateCode,
+		// toGstin/toStateCode/toPincode/toAddr*/toPlace describe where the
+		// goods are actually going, not necessarily the registered
+		// recipient's billing details — ShipTo is the physically-real
+		// destination (with a place-of-supply fallback already applied
+		// upstream, buildCanonicalFromLiveData's own comment), Recipient
+		// only where ShipTo itself has nothing better. "URP" (Unregistered
+		// Person) is the real, documented value the schema expects for a
+		// B2C sale with no buyer GSTIN — never just omitting the
+		// (non-optional) field, same as ShipToGSTIN below already does.
+		ToGSTIN: firstNonEmpty(bill.Recipient.GSTIN, "URP"), ToTradeName: firstNonEmpty(bill.Recipient.TradeName, bill.Recipient.LegalName),
+		ToAddress1: firstNonEmpty(bill.ShipTo.AddressLine1, bill.Recipient.AddressLine1),
+		ToAddress2: firstNonEmpty(bill.ShipTo.AddressLine2, bill.Recipient.AddressLine2),
+		ToPlace:    firstNonEmpty(bill.ShipTo.City, bill.Recipient.City),
+		ToPincode:  firstNonEmpty(bill.ShipTo.PostalCode, bill.Recipient.PostalCode),
+		ToStateCode: firstNonEmpty(bill.ShipTo.StateCode, bill.Recipient.StateCode), ActualToState: bill.ShipTo.StateCode,
 
 		TransactionType: transactionTypeFor(bill),
 

@@ -119,7 +119,7 @@ func (r *LegalEntityRepo) Create(ctx context.Context, le *domain.LegalEntity) er
 // apart (a real risk once a query grows to 20 columns).
 const legalEntityColumns = `id, organisation_id, legal_name, country_code, base_currency_code,
 	COALESCE(gstin, ''), COALESCE(gst_state_code, ''),
-	COALESCE(phone, ''), COALESCE(email, ''), COALESCE(website, ''), COALESCE(address, ''),
+	COALESCE(phone, ''), COALESCE(email, ''), COALESCE(website, ''), COALESCE(address, ''), COALESCE(pincode, ''),
 	COALESCE(bank_name, ''), COALESCE(bank_account_number, ''), COALESCE(bank_ifsc, ''), COALESCE(upi_id, ''),
 	COALESCE(authorized_signatory_name, ''), COALESCE(default_terms_and_conditions, ''), logo_png,
 	status, created_at, updated_at`
@@ -136,7 +136,7 @@ func scanLegalEntity(row rowScanner) (*domain.LegalEntity, error) {
 	var status string
 	if err := row.Scan(&le.ID, &le.OrganisationID, &le.LegalName, &le.CountryCode, &le.BaseCurrencyCode,
 		&le.GSTIN, &le.GSTStateCode,
-		&le.Phone, &le.Email, &le.Website, &le.Address,
+		&le.Phone, &le.Email, &le.Website, &le.Address, &le.Pincode,
 		&le.BankName, &le.BankAccountNumber, &le.BankIFSC, &le.UPIID,
 		&le.AuthorizedSignatoryName, &le.DefaultTermsAndConditions, &le.LogoPNG,
 		&status, &le.CreatedAt, &le.UpdatedAt); err != nil {
@@ -184,15 +184,16 @@ func (r *LegalEntityRepo) UpdateInvoiceBranding(ctx context.Context, orgID, id u
 	q := `
 		UPDATE legal_entities SET
 			phone = NULLIF($3, ''), email = NULLIF($4, ''), website = NULLIF($5, ''), address = NULLIF($6, ''),
-			bank_name = NULLIF($7, ''), bank_account_number = NULLIF($8, ''), bank_ifsc = NULLIF($9, ''),
-			upi_id = NULLIF($10, ''), authorized_signatory_name = NULLIF($11, ''),
-			default_terms_and_conditions = NULLIF($12, ''),
-			logo_png = CASE WHEN $13::bytea IS NOT NULL THEN $13::bytea WHEN $14 THEN NULL ELSE logo_png END,
+			pincode = NULLIF($7, ''),
+			bank_name = NULLIF($8, ''), bank_account_number = NULLIF($9, ''), bank_ifsc = NULLIF($10, ''),
+			upi_id = NULLIF($11, ''), authorized_signatory_name = NULLIF($12, ''),
+			default_terms_and_conditions = NULLIF($13, ''),
+			logo_png = CASE WHEN $14::bytea IS NOT NULL THEN $14::bytea WHEN $15 THEN NULL ELSE logo_png END,
 			updated_at = now()
 		WHERE organisation_id = $1 AND id = $2
 		RETURNING ` + legalEntityColumns
 	le, err := scanLegalEntity(r.pool.Q(ctx).QueryRow(ctx, q, orgID, id,
-		u.Phone, u.Email, u.Website, u.Address, u.BankName, u.BankAccountNumber, u.BankIFSC, u.UPIID,
+		u.Phone, u.Email, u.Website, u.Address, u.Pincode, u.BankName, u.BankAccountNumber, u.BankIFSC, u.UPIID,
 		u.AuthorizedSignatoryName, u.DefaultTermsAndConditions, u.LogoPNG, u.RemoveLogo))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

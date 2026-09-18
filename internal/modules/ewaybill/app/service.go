@@ -592,7 +592,10 @@ func (s *Service) buildCanonicalFromLiveData(ctx context.Context, orgID, salesDo
 	if err != nil {
 		return canonical.CanonicalEWayBill{}, fmt.Errorf("ewaybill: loading supplier legal entity: %w", err)
 	}
-	supplier := canonical.Party{LegalName: legalEntity.LegalName, GSTIN: legalEntity.GSTIN, StateCode: legalEntity.GSTStateCode}
+	supplier := canonical.Party{
+		LegalName: legalEntity.LegalName, GSTIN: legalEntity.GSTIN, StateCode: legalEntity.GSTStateCode,
+		PostalCode: legalEntity.Pincode,
+	}
 
 	recipient := canonical.Party{}
 	if doc.CustomerTaxRegistrationID != nil {

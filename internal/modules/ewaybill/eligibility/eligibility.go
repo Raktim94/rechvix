@@ -116,6 +116,17 @@ func Evaluate(rules []Rule, c canonical.CanonicalEWayBill, now time.Time) (Requi
 	if c.ShipTo.StateCode == "" {
 		missing = append(missing, MissingInfo{Field: "ship_to.state_code", Reason: "ship-to state is not resolved"})
 	}
+	// A blank fromGstin/fromPincode is a portal-rejection waiting to
+	// happen, exactly like the stale invoice_date check above — surfaced
+	// here so PrepareUpload's "Requirement != Ready" guard blocks it
+	// instead of silently producing a file NIC's actual "Generate e-Way
+	// Bill" schema requires these on.
+	if c.Supplier.GSTIN == "" {
+		missing = append(missing, MissingInfo{Field: "supplier.gstin", Reason: "your business has no GSTIN configured (Settings → Legal entity)"})
+	}
+	if c.Supplier.PostalCode == "" {
+		missing = append(missing, MissingInfo{Field: "supplier.postal_code", Reason: "your business has no PIN code configured (Settings → Invoice branding)"})
+	}
 
 	if len(missing) > 0 {
 		return NeedsInformation, missing
