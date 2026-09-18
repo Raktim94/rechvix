@@ -66,6 +66,7 @@ export function EwayBillCard({ documentId }: { documentId: string }) {
   const [validUntil, setValidUntil] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [transporterName, setTransporterName] = useState("");
+  const [distanceKm, setDistanceKm] = useState("");
 
   const status = useQuery({
     queryKey: ["ewaybill-status", documentId],
@@ -135,11 +136,13 @@ export function EwayBillCard({ documentId }: { documentId: string }) {
       api.post(`/sales/documents/${documentId}/ewaybill/transport-info`, {
         vehicle_number: vehicleNumber || null,
         transporter_name: transporterName || null,
+        distance_km: distanceKm || null,
       }),
     onSuccess: () => {
       invalidate();
       setVehicleNumber("");
       setTransporterName("");
+      setDistanceKm("");
     },
   });
 
@@ -272,16 +275,32 @@ export function EwayBillCard({ documentId }: { documentId: string }) {
               ))}
             </datalist>
           </div>
+          <div className={ui.field}>
+            <label htmlFor="ewb-distance">Transport distance (km)</label>
+            <input
+              id="ewb-distance"
+              className={ui.input}
+              inputMode="decimal"
+              value={distanceKm}
+              onChange={(e) => setDistanceKm(e.target.value)}
+              placeholder="e.g. 42"
+            />
+          </div>
           <div className={ui.formActions}>
             <button
               type="button"
               className={ui.btnPrimary}
-              disabled={updateTransportInfo.isPending || (!vehicleNumber && !transporterName)}
+              disabled={updateTransportInfo.isPending || (!vehicleNumber && !transporterName && !distanceKm)}
               onClick={() => updateTransportInfo.mutate()}
             >
               Save details
             </button>
           </div>
+          {updateTransportInfo.isError ? (
+            <p className={styles.errorText} role="alert">
+              {updateTransportInfo.error instanceof ApiError ? updateTransportInfo.error.message : "Could not save these details."}
+            </p>
+          ) : null}
         </div>
       </div>
     );
