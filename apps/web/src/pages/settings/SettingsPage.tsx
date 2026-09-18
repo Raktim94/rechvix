@@ -541,7 +541,7 @@ function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
             </button>
           ) : null}
           <p className={ui.muted} style={{ marginTop: 6 }}>
-            PNG, JPEG, or GIF. Max 2MB, 1000×1000px.
+            PNG, JPEG, or GIF, any shape or size (max 2MB) — resized and centered automatically.
           </p>
           {logoError ? (
             <p role="alert" style={{ color: "var(--color-negative)", marginTop: 4 }}>
