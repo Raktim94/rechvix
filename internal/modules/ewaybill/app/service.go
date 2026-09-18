@@ -235,6 +235,16 @@ type TransportInfoParams struct {
 	TransporterID   *string
 	TransporterName *string
 	DistanceKM      *decimal.Decimal
+	// ShipToStateCode patches ShipTo.StateCode directly onto the captured
+	// snapshot — needed because the snapshot is captured once, on first
+	// EvaluateEligibility call, and never re-derived from live data
+	// afterward (this function's own doc comment). A record captured
+	// before buildCanonicalFromLiveData's place-of-supply fallback
+	// existed (or one whose place of supply was itself never set) can be
+	// permanently stuck reporting "ship-to state is not resolved" with
+	// no way forward otherwise — same reasoning as DistanceKM already
+	// being patchable here.
+	ShipToStateCode *string
 }
 
 // UpdateTransportInfo patches the stored canonical snapshot's transport
@@ -261,6 +271,9 @@ func (s *Service) UpdateTransportInfo(ctx context.Context, orgID, salesDocumentI
 	}
 	if p.DistanceKM != nil {
 		bill.Transport.DistanceKM = *p.DistanceKM
+	}
+	if p.ShipToStateCode != nil {
+		bill.ShipTo.StateCode = *p.ShipToStateCode
 	}
 	snapshot, err := json.Marshal(bill)
 	if err != nil {

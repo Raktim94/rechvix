@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiError } from "../lib/api-client";
+import { GST_STATE_CODES } from "../lib/gstStateCodes";
 import ui from "./ui.module.css";
 import styles from "./EwayBillCard.module.css";
 
@@ -67,6 +68,7 @@ export function EwayBillCard({ documentId }: { documentId: string }) {
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [transporterName, setTransporterName] = useState("");
   const [distanceKm, setDistanceKm] = useState("");
+  const [shipToStateCode, setShipToStateCode] = useState("");
 
   const status = useQuery({
     queryKey: ["ewaybill-status", documentId],
@@ -137,12 +139,14 @@ export function EwayBillCard({ documentId }: { documentId: string }) {
         vehicle_number: vehicleNumber || null,
         transporter_name: transporterName || null,
         distance_km: distanceKm || null,
+        ship_to_state_code: shipToStateCode || null,
       }),
     onSuccess: () => {
       invalidate();
       setVehicleNumber("");
       setTransporterName("");
       setDistanceKm("");
+      setShipToStateCode("");
     },
   });
 
@@ -286,11 +290,29 @@ export function EwayBillCard({ documentId }: { documentId: string }) {
               placeholder="e.g. 42"
             />
           </div>
+          {eligibility.Missing?.some((m) => m.Field === "ship_to.state_code") ? (
+            <div className={ui.field}>
+              <label htmlFor="ewb-ship-to-state">Ship-to state</label>
+              <select
+                id="ewb-ship-to-state"
+                className={ui.select}
+                value={shipToStateCode}
+                onChange={(e) => setShipToStateCode(e.target.value)}
+              >
+                <option value="">Select a state…</option>
+                {GST_STATE_CODES.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className={ui.formActions}>
             <button
               type="button"
               className={ui.btnPrimary}
-              disabled={updateTransportInfo.isPending || (!vehicleNumber && !transporterName && !distanceKm)}
+              disabled={updateTransportInfo.isPending || (!vehicleNumber && !transporterName && !distanceKm && !shipToStateCode)}
               onClick={() => updateTransportInfo.mutate()}
             >
               Save details
