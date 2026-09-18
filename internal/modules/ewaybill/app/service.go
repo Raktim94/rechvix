@@ -594,11 +594,28 @@ func (s *Service) buildCanonicalFromLiveData(ctx context.Context, orgID, salesDo
 	shipTo := recipient
 	if doc.ShippingAddressID != nil {
 		if addr, err := s.contacts.GetAddressForOtherModule(ctx, orgID, *doc.ShippingAddressID); err == nil && addr != nil {
+			// addr.State is deliberately NOT used for StateCode: it's a
+			// free-text field on the address form (ContactDetailPage's
+			// "State" input, e.g. "Odisha" or "orissa" or "OD" — whatever
+			// the person typed), never validated against gst_state_codes,
+			// while StateCode everywhere else in this codebase means the
+			// 2-digit GST code ("21"). Assigning it directly used to
+			// silently hand the e-Way Bill portal a garbage state code
+			// whenever an address happened to have its State field filled
+			// in — worse than the "not resolved" block below, which at
+			// least fails visibly instead of submitting wrong data.
 			shipTo.AddressLine1, shipTo.AddressLine2, shipTo.City, shipTo.PostalCode = addr.Line1, addr.Line2, addr.City, addr.PostalCode
-			if addr.State != "" {
-				shipTo.StateCode = addr.State
-			}
 		}
+	}
+	// Ship-to state still unresolved (no GST registration on file for this
+	// customer, or one on file with no state, or no distinct shipping
+	// address at all): the place of supply is the legally-determined
+	// destination state for this transaction and was already selected at
+	// billing time — the correct fallback, not a guess, and not "no ship-to
+	// state" territory reserved for a real data gap (e.g. no place of
+	// supply at all, which BillingPage always sets).
+	if shipTo.StateCode == "" {
+		shipTo.StateCode = doc.PlaceOfSupplyStateCode
 	}
 
 	taxDoc, taxLines, componentsByLine, err := s.taxation.GetByReference(ctx, orgID, "sales_document", doc.ID)
