@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -243,12 +245,45 @@ func (h *Handlers) listOrSearchProducts(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"products": h.withDefaultVariants(r.Context(), principal(r), list)})
 		return
 	}
-	list, err := h.svc.ListProducts(r.Context(), principal(r))
+	page, limit, err := parsePageParams(r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_PAGE_PARAMS", err.Error()))
+		return
+	}
+	result, err := h.svc.ListProducts(r.Context(), principal(r), limit, (page-1)*limit)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"products": h.withDefaultVariants(r.Context(), principal(r), list)})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"products": h.withDefaultVariants(r.Context(), principal(r), result.Products),
+		"total":    result.Total,
+		"page":     page,
+		"limit":    limit,
+	})
+}
+
+// parsePageParams reads page (1-based, default 1) and limit (default 50)
+// off the query string for listOrSearchProducts' browse-all-products path
+// — app.Service.ListProducts clamps limit into a sane range itself, this
+// just rejects a non-numeric value outright rather than silently falling
+// back, same as importProducts' warehouse_id handling below.
+func parsePageParams(r *http.Request) (page, limit int, err error) {
+	page = 1
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		page, err = strconv.Atoi(raw)
+		if err != nil || page < 1 {
+			return 0, 0, fmt.Errorf("page must be a positive integer")
+		}
+	}
+	limit = 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 {
+			return 0, 0, fmt.Errorf("limit must be a positive integer")
+		}
+	}
+	return page, limit, nil
 }
 
 type createProductRequest struct {
