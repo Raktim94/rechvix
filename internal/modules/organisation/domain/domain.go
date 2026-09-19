@@ -58,10 +58,10 @@ type LegalEntity struct {
 	// from until this migration; see sales/app/print.go's
 	// BuildInvoiceData. All nullable/empty by default, same as
 	// GSTIN/GSTStateCode above.
-	Phone                     string
-	Email                     string
-	Website                   string
-	Address                   string
+	Phone   string
+	Email   string
+	Website string
+	Address string
 	// Pincode (migrations/0043) is separate from the free-text Address
 	// above on purpose — the one government e-Way Bill actually validates
 	// as a structured 6-digit PIN code (ewaybill/portal/v1's
