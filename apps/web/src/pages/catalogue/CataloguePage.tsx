@@ -45,6 +45,11 @@ interface BulkDeleteResult {
   hard_deleted: string[];
   deactivated: string[];
 }
+interface ProductsResponse {
+  products: Product[] | null;
+  total: number;
+}
+const PRODUCTS_PAGE_SIZE = 50;
 interface StockBalance {
   QuantityOnHand: string;
 }
@@ -147,6 +152,10 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
   const queryClient = useQueryClient();
   const org = useOrgContext();
   const [query, setQuery] = useState("");
+  // 1-based — only meaningful for the plain browse listing below; a
+  // search (query non-empty) always goes through SearchProducts instead,
+  // which isn't paginated (billing-counter lookup, capped at 20 results).
+  const [page, setPage] = useState(1);
   // Opened directly from another page's "+ New product" button (e.g.
   // Inventory, where a shop owner discovers a product doesn't exist yet)
   // via /catalogue?new=1 — the form is right here, it just used to be
@@ -208,10 +217,28 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
     if (showForm) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [showForm, editingId]);
 
+  // Typing into search resets to page 1 — staying on e.g. page 4 of a
+  // fresh, unrelated search would silently show "no results" instead of
+  // the matches that actually exist on page 1.
+  useEffect(() => setPage(1), [query]);
+
   const products = useQuery({
-    queryKey: ["products", query],
-    queryFn: () => api.getListField<Product>(`/catalogue/products${query ? `?q=${encodeURIComponent(query)}` : ""}`, "products"),
+    queryKey: ["products", query, page],
+    queryFn: () =>
+      api.get<ProductsResponse>(
+        query ? `/catalogue/products?q=${encodeURIComponent(query)}` : `/catalogue/products?page=${page}&limit=${PRODUCTS_PAGE_SIZE}`,
+      ),
   });
+  const productList = products.data?.products ?? [];
+  const totalProducts = products.data?.total ?? productList.length;
+  const totalPages = Math.max(1, Math.ceil(totalProducts / PRODUCTS_PAGE_SIZE));
+  // A page emptied out from under the viewer (e.g. the last product on
+  // the last page just got deleted) would otherwise strand them on a
+  // blank page forever — bounce back to page 1 instead.
+  useEffect(() => {
+    if (!query && page > 1 && products.data && productList.length === 0) setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, page, products.data]);
   const units = useQuery({
     queryKey: ["units"],
     queryFn: () => api.getListField<Unit>("/catalogue/units", "units_of_measure"),
@@ -790,7 +817,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
           </p>
         ) : products.isPending ? (
           <div className={layout.skeleton} style={{ height: 200 }} aria-hidden="true" />
-        ) : products.data.length === 0 ? (
+        ) : productList.length === 0 ? (
           <p className={layout.emptyState}>No products yet — add your first one above.</p>
         ) : (
           <>
@@ -861,8 +888,8 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                       <input
                         type="checkbox"
                         aria-label="Select all products"
-                        checked={selectedIds.size > 0 && selectedIds.size === products.data.length}
-                        onChange={(e) => setSelectedIds(e.target.checked ? new Set(products.data.map((p) => p.ID)) : new Set())}
+                        checked={selectedIds.size > 0 && selectedIds.size === productList.length}
+                        onChange={(e) => setSelectedIds(e.target.checked ? new Set(productList.map((p) => p.ID)) : new Set())}
                       />
                     </th>
                     <th scope="col">Name</th>
@@ -875,7 +902,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                   </tr>
                 </thead>
                 <tbody>
-                  {products.data.map((p) => {
+                  {productList.map((p) => {
                     const priceItem = p.DefaultVariantID ? priceByVariantId.get(p.DefaultVariantID) : undefined;
                     return (
                       <tr key={p.ID} style={p.Status === "INACTIVE" ? { opacity: 0.6 } : undefined}>
@@ -925,6 +952,19 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                 </tbody>
               </table>
             </div>
+            {!query && totalProducts > PRODUCTS_PAGE_SIZE ? (
+              <div className={ui.toolbar} style={{ marginTop: 12, justifyContent: "flex-end", gap: 8 }}>
+                <span className={ui.muted}>
+                  Page {page} of {totalPages} ({totalProducts} products)
+                </span>
+                <button type="button" className={ui.btnSecondary} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                  Previous
+                </button>
+                <button type="button" className={ui.btnSecondary} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                  Next
+                </button>
+              </div>
+            ) : null}
           </>
         )}
       </div>
