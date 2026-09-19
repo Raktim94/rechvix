@@ -160,7 +160,19 @@ type ProductRepository interface {
 	// matches orgID+id.
 	SetStatus(ctx context.Context, orgID, id uuid.UUID, status Status) error
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Product, error)
-	ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]*Product, error)
+	// ListByOrganisation returns up to limit products for orgID ordered by
+	// name, skipping the first offset rows — the paginated path
+	// CataloguePage.tsx's product list uses (previously unbounded, a real
+	// problem once an org's catalogue reaches tens of thousands of SKUs).
+	// A non-positive limit means no limit at all, the shape
+	// app.Service.ImportProducts' duplicate-name check needs (it must
+	// compare against literally every existing product, not one page).
+	ListByOrganisation(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]*Product, error)
+	// CountByOrganisation returns the total number of products for orgID,
+	// independent of any limit/offset — same shape as
+	// accounting.AccountRepo.CountByOrganisation, giving ListByOrganisation's
+	// callers a total row count alongside a limited page of results.
+	CountByOrganisation(ctx context.Context, orgID uuid.UUID) (int, error)
 	// SearchByName does a trigram similarity search against the
 	// idx_products_name_trgm index (migrations/0008_catalogue.up.sql).
 	// Only ever returns ACTIVE products — this is the billing-counter/

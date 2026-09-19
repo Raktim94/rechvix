@@ -583,17 +583,41 @@ func (s *Service) GetProduct(ctx context.Context, principal permissions.Principa
 	return result, err
 }
 
-func (s *Service) ListProducts(ctx context.Context, principal permissions.Principal) ([]*domain.Product, error) {
+// ProductPage is one page of ListProducts' results, plus the total number
+// of products across every page — CataloguePage.tsx needs Total to render
+// "Page X of Y" and to know when to disable Next, not just what's on the
+// page it happened to load.
+type ProductPage struct {
+	Products []*domain.Product
+	Total    int
+}
+
+// ListProducts returns page limit products starting at offset, ordered by
+// name (same LIMIT/OFFSET the trigram search path already used via
+// SearchProducts, applied here to the plain browse listing too — see
+// ProductRepository.ListByOrganisation's doc comment for the bug this
+// fixes). limit is clamped into (0, 200], defaulting to 50.
+func (s *Service) ListProducts(ctx context.Context, principal permissions.Principal, limit, offset int) (ProductPage, error) {
 	if err := s.view(ctx, principal); err != nil {
-		return nil, err
+		return ProductPage{}, err
 	}
-	var result []*domain.Product
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var page ProductPage
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
-		result, err = s.products.ListByOrganisation(ctx, principal.OrganisationID)
+		page.Products, err = s.products.ListByOrganisation(ctx, principal.OrganisationID, limit, offset)
+		if err != nil {
+			return err
+		}
+		page.Total, err = s.products.CountByOrganisation(ctx, principal.OrganisationID)
 		return err
 	})
-	return result, err
+	return page, err
 }
 
 func (s *Service) SearchProducts(ctx context.Context, principal permissions.Principal, query string, limit int) ([]*domain.Product, error) {

@@ -104,7 +104,9 @@ func (s *Service) ImportProducts(ctx context.Context, principal permissions.Prin
 
 	var existingNames map[string]bool
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		existing, err := s.products.ListByOrganisation(ctx, principal.OrganisationID)
+		// 0, 0 = no limit — the duplicate-name check below needs every
+		// existing product, not one page of them.
+		existing, err := s.products.ListByOrganisation(ctx, principal.OrganisationID, 0, 0)
 		if err != nil {
 			return err
 		}

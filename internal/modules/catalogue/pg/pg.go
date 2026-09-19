@@ -328,16 +328,30 @@ func (r *ProductRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain
 	return scanProduct(row)
 }
 
-func (r *ProductRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error) {
+func (r *ProductRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]*domain.Product, error) {
+	// LIMIT NULLIF($2::int, 0) turns a non-positive limit into LIMIT NULL
+	// (Postgres for "no limit") instead of a second query path — see this
+	// method's doc comment in domain.go for why ImportProducts legitimately
+	// needs that unbounded case.
 	const q = `
 		SELECT id, organisation_id, category_id, brand_id, base_uom_id, name, COALESCE(description, ''), COALESCE(hsn_sac_code, ''), status, created_at, updated_at
-		FROM products WHERE organisation_id = $1 ORDER BY name`
-	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID)
+		FROM products WHERE organisation_id = $1 ORDER BY name
+		LIMIT NULLIF($2::int, 0) OFFSET $3`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("catalogue: listing products: %w", err)
 	}
 	defer rows.Close()
 	return scanProducts(rows)
+}
+
+func (r *ProductRepo) CountByOrganisation(ctx context.Context, orgID uuid.UUID) (int, error) {
+	var n int
+	err := r.pool.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM products WHERE organisation_id = $1`, orgID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("catalogue: counting products: %w", err)
+	}
+	return n, nil
 }
 
 // SearchByName ranks by pg_trgm similarity against idx_products_name_trgm
