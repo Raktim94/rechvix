@@ -110,6 +110,34 @@ jobs:
       - name: build (includes tsc -b — strict typecheck)
         run: npm run build
 
+  frontend-e2e:
+    name: Frontend — accessibility & keyboard smoke (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            tests/e2e/package-lock.json
+      - name: Install frontend deps
+        working-directory: apps/web
+        run: npm ci
+      - name: Install e2e deps
+        working-directory: tests/e2e
+        run: npm ci
+      # Suite builds and serves apps/web itself (see playwright.config.ts
+      # webServer) — LoginPage fails open with no backend running, so this
+      # needs no Go server/Postgres.
+      - name: Install Playwright browsers
+        working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run accessibility + keyboard smoke tests
+        working-directory: tests/e2e
+        run: npm run test:e2e
+
   docker-build:
     name: Docker — build server/worker images
     runs-on: ubuntu-latest
