@@ -37,8 +37,9 @@ sideload-test `.msix` + test certificate as workflow artifacts.
 `rechvix.nodedr.com/public/brand/logo-square.webp`, background removed),
 not Tauri's generic scaffold icon.
 
+The app name is reserved in Partner Center (Store ID `9NMPSP7CR5RW`, Package Family Name `NODEDRINFOTECHLIMITED.Rechvix_wsh4jzg5a6682`) and `msix/AppxManifest.xml`'s `Identity.Name`/`Publisher` already match it exactly.
+
 Before submitting to Partner Center:
 
-1. Reserve the app name in [Partner Center](https://partner.microsoft.com/dashboard) and copy its exact `Identity.Name`/`Publisher` into `msix/AppxManifest.xml` (currently placeholder `REPLACE_ME` values — everything else in the manifest is real).
-2. Download the `rechvix-desktop-msix` artifact from the latest successful run of `desktop-msix.yml` (Actions tab) — confirms the build actually compiled and passed the install/uninstall/lifecycle test on real Windows before you ever touch it.
-3. Take `Rechvix-StoreSubmission.msix` from that artifact and follow Microsoft's own [manual upload-package guide](https://learn.microsoft.com/en-us/windows/msix/packaging/packaging-uwp-apps#create-your-app-package-upload-file-manually) to wrap it into the `.msixupload` Partner Center's submission form expects (`makeappx.exe` alone doesn't produce that wrapper format).
+1. Download the `rechvix-desktop-msix` artifact from the latest successful run of `desktop-msix.yml` (Actions tab) — confirms the build actually compiled and passed the install/uninstall/lifecycle test on real Windows before you ever touch it.
+2. Take `Rechvix-StoreSubmission.msix` from that artifact and follow Microsoft's own [manual upload-package guide](https://learn.microsoft.com/en-us/windows/msix/packaging/packaging-uwp-apps#create-your-app-package-upload-file-manually) to wrap it into the `.msixupload` Partner Center's submission form expects (`makeappx.exe` alone doesn't produce that wrapper format).

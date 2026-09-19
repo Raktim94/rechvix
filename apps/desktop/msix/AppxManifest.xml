@@ -10,23 +10,13 @@
   unrelated distribution path. build-msix.ps1 assembles the package
   layout this manifest describes.
 
-  BEFORE submitting to Partner Center for real, replace:
-    - Identity Name: Partner Center assigns this exact string when you
-      reserve the app name (Partner Center → App identity → "Package/
-      Identity/Name"). It must match letter-for-letter or submission is
-      rejected. The placeholder below ("NodeDRInfotech.Rechvix") is
-      schema-valid (MSIX only allows letters/digits/hyphen/dot in this
-      field — no underscores, which is what broke the very first CI
-      packaging run against a literal "REPLACE_ME" placeholder) so the
-      CI install/uninstall test below can actually run end to end, but
-      it is NOT a real reserved identity — swap it for yours.
-    - Identity Publisher: Partner Center assigns this too ("Package/
-      Identity/Publisher", a fixed CN= string, not something you choose)
-      — must match exactly, and must also match your code-signing
-      certificate's Subject if you sign locally for sideload testing.
-    - Identity Version: bump this on every release (Windows requires a
-      strictly increasing 4-part version for MSIX to treat it as an
-      update rather than a conflicting duplicate).
+  Identity Name/Publisher below are the real values Partner Center
+  assigned when the app name was reserved (Store ID 9NMPSP7CR5RW,
+  Package Family Name NODEDRINFOTECHLIMITED.Rechvix_wsh4jzg5a6682 — the
+  PFN is derived from Name+Publisher, not set directly here). Identity
+  Version still needs a strictly increasing 4-part bump on every release
+  (Windows requires this to treat a package as an update rather than a
+  conflicting duplicate).
 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -35,14 +25,14 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
 
   <Identity
-    Name="NodeDRInfotech.Rechvix"
+    Name="NODEDRINFOTECHLIMITED.Rechvix"
     Version="0.1.0.0"
-    Publisher="CN=REPLACE_ME, O=REPLACE_ME, L=REPLACE_ME, S=REPLACE_ME, C=IN"
+    Publisher="CN=11C721FC-E399-4888-B532-7BFCD5C491B3"
     ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>Rechvix</DisplayName>
-    <PublisherDisplayName>NodeDR Infotech Private Limited</PublisherDisplayName>
+    <PublisherDisplayName>NODEDR INFOTECH LIMITED</PublisherDisplayName>
     <Description>Self-hosted billing, inventory, accounting, and India GST: a thin desktop window onto your own rechvix server. No data leaves your server; this app has no logic of its own beyond showing it.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
