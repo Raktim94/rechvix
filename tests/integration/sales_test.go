@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"sync"
@@ -129,7 +130,10 @@ func setupSalesFixture(t *testing.T, ctx context.Context) salesFixture {
 	if err != nil {
 		t.Fatalf("CreateUnitOfMeasure: %v", err)
 	}
-	hsn := "998" + uuid.NewString()[:5]
+	// A real HSN/SAC code is all-digit (eligibility.isValidHSN enforces
+	// this) — a hex UUID slice would fail that check whenever it landed
+	// on a-f, which is most of the time; %05d keeps this fixture numeric.
+	hsn := fmt.Sprintf("998%05d", time.Now().UnixNano()%100000)
 	product, err := catalogueSvc.CreateProduct(ctx, principal, catalogueapp.CreateProductParams{
 		BaseUOMID: pcs.ID, Name: "Sales Test Widget " + unique, HSNSACCode: hsn,
 	})
