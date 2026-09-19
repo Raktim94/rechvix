@@ -84,10 +84,11 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 		t.Fatalf("dry run counts = %+v, want Valid=2 Duplicates=1 Errors=2", dryReport)
 	}
 
-	list, err := svc.ListProducts(ctx, principal)
+	page, err := svc.ListProducts(ctx, principal, 0, 0)
 	if err != nil {
 		t.Fatalf("ListProducts after dry run: %v", err)
 	}
+	list := page.Products
 	for _, p := range list {
 		if p.Name == newName {
 			t.Fatalf("dry run must not have committed %q, but it exists", newName)
@@ -129,10 +130,11 @@ func TestCatalogue_ImportProducts_ValidatesDedupesAndCommits(t *testing.T) {
 		t.Fatalf("auto-created unit Name = %q, want %q (the code itself, since a CSV row names nothing else)", newUnit.Name, newUnitCode)
 	}
 
-	list, err = svc.ListProducts(ctx, principal)
+	page, err = svc.ListProducts(ctx, principal, 0, 0)
 	if err != nil {
 		t.Fatalf("ListProducts: %v", err)
 	}
+	list = page.Products
 	var imported *cataloguedomain.Product
 	for _, p := range list {
 		if p.Name == newName {
@@ -205,10 +207,11 @@ func TestCatalogue_ImportProducts_GeneratesUniqueSKUsOnCollision(t *testing.T) {
 		t.Fatalf("report = %+v, want Committed=2 (both rows resolve to distinct SKUs despite the collision)", report)
 	}
 
-	list, err := svc.ListProducts(ctx, principal)
+	page, err := svc.ListProducts(ctx, principal, 0, 0)
 	if err != nil {
 		t.Fatalf("ListProducts: %v", err)
 	}
+	list := page.Products
 	skus := make(map[string]int)
 	for _, p := range list {
 		if p.Name != baseName && p.Name != baseName+"!!" {
@@ -327,10 +330,11 @@ func TestCatalogue_ImportProducts_CategoryBrandBarcode(t *testing.T) {
 		t.Fatalf("report = %+v, want Committed=2 Errors=2", report)
 	}
 
-	list, err := svc.ListProducts(ctx, principal)
+	page, err := svc.ListProducts(ctx, principal, 0, 0)
 	if err != nil {
 		t.Fatalf("ListProducts: %v", err)
 	}
+	list := page.Products
 	var productA, productB *cataloguedomain.Product
 	for _, p := range list {
 		switch p.Name {
@@ -436,10 +440,11 @@ func TestCatalogue_ImportProducts_OpeningStock(t *testing.T) {
 		t.Fatalf("row Message = %q, want a note explaining opening_qty was skipped for lack of a warehouse", report2.Results[0].Message)
 	}
 
-	list, err := svc.ListProducts(ctx, principal)
+	page, err := svc.ListProducts(ctx, principal, 0, 0)
 	if err != nil {
 		t.Fatalf("ListProducts: %v", err)
 	}
+	list := page.Products
 	var stocked *cataloguedomain.Product
 	for _, p := range list {
 		if p.Name == stockedName {

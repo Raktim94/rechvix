@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -137,6 +138,87 @@ func TestCatalogue_SearchByName(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("SearchProducts(%q) did not return the matching product; got %d results", uniqueName, len(results))
+	}
+}
+
+// TestCatalogue_ListProducts_Paginates is the regression test for the
+// unbounded product list (CataloguePage.tsx used to load an org's entire
+// products table on every visit — a real problem once a retailer's
+// catalogue reaches tens of thousands of SKUs). Verifies limit actually
+// caps a page, offset actually advances through the set without repeating
+// or skipping rows, and Total always reflects every product regardless of
+// which page was requested.
+func TestCatalogue_ListProducts_Paginates(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestCatalogueService(t)
+	principal := bootstrapOwnerPrincipal(t, ctx)
+
+	pcs, err := svc.CreateUnitOfMeasure(ctx, principal, catalogueapp.CreateUnitOfMeasureParams{Code: "PCS", Name: "Pieces"})
+	if err != nil {
+		t.Fatalf("CreateUnitOfMeasure: %v", err)
+	}
+
+	const total = 5
+	created := make(map[string]bool, total)
+	for i := 0; i < total; i++ {
+		name := fmt.Sprintf("PageWidget-%s-%d", uuid.NewString()[:8], i)
+		if _, err := svc.CreateProduct(ctx, principal, catalogueapp.CreateProductParams{BaseUOMID: pcs.ID, Name: name}); err != nil {
+			t.Fatalf("CreateProduct(%d): %v", i, err)
+		}
+		created[name] = true
+	}
+
+	firstPage, err := svc.ListProducts(ctx, principal, 2, 0)
+	if err != nil {
+		t.Fatalf("ListProducts(limit=2, offset=0): %v", err)
+	}
+	if len(firstPage.Products) != 2 {
+		t.Fatalf("first page len = %d, want 2", len(firstPage.Products))
+	}
+	if firstPage.Total != total {
+		t.Fatalf("Total = %d, want %d", firstPage.Total, total)
+	}
+
+	secondPage, err := svc.ListProducts(ctx, principal, 2, 2)
+	if err != nil {
+		t.Fatalf("ListProducts(limit=2, offset=2): %v", err)
+	}
+	if len(secondPage.Products) != 2 {
+		t.Fatalf("second page len = %d, want 2", len(secondPage.Products))
+	}
+	if secondPage.Total != firstPage.Total {
+		t.Fatalf("Total changed between pages: %d vs %d", secondPage.Total, firstPage.Total)
+	}
+	for _, p := range firstPage.Products {
+		for _, q := range secondPage.Products {
+			if p.ID == q.ID {
+				t.Fatalf("product %s appeared on both pages — offset did not advance", p.ID)
+			}
+		}
+	}
+
+	// A limit bigger than the whole set returns everything in one page and
+	// still reports the same Total.
+	lastPage, err := svc.ListProducts(ctx, principal, 200, 4)
+	if err != nil {
+		t.Fatalf("ListProducts(limit=200, offset=4): %v", err)
+	}
+	if len(lastPage.Products) != 1 {
+		t.Fatalf("last page len = %d, want 1 (5 products, offset 4)", len(lastPage.Products))
+	}
+
+	all, err := svc.ListProducts(ctx, principal, 200, 0)
+	if err != nil {
+		t.Fatalf("ListProducts(limit=200, offset=0): %v", err)
+	}
+	found := 0
+	for _, p := range all.Products {
+		if created[p.Name] {
+			found++
+		}
+	}
+	if found != total {
+		t.Fatalf("found %d of %d created products in the full fetch", found, total)
 	}
 }
 
