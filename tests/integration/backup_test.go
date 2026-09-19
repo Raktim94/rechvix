@@ -97,10 +97,11 @@ func TestBackup_ExportInspectRestore_RoundTrips(t *testing.T) {
 		t.Fatalf("Restore: %v", err)
 	}
 
-	list, err := catalogueSvc.ListProducts(ctx, principal)
+	page, err := catalogueSvc.ListProducts(ctx, principal, 0, 0)
 	if err != nil {
 		t.Fatalf("ListProducts after restore: %v", err)
 	}
+	list := page.Products
 	var sawPre, sawPost bool
 	for _, p := range list {
 		if p.Name == preBackupName {
