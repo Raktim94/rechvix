@@ -88,10 +88,10 @@ const SchemaVersion = "v3-numeric-field-types-verified-2026-09-18"
 // silently producing broken JSON — the same "fail rather than guess"
 // posture the rest of this codebase already holds to.
 type portalDocument struct {
-	SupplyType        string `json:"supplyType"`              // "O" outward / "I" inward — this system only ever generates outward EWBs for its own sales
-	SubSupplyType     string `json:"subSupplyType"`           // see subSupplyTypeFor's caveat comment
+	SupplyType        string `json:"supplyType"`                  // "O" outward / "I" inward — this system only ever generates outward EWBs for its own sales
+	SubSupplyType     string `json:"subSupplyType"`               // see subSupplyTypeFor's caveat comment
 	SubSupplyTypeDesc string `json:"subSupplyTypeDesc,omitempty"` // required only when SubSupplyType is the "Others" code — field name corrected from this file's previous "subSupplyDesc" (wrong; not the schema's actual name, per source 2 & 3's cross-agreement)
-	DocType           string `json:"docType"`                 // INV/CHL/BIL/CRN/DBN/OTH
+	DocType           string `json:"docType"`                     // INV/CHL/BIL/CRN/DBN/OTH
 	DocNo             string `json:"docNo"`
 	DocDate           string `json:"docDate"` // DD/MM/YYYY
 
@@ -157,9 +157,9 @@ type portalItem struct {
 	// simpler source-1/2 samples but present (and populated from 1, not
 	// 0) in source 3's current concrete sample; harmless to include even
 	// if it turns out optional.
-	ItemNo        int         `json:"itemNo"`
-	ProductName   string      `json:"productName,omitempty"`
-	ProductDesc   string      `json:"productDesc,omitempty"`
+	ItemNo      int    `json:"itemNo"`
+	ProductName string `json:"productName,omitempty"`
+	ProductDesc string `json:"productDesc,omitempty"`
 	// HSNCode: sent as a bare number per the verified schema (Number(8) —
 	// source 3's field table), which means a real HSN chapter-01 code
 	// ("Live animals", e.g. "0101") loses its leading zero on the wire
@@ -169,7 +169,7 @@ type portalItem struct {
 	// field's type agrees it's numeric, so a chapter-01 HSN code hitting
 	// this same limitation is the verified schema's own constraint, not
 	// a gap in this implementation.
-	HSNCode json.Number `json:"hsnCode"`
+	HSNCode       json.Number `json:"hsnCode"`
 	Quantity      json.Number `json:"quantity"`
 	QtyUnit       string      `json:"qtyUnit,omitempty"`
 	TaxableAmount json.Number `json:"taxableAmount"`
@@ -217,10 +217,10 @@ func (m *Mapper) PrepareUpload(_ context.Context, bill canonical.CanonicalEWayBi
 		// B2C sale with no buyer GSTIN — never just omitting the
 		// (non-optional) field, same as ShipToGSTIN below already does.
 		ToGSTIN: firstNonEmpty(bill.Recipient.GSTIN, "URP"), ToTradeName: firstNonEmpty(bill.Recipient.TradeName, bill.Recipient.LegalName),
-		ToAddress1: firstNonEmpty(bill.ShipTo.AddressLine1, bill.Recipient.AddressLine1),
-		ToAddress2: firstNonEmpty(bill.ShipTo.AddressLine2, bill.Recipient.AddressLine2),
-		ToPlace:    firstNonEmpty(bill.ShipTo.City, bill.Recipient.City),
-		ToPincode:  numericCode(firstNonEmpty(bill.ShipTo.PostalCode, bill.Recipient.PostalCode)),
+		ToAddress1:  firstNonEmpty(bill.ShipTo.AddressLine1, bill.Recipient.AddressLine1),
+		ToAddress2:  firstNonEmpty(bill.ShipTo.AddressLine2, bill.Recipient.AddressLine2),
+		ToPlace:     firstNonEmpty(bill.ShipTo.City, bill.Recipient.City),
+		ToPincode:   numericCode(firstNonEmpty(bill.ShipTo.PostalCode, bill.Recipient.PostalCode)),
 		ToStateCode: numericCode(firstNonEmpty(bill.ShipTo.StateCode, bill.Recipient.StateCode)), ActualToState: numericCode(bill.ShipTo.StateCode),
 
 		TransactionType: transactionTypeFor(bill),
