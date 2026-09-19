@@ -18,6 +18,11 @@ node_modules/
 dist/
 .vite/
 
+# Playwright (tests/e2e)
+test-results/
+playwright-report/
+blob-report/
+
 # Rust / Tauri (apps/desktop, once it exists)
 target/
 
