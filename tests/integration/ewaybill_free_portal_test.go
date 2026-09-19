@@ -24,6 +24,7 @@ import (
 	gstindiapg "rechvix/internal/modules/gstindia/pg"
 	logisticsapp "rechvix/internal/modules/logistics/app"
 	logisticspg "rechvix/internal/modules/logistics/pg"
+	orgdomain "rechvix/internal/modules/organisation/domain"
 	salesapp "rechvix/internal/modules/sales/app"
 	salesdomain "rechvix/internal/modules/sales/domain"
 	taxationapp "rechvix/internal/modules/taxation/app"
@@ -107,6 +108,20 @@ func ewaybillRecordRepoGetScoped(t *testing.T, ctx context.Context, orgID, sales
 	return rec
 }
 
+// setSupplierPincode fills in the one piece of legal-entity master data
+// setupSalesFixture's Bootstrap call never sets (migrations/0043's
+// Pincode is configured later via Settings → Invoice branding, not at
+// bootstrap) — eligibility.Evaluate requires it on the supplier
+// (canonical.Build's Supplier.PostalCode), so any test that expects to
+// reach READY needs this first.
+func setSupplierPincode(t *testing.T, ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID, pincode string) {
+	t.Helper()
+	orgSvc := newTestOrgService(t)
+	if _, err := orgSvc.UpdateLegalEntityInvoiceBranding(ctx, principal, legalEntityID, orgdomain.InvoiceBrandingUpdate{Pincode: pincode}); err != nil {
+		t.Fatalf("UpdateLegalEntityInvoiceBranding: %v", err)
+	}
+}
+
 func addShippingAddress(t *testing.T, ctx context.Context, contactsSvc *contactsapp.Service, principal permissions.Principal, customerID uuid.UUID, city string) uuid.UUID {
 	t.Helper()
 	addr, err := contactsSvc.AddAddress(ctx, principal, contactsapp.AddAddressParams{
@@ -149,6 +164,7 @@ func TestEwaybillFreePortal_SnapshotImmutable_SurvivesLiveAddressEdit(t *testing
 	ctx := context.Background()
 	salesSvc, contactsSvc, _, ewSvc := newTestFreePortalEwaybillService(t)
 	fx := setupSalesFixture(t, ctx)
+	setSupplierPincode(t, ctx, fx.Principal, fx.LegalEntityID, "400001")
 	addrID := addShippingAddress(t, ctx, contactsSvc, fx.Principal, fx.CustomerID, "Bangalore")
 
 	// 10 * 6000 = 60,000 taxable, above the seeded ₹50,000 threshold (within the fixture's 100-unit opening stock).
@@ -226,6 +242,7 @@ func TestEwaybillFreePortal_Eligibility_AboveThreshold_ReadyWhenComplete(t *test
 	ctx := context.Background()
 	salesSvc, contactsSvc, _, ewSvc := newTestFreePortalEwaybillService(t)
 	fx := setupSalesFixture(t, ctx)
+	setSupplierPincode(t, ctx, fx.Principal, fx.LegalEntityID, "400001")
 	// 10 * 6000 = 60,000, above threshold; vehicle/transporter already
 	// set by createFinalizedInvoiceWithTransport. A shipping address is
 	// required too (ShipTo.StateCode is one of Evaluate's completeness
@@ -244,6 +261,7 @@ func TestEwaybillFreePortal_PrepareUpload_ProducesFileAndAwaitsCompletion(t *tes
 	ctx := context.Background()
 	salesSvc, contactsSvc, _, ewSvc := newTestFreePortalEwaybillService(t)
 	fx := setupSalesFixture(t, ctx)
+	setSupplierPincode(t, ctx, fx.Principal, fx.LegalEntityID, "400001")
 	addrID := addShippingAddress(t, ctx, contactsSvc, fx.Principal, fx.CustomerID, "Bangalore")
 	doc := createFinalizedInvoiceWithTransport(t, ctx, salesSvc, fx, "10", "6000", &addrID)
 	if req := evaluateAndSupplyDistance(t, ctx, ewSvc, fx.Principal.OrganisationID, doc.ID); req != eligibility.Ready {
@@ -401,6 +419,7 @@ func TestEwaybillFreePortal_APIFailureFallback_SucceedsWithoutReentry(t *testing
 	ctx := context.Background()
 	salesSvc, contactsSvc, provider, ewSvc := newTestFreePortalEwaybillService(t)
 	fx := setupSalesFixture(t, ctx)
+	setSupplierPincode(t, ctx, fx.Principal, fx.LegalEntityID, "400001")
 	addrID := addShippingAddress(t, ctx, contactsSvc, fx.Principal, fx.CustomerID, "Bangalore")
 	doc := createFinalizedInvoiceWithTransport(t, ctx, salesSvc, fx, "10", "6000", &addrID)
 
@@ -491,6 +510,7 @@ func TestEwaybillFreePortal_PrepareBatch_SkipsIneligibleAndGroupsTheRest(t *test
 	ctx := context.Background()
 	salesSvc, contactsSvc, _, ewSvc := newTestFreePortalEwaybillService(t)
 	fx := setupSalesFixture(t, ctx)
+	setSupplierPincode(t, ctx, fx.Principal, fx.LegalEntityID, "400001")
 	addrID := addShippingAddress(t, ctx, contactsSvc, fx.Principal, fx.CustomerID, "Bangalore")
 
 	// Two docs above the seeded ₹50,000 threshold, brought to READY the
