@@ -4,6 +4,46 @@ Staged per `docs/architecture.md` §16 / `docs/TODO.md`. A stage is listed
 here once it has real passing unit *and* integration tests — see
 `docs/TODO.md` for exactly what's built vs. in progress within a stage.
 
+## Stage 15 — Catalogue pagination, a11y regression suite, backup/MSIX docs (2026-09-19)
+- **Fixed a real scale bug**: the product catalogue list loaded every
+  product for an organisation into the browser on every visit, with no
+  server-side limit. `ProductRepo.ListByOrganisation` now takes
+  `limit`/`offset` and returns a total count; `CataloguePage` sends
+  paginated requests (50/page) with Previous/Next controls. Proven with
+  a new integration test (`TestCatalogue_ListProducts_Paginates`), not
+  just a UI change — this matters for any customer with a large SKU
+  count, which this platform explicitly targets (distributors,
+  multi-branch retailers).
+- Added a real, CI-wired accessibility regression suite
+  (`tests/e2e`, Playwright + axe-core): an axe scan of the login page
+  (zero serious/critical violations — two pre-existing moderate
+  landmark issues are flagged, not silently hidden) and a keyboard-only
+  tab-order smoke test. Runs on every PR and push to `main` alongside
+  the existing Go/frontend/Docker jobs. `tests/e2e` was previously an
+  empty placeholder.
+- Documented backup/restore properly for the first time
+  (`docs/operations/backup-restore.md`): the feature itself already
+  existed and was CI-tested, but had no operator-facing runbook. Added a
+  concrete restore-drill procedure (spin up a scratch Postgres, restore
+  into it, verify row counts and the trial-balance invariant), a
+  scheduled-export script, and the real upgrade/migration mechanism.
+  Also surfaced a real gap while writing it: API keys have no
+  `backup.manage` scope mapping, so only session-cookie auth can
+  actually call export/restore today.
+- Drafted `apps/desktop/msix/TERMS_AND_PRIVACY.md` for the Microsoft
+  Store submission (Store ID `9NMPSP7CR5RW`) — none existed, and
+  Partner Center requires one. Marked as a draft pending legal review.
+- Fixed `gofmt` drift in `apps/server/main.go`,
+  `ewaybill/portal/v1/mapper.go`, and `organisation/domain/domain.go`
+  that had been silently failing CI's go-static job across several
+  prior commits.
+- Known, not fixed this stage: `govulncheck` now flags
+  `github.com/xuri/excelize/v2` (GO-2026-6452, XLSX import path) —
+  a newly-disclosed third-party CVE, unrelated to this stage's changes;
+  and 5 pre-existing `ewaybill_free_portal_test.go` integration test
+  failures (HSN/PIN-code eligibility) predate this stage too, confirmed
+  against the unmodified baseline.
+
 ## Stage 14 — Phone validation/search, WhatsApp PDF share, receivables reminders (2026-09-13)
 - Party (customer/supplier) phone numbers must now be exactly 10 digits
   and unique within an organisation (DB partial unique index + app-level
