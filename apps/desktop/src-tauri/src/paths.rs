@@ -23,6 +23,18 @@ use tauri::{AppHandle, Manager};
 
 pub struct AppPaths {
     pub install_dir: PathBuf,
+    /// A plain, writable directory every spawned Command explicitly uses
+    /// as its working directory — see `start_backend`'s use of it via
+    /// `Command::current_dir`. Never rely on inheriting our own process's
+    /// CWD for a child that itself launches a further child (pg_ctl
+    /// relaunching postgres under a restricted token): a packaged app's
+    /// own default CWD can resolve somewhere under the ACL-locked
+    /// `install_dir`/WindowsApps tree, and a restricted token that can't
+    /// traverse into it makes `CreateProcess` fail with "The system
+    /// cannot find the path specified" — confirmed against a real MSIX
+    /// install, this exact error, once `pg_ctl` tried to re-launch
+    /// `postgres.exe`.
+    pub data_dir: PathBuf,
     pub pg_install_source_dir: PathBuf,
     pub pg_install_dir: PathBuf,
     pub pgdata_dir: PathBuf,
@@ -81,6 +93,7 @@ impl AppPaths {
         Ok(Self {
             pg_install_source_dir: install_dir.join("pgsql"),
             pg_install_dir: data_dir.join("pgsql"),
+            data_dir: data_dir.clone(),
             install_dir,
             pgdata_dir,
             secrets_dir: secrets_dir.clone(),

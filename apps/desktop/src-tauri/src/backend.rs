@@ -145,7 +145,8 @@ fn ensure_writable_pg_install(paths: &AppPaths) -> Result<(), StartupError> {
         .arg("/E") // include subdirectories, including empty ones
         .arg("/R:2").arg("/W:1") // don't hang retrying a locked file for the default 1M×30s
         .arg("/MT:8") // multi-threaded — the thousands-of-small-files case this exists for
-        .arg("/NFL").arg("/NDL").arg("/NJH").arg("/NJS").arg("/NP"); // quiet: only the exit code matters
+        .arg("/NFL").arg("/NDL").arg("/NJH").arg("/NJS").arg("/NP") // quiet: only the exit code matters
+        .current_dir(&paths.data_dir); // never inherit a CWD under the packaged install_dir — see AppPaths::data_dir
     no_window(&mut cmd);
     let status = cmd.status().map_err(|e| {
         StartupError::Initdb(format!("could not copy the bundled database into a writable location: {e}"))
@@ -194,7 +195,8 @@ fn run_initdb(paths: &AppPaths) -> Result<(), StartupError> {
         .arg("--auth").arg("trust")
         .arg("--encoding").arg("UTF8")
         .stdout(append_log(&paths.pg_log_file))
-        .stderr(append_log(&paths.pg_log_file));
+        .stderr(append_log(&paths.pg_log_file))
+        .current_dir(&paths.data_dir);
     no_window(&mut cmd);
     let status = cmd.status().map_err(|e| StartupError::Initdb(e.to_string()))?;
     if !status.success() {
@@ -233,7 +235,8 @@ fn start_postgres(paths: &AppPaths, port: u16) -> Result<(), StartupError> {
         // in which case `-l`'s file stays empty and this is the only
         // place any diagnostic ends up.
         .stdout(append_log(&paths.pgctl_log_file))
-        .stderr(append_log(&paths.pgctl_log_file));
+        .stderr(append_log(&paths.pgctl_log_file))
+        .current_dir(&paths.data_dir);
     no_window(&mut cmd);
     let status = cmd.status().map_err(|e| StartupError::PostgresStart(e.to_string()))?;
     if !status.success() {
@@ -310,7 +313,8 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
         .env("AEAD_ENCRYPTION_KEY", &aead_key)
         .env("LOG_LEVEL", "info")
         .stdout(append_log(&paths.server_log_file))
-        .stderr(append_log(&paths.server_log_file));
+        .stderr(append_log(&paths.server_log_file))
+        .current_dir(&paths.data_dir);
     no_window(&mut cmd);
     let mut server_process = match cmd.spawn() {
         Ok(child) => child,
@@ -338,7 +342,8 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
 
 fn pg_process_stop(paths: &AppPaths) -> std::io::Result<std::process::ExitStatus> {
     let mut cmd = Command::new(paths.pg_bin("pg_ctl"));
-    cmd.arg("stop").arg("-D").arg(&paths.pgdata_dir).arg("-m").arg("fast").arg("-t").arg("20");
+    cmd.arg("stop").arg("-D").arg(&paths.pgdata_dir).arg("-m").arg("fast").arg("-t").arg("20")
+        .current_dir(&paths.data_dir);
     no_window(&mut cmd);
     cmd.status()
 }
