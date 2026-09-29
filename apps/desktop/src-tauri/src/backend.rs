@@ -23,7 +23,6 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 pub struct RunningBackend {
-    pg_process: Child,
     server_process: Child,
     pub http_port: u16,
 }
@@ -33,7 +32,6 @@ pub enum StartupError {
     PortUnavailable(String),
     Initdb(String),
     PostgresStart(String),
-    PostgresUnready,
     ServerSpawn(String),
     ServerExited(String),
     ServerUnhealthy,
@@ -53,10 +51,7 @@ impl StartupError {
                 "Rechvix couldn't set up its local database ({e}). Check free disk space, then try reopening Rechvix. Details: {logs}"
             ),
             StartupError::PostgresStart(e) => format!(
-                "Rechvix's local database didn't start ({e}). Details: {logs}"
-            ),
-            StartupError::PostgresUnready => format!(
-                "Rechvix's local database is taking longer than expected to start. This can happen on first launch or on a slow disk — try waiting a moment and reopening Rechvix. Details: {logs}"
+                "Rechvix's local database didn't start ({e}). This can happen on first launch or on a slow disk — try waiting a moment and reopening Rechvix. Details: {logs}"
             ),
             StartupError::ServerSpawn(e) => format!(
                 "Rechvix couldn't start its own server ({e}). Details: {logs}"
@@ -208,34 +203,36 @@ fn run_initdb(paths: &AppPaths) -> Result<(), StartupError> {
     Ok(())
 }
 
-fn start_postgres(paths: &AppPaths, port: u16) -> Result<Child, StartupError> {
-    let mut cmd = Command::new(paths.pg_bin("postgres"));
-    cmd.arg("-D").arg(&paths.pgdata_dir)
-        .arg("-p").arg(port.to_string())
-        .arg("-h").arg("127.0.0.1") // never 0.0.0.0 — see the trust-auth note above
-        .arg("-c").arg("logging_collector=off")
-        .stdout(append_log(&paths.pg_log_file))
-        .stderr(append_log(&paths.pg_log_file));
+/// Starts Postgres via `pg_ctl start`, not by spawning `postgres.exe`
+/// directly — confirmed necessary against a real MSIX install: `postgres`
+/// refuses outright to run under a token with the Administrators group
+/// enabled ("Execution of PostgreSQL by a user with administrative
+/// permissions is not permitted"), which a GitHub Actions Windows runner
+/// hits (its default account runs fully elevated, unlike a normal
+/// UAC-filtered desktop session — a real user double-clicking this app's
+/// Start Menu tile runs at the same medium integrity level our
+/// `packagedClassicApp` manifest already declares, so this is expected to
+/// be a CI-environment-specific wrinkle, not a real end-user blocker, but
+/// `pg_ctl` is the actual documented fix either way). `pg_ctl start` on
+/// Windows automatically detects an elevated token and re-launches
+/// postgres under a restricted one (`CreateRestrictedToken` internally) —
+/// this is Postgres's own built-in answer to exactly this situation, not
+/// a workaround bolted on here. `-w` makes pg_ctl block until the server
+/// is actually accepting connections (or the timeout elapses), which
+/// folds in what a separate pg_isready poll would otherwise do.
+fn start_postgres(paths: &AppPaths, port: u16) -> Result<(), StartupError> {
+    let mut cmd = Command::new(paths.pg_bin("pg_ctl"));
+    cmd.arg("start")
+        .arg("-D").arg(&paths.pgdata_dir)
+        .arg("-l").arg(&paths.pg_log_file)
+        .arg("-w").arg("-t").arg("30")
+        .arg("-o").arg(format!("-p {port} -h 127.0.0.1")); // never 0.0.0.0 — see the trust-auth note above
     no_window(&mut cmd);
-    cmd.spawn().map_err(|e| StartupError::PostgresStart(e.to_string()))
-}
-
-fn wait_for_postgres_ready(paths: &AppPaths, port: u16, timeout: Duration) -> Result<(), StartupError> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        let mut cmd = Command::new(paths.pg_bin("pg_isready"));
-        cmd.arg("-h").arg("127.0.0.1").arg("-p").arg(port.to_string());
-        no_window(&mut cmd);
-        if let Ok(status) = cmd.status() {
-            if status.success() {
-                return Ok(());
-            }
-        }
-        if Instant::now() >= deadline {
-            return Err(StartupError::PostgresUnready);
-        }
-        std::thread::sleep(Duration::from_millis(300));
+    let status = cmd.status().map_err(|e| StartupError::PostgresStart(e.to_string()))?;
+    if !status.success() {
+        return Err(StartupError::PostgresStart(format!("pg_ctl start exited with {status}")));
     }
+    Ok(())
 }
 
 fn wait_for_http_ready(port: u16, server: &mut Child, timeout: Duration) -> Result<(), StartupError> {
@@ -285,18 +282,12 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
 
     ensure_writable_pg_install(paths)?;
     run_initdb(paths)?;
-    let mut pg_process = start_postgres(paths, pg_port)?;
-    if let Err(e) = wait_for_postgres_ready(paths, pg_port, Duration::from_secs(20)) {
-        let _ = pg_process.kill();
-        let _ = pg_process.wait();
-        return Err(e);
-    }
+    start_postgres(paths, pg_port)?; // blocks until Postgres is actually ready (pg_ctl -w) or returns an error
 
     let aead_key = match secrets::load_or_generate_aead_key(paths) {
         Ok(key) => key,
         Err(e) => {
             let _ = pg_process_stop(paths);
-            let _ = pg_process.wait();
             return Err(StartupError::ServerSpawn(e));
         }
     };
@@ -318,7 +309,6 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
         Ok(child) => child,
         Err(e) => {
             let _ = pg_process_stop(paths);
-            let _ = pg_process.wait();
             return Err(StartupError::ServerSpawn(e.to_string()));
         }
     };
@@ -331,13 +321,12 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
         let _ = server_process.kill();
         let _ = server_process.wait();
         let _ = pg_process_stop(paths);
-        let _ = pg_process.wait();
         return Err(e);
     }
 
     write_runtime_info(paths, http_port, pg_port, server_process.id());
 
-    Ok(RunningBackend { pg_process, server_process, http_port })
+    Ok(RunningBackend { server_process, http_port })
 }
 
 fn pg_process_stop(paths: &AppPaths) -> std::io::Result<std::process::ExitStatus> {
@@ -358,5 +347,4 @@ pub fn stop_backend(mut backend: RunningBackend, paths: &AppPaths) {
     let _ = backend.server_process.kill();
     let _ = backend.server_process.wait();
     let _ = pg_process_stop(paths);
-    let _ = backend.pg_process.wait();
 }
