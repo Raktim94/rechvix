@@ -30,6 +30,11 @@ pub struct AppPaths {
     pub server_log_file: PathBuf,
     pub pg_log_file: PathBuf,
     pub runtime_info_file: PathBuf,
+    /// Written (and cleared on the next successful start) whenever
+    /// `start_backend` fails — a stable, documented location external
+    /// tooling (or a support request) can point at, separate from the
+    /// in-window error message which only exists inside a live webview.
+    pub startup_error_file: PathBuf,
 }
 
 fn exe_name(base: &str) -> String {
@@ -74,6 +79,7 @@ impl AppPaths {
             server_log_file: logs_dir.join("server.log"),
             pg_log_file: logs_dir.join("postgres.log"),
             runtime_info_file: data_dir.join("runtime.json"),
+            startup_error_file: data_dir.join("startup-error.txt"),
         })
     }
 

@@ -49,6 +49,7 @@ fn attempt_startup(app: AppHandle) {
 
     match backend::start_backend(&paths) {
         Ok(running) => {
+            let _ = std::fs::remove_file(&paths.startup_error_file); // clear any stale failure from a previous attempt
             let port = running.http_port;
             if let Some(state) = app.try_state::<BackendState>() {
                 *state.0.lock().unwrap() = Some(running);
@@ -59,7 +60,16 @@ fn attempt_startup(app: AppHandle) {
                 }
             }
         }
-        Err(e) => show_error(&app, &e.user_message(&paths)),
+        Err(e) => {
+            let message = e.user_message(&paths);
+            // Written unconditionally, separate from the in-window JS
+            // eval below — this is what makes a failed launch debuggable
+            // from the outside (CI, or a user who can't get a screenshot
+            // of the error text out): a stable, documented file path
+            // rather than only a message drawn into a webview.
+            let _ = std::fs::write(&paths.startup_error_file, &message);
+            show_error(&app, &message);
+        }
     }
 }
 

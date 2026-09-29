@@ -74,9 +74,24 @@ Write-Host "==> Open: window visible with a real handle — confirmed above" -Fo
 # implementation detail not worth pinning down by hand here).
 $localDataRoot = Join-Path $env:LOCALAPPDATA "Packages\$($pkg.PackageFamilyName)"
 Write-Host "==> Waiting for the bundled backend to report ready ($localDataRoot)" -ForegroundColor Cyan
-Wait-ForCondition "runtime.json to appear (backend finished starting)" {
-  Get-ChildItem -Path $localDataRoot -Recurse -Filter "runtime.json" -ErrorAction SilentlyContinue
-} 60
+try {
+  Wait-ForCondition "runtime.json to appear (backend finished starting)" {
+    Get-ChildItem -Path $localDataRoot -Recurse -Filter "runtime.json" -ErrorAction SilentlyContinue
+  } 60
+} catch {
+  Write-Host "==> Backend never reported ready — dumping whatever diagnostics exist under $localDataRoot" -ForegroundColor Red
+  Get-ChildItem -Path $localDataRoot -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    found: $($_.FullName)" }
+  foreach ($name in @("startup-error.txt", "server.log", "postgres.log")) {
+    $found = Get-ChildItem -Path $localDataRoot -Recurse -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) {
+      Write-Host "----- $($found.FullName) -----" -ForegroundColor Yellow
+      Get-Content $found.FullName -Tail 100 | Write-Host
+    } else {
+      Write-Host "    ($name not found anywhere under $localDataRoot)" -ForegroundColor Yellow
+    }
+  }
+  throw
+}
 $runtimeInfoPath = (Get-ChildItem -Path $localDataRoot -Recurse -Filter "runtime.json" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
 $runtimeInfo = Get-Content $runtimeInfoPath | ConvertFrom-Json
 $httpPort = $runtimeInfo.http_port
