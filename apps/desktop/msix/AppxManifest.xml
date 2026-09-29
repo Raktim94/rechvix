@@ -8,7 +8,12 @@
   already produces at src-tauri/target/release/desktop.exe, NOT the
   NSIS/WiX installer Tauri can also produce, which is a separate,
   unrelated distribution path. build-msix.ps1 assembles the package
-  layout this manifest describes.
+  layout this manifest describes — as of v0.2.0.0 that layout also
+  includes a cross-compiled rechvix-server.exe, the built apps/web SPA,
+  and a portable Postgres install (pgsql\), all as plain siblings of
+  desktop.exe, which is how the app finds them at runtime (see
+  src-tauri/src/paths.rs). This is what makes the app fully
+  self-contained/offline instead of a thin window onto an external server.
 
   Identity Name/Publisher below are the real values Partner Center
   assigned when the app name was reserved (Store ID 9NMPSP7CR5RW,
@@ -26,14 +31,14 @@
 
   <Identity
     Name="NODEDRINFOTECHLIMITED.Rechvix"
-    Version="0.1.1.0"
+    Version="0.2.0.0"
     Publisher="CN=11C721FC-E399-4888-B532-7BFCD5C491B3"
     ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>Rechvix</DisplayName>
     <PublisherDisplayName>NODEDR INFOTECH LIMITED</PublisherDisplayName>
-    <Description>Self-hosted billing, inventory, accounting, and India GST: a thin desktop window onto your own rechvix server. No data leaves your server; this app has no logic of its own beyond showing it.</Description>
+    <Description>Self-hosted billing, inventory, accounting, and India GST — fully self-contained: this package bundles the real rechvix server and its own local database, so it runs entirely offline with no account, no server, and no internet connection required. Open it and create your business account on the spot.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -53,11 +58,11 @@
     <!-- Required for any packaged classic Win32 app; without it the app
          cannot run at all under Desktop Bridge. -->
     <rescap:Capability Name="runFullTrust" />
-    <!-- The webview needs to reach whatever server URL the user enters
-         (their own self-hosted rechvix instance). No other capability
-         is declared: this app has no filesystem/camera/etc. access
-         beyond what a packaged full-trust app already gets. -->
-    <Capability Name="internetClient" />
+    <!-- Deliberately no `internetClient` (or any other) capability: the
+         bundled server and Postgres only ever talk to 127.0.0.1, and v1
+         doesn't run the optional worker process (government e-Invoice/
+         e-Way Bill API calls, webhooks, notification sends), so this app
+         makes no outbound network calls of its own at all. -->
   </Capabilities>
 
   <Applications>
@@ -68,7 +73,7 @@
       uap10:TrustLevel="mediumIL">
       <uap:VisualElements
         DisplayName="Rechvix"
-        Description="Self-hosted billing, inventory, accounting, and India GST"
+        Description="Self-hosted billing, inventory, accounting, and India GST — fully offline, no server or account required"
         BackgroundColor="#2F3870"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />

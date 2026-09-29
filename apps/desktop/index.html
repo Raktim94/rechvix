@@ -4,31 +4,26 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Rechvix — Server settings</title>
+    <title>Rechvix</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
     <main class="container">
-      <h1>Connect to your rechvix server</h1>
-      <p class="hint">
-        Enter the address of your self-hosted rechvix install — e.g.
-        <code>https://rechvix.example.com</code> or, for a local
-        install, <code>http://localhost:8090</code>.
-      </p>
+      <div id="loading-state">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>Starting Rechvix…</h1>
+        <p class="hint">
+          Setting up your local database on first launch can take a little
+          longer than usual.
+        </p>
+      </div>
 
-      <form id="server-form">
-        <input
-          id="server-url"
-          type="text"
-          inputmode="url"
-          autocomplete="url"
-          placeholder="https://rechvix.example.com"
-          autofocus
-        />
-        <button type="submit" id="connect-button">Connect</button>
-      </form>
-      <p id="server-error" role="alert"></p>
+      <div id="error-state" hidden>
+        <h1>Couldn't start Rechvix</h1>
+        <p id="error-message" class="hint" role="alert"></p>
+        <button type="button" id="retry-button">Try again</button>
+      </div>
     </main>
   </body>
 </html>

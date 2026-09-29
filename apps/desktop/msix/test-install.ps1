@@ -65,6 +65,36 @@ Write-Host "    OK: desktop.exe PID $($proc.Id), hwnd $hwnd" -ForegroundColor Gr
 
 Write-Host "==> Open: window visible with a real handle — confirmed above" -ForegroundColor Cyan
 
+# The bundled backend (Postgres + rechvix-server.exe) starts asynchronously
+# after the window appears — src-tauri writes runtime.json (via
+# AppPaths::resolve()'s app_local_data_dir(), which Windows redirects into
+# this package's own storage) once /health/ready is actually passing.
+# Searched recursively rather than hardcoding the exact redirected
+# subfolder (LocalCache\Local vs LocalState is a Tauri/dirs-crate/Windows
+# implementation detail not worth pinning down by hand here).
+$localDataRoot = Join-Path $env:LOCALAPPDATA "Packages\$($pkg.PackageFamilyName)"
+Write-Host "==> Waiting for the bundled backend to report ready ($localDataRoot)" -ForegroundColor Cyan
+Wait-ForCondition "runtime.json to appear (backend finished starting)" {
+  Get-ChildItem -Path $localDataRoot -Recurse -Filter "runtime.json" -ErrorAction SilentlyContinue
+} 60
+$runtimeInfoPath = (Get-ChildItem -Path $localDataRoot -Recurse -Filter "runtime.json" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+$runtimeInfo = Get-Content $runtimeInfoPath | ConvertFrom-Json
+$httpPort = $runtimeInfo.http_port
+Write-Host "    OK: backend reports http_port=$httpPort (pg_port=$($runtimeInfo.pg_port))" -ForegroundColor Green
+
+Write-Host "==> Healthcheck: GET http://127.0.0.1:$httpPort/health/ready" -ForegroundColor Cyan
+$health = Invoke-WebRequest "http://127.0.0.1:$httpPort/health/ready" -UseBasicParsing
+if ($health.StatusCode -ne 200) { throw "Expected 200 from /health/ready, got $($health.StatusCode)." }
+Write-Host "    OK: bundled server is healthy and serving on 127.0.0.1" -ForegroundColor Green
+
+Write-Host "==> Bootstrap screen reachable (fresh install, no organisation yet)" -ForegroundColor Cyan
+$bootstrap = Invoke-WebRequest "http://127.0.0.1:$httpPort/api/v1/auth/bootstrap" -UseBasicParsing
+$bootstrapBody = $bootstrap.Content | ConvertFrom-Json
+if (-not $bootstrapBody.available) {
+  throw "Expected /api/v1/auth/bootstrap to report available:true on a fresh install (got $($bootstrap.Content)) — first launch should always be able to create an account."
+}
+Write-Host "    OK: account creation is available on first launch, no pre-existing data" -ForegroundColor Green
+
 Write-Host "==> Minimize" -ForegroundColor Cyan
 [Win32]::ShowWindow($hwnd, $SW_MINIMIZE) | Out-Null
 Wait-ForCondition "IsIconic true" { [Win32]::IsIconic($hwnd) }
@@ -105,6 +135,12 @@ Start-Sleep -Seconds 2
 if (Get-AppxPackage -Name $identityName) { throw "Package still present after Remove-AppxPackage." }
 if (Test-Path $installLocation) { throw "Install directory $installLocation still exists after uninstall." }
 Write-Host "    OK: package and install directory fully removed" -ForegroundColor Green
+
+Write-Host "==> Confirming local data (pgdata + AEAD key + runtime.json) cleaned up too" -ForegroundColor Cyan
+if (Test-Path $localDataRoot) {
+  throw "Local data directory $localDataRoot still exists after uninstall — pgdata/secrets not cleaned up."
+}
+Write-Host "    OK: local data directory fully removed" -ForegroundColor Green
 
 Write-Host "==> Re-install after uninstall (update/reset flow)" -ForegroundColor Cyan
 Add-AppxPackage -Path $msixPath

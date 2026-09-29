@@ -552,10 +552,18 @@ the generic compose file and the CasaOS one.
 is intentionally thin: window chrome, native menu, local file-save dialogs,
 maybe a barcode-scanner USB-HID bridge — **zero** tax/inventory/accounting/
 permission logic duplicated into Rust or JS; the desktop app talks to the
-same Go server (`http://localhost` for a local install, or a remote server
-URL for hosted). MSIX packaging/signing/Store submission is deferred until
-there's a working, tested desktop build to package — premature to design
-signing pipelines before the app exists.
+same Go server. As of v0.2.0.0 the MSIX build bundles that Go server (a
+Windows cross-compile of `apps/server`) plus a portable Postgres directly
+in the package, and the shell starts both as local child processes on
+launch (`apps/desktop/src-tauri/src/backend.rs`) instead of asking the
+user which server to connect to — so the app works fully offline with
+zero setup, landing first-time users straight on the existing
+account-creation ("Set up your business") screen. This also structurally
+resolves a real Store certification rejection (policy 10.3.1, "App Is
+Testable") that a purely thin-client build hit: a reviewer has no test
+account or server to connect to unless the app can stand entirely on its
+own. See `apps/desktop/README.md` and `apps/desktop/TESTING.md` for the
+packaging/testing details.
 
 ## 14. Testing strategy
 

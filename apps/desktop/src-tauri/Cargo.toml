@@ -1,7 +1,7 @@
 [package]
 name = "desktop"
 version = "0.1.0"
-description = "Rechvix desktop shell — a thin native window around your self-hosted rechvix server, no business logic duplicated here (see docs/architecture.md §13 in the main rechvix repo)."
+description = "Rechvix desktop shell — bundles and runs the real rechvix server + a local Postgres database, no business logic duplicated here (see docs/architecture.md §13 in the main rechvix repo)."
 authors = ["NodeDR Infotech Private Limited"]
 edition = "2021"
 
@@ -20,10 +20,17 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
+rand = "0.8"
+base64 = "0.22"
+# Tiny blocking HTTP client for the local /health/ready poll during
+# startup — deliberately not reqwest/tokio: the whole backend-startup
+# sequence (initdb, pg_ctl, the healthcheck loop) is blocking I/O run on
+# a dedicated thread (see lib.rs's spawn_blocking), so there's no async
+# runtime to hang a client off in the first place.
+ureq = { version = "2", default-features = false }
 
 # Desktop-only: a second launch (double-clicking the Start Menu tile while
 # it's already running) should focus the existing window, not spawn a

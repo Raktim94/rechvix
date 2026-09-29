@@ -1,35 +1,28 @@
 import { invoke } from "@tauri-apps/api/core";
 
-const form = document.querySelector<HTMLFormElement>("#server-form")!;
-const urlInput = document.querySelector<HTMLInputElement>("#server-url")!;
-const connectButton = document.querySelector<HTMLButtonElement>("#connect-button")!;
-const errorEl = document.querySelector<HTMLParagraphElement>("#server-error")!;
+const loadingState = document.querySelector<HTMLDivElement>("#loading-state")!;
+const errorState = document.querySelector<HTMLDivElement>("#error-state")!;
+const errorMessage = document.querySelector<HTMLParagraphElement>("#error-message")!;
+const retryButton = document.querySelector<HTMLButtonElement>("#retry-button")!;
 
-// Prefills the field on "Change Server…" (reopening this same page in its
-// own small window) so it isn't blank — on first run this just resolves
-// to nothing and the field stays empty, which is correct there too.
-invoke<string | null>("get_server_url")
-  .then((saved) => {
-    if (saved) urlInput.value = saved;
-  })
-  .catch(() => {
-    // No saved URL yet (or the store genuinely has nothing) — leave the
-    // field blank rather than surfacing this as an error; there's
-    // nothing actionable for a first-run user here.
+/// Called from Rust (`window.eval("window.showStartupError(...)")`) when
+/// the bundled Postgres/server backend fails to start. There's no more
+/// "which server?" settings page to fall back to, so this is the only
+/// thing a failed launch shows — it has to carry enough detail to be
+/// actionable (see backend.rs's StartupError::user_message).
+(window as unknown as { showStartupError: (message: string) => void }).showStartupError = (
+  message: string,
+) => {
+  loadingState.hidden = true;
+  errorMessage.textContent = message;
+  errorState.hidden = false;
+};
+
+retryButton.addEventListener("click", () => {
+  errorState.hidden = true;
+  loadingState.hidden = false;
+  invoke("retry_startup").catch(() => {
+    // retry_startup reports failure via showStartupError itself (same
+    // path as the initial attempt); nothing extra to do here.
   });
-
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  errorEl.textContent = "";
-  connectButton.disabled = true;
-  connectButton.textContent = "Connecting…";
-
-  invoke("save_server_url", { url: urlInput.value })
-    .catch((err) => {
-      errorEl.textContent = typeof err === "string" ? err : "Could not save that address.";
-    })
-    .finally(() => {
-      connectButton.disabled = false;
-      connectButton.textContent = "Connect";
-    });
 });

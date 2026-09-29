@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# build-msix.ps1 cross-compiles apps/server into this exe for bundling —
+# it's a build artifact of the main Go source, not source itself.
+rechvix-server.exe
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

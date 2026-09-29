@@ -1,97 +1,83 @@
 // Rechvix desktop shell.
 //
-// This is intentionally the *entire* app: a native window that either
-// shows the first-run "which server?" page (bundled index.html) or, once
-// a server URL has been saved, points straight at that server —
-// http://localhost:8090 for a local install, or a remote/hosted URL. No
-// tax/inventory/accounting/permission logic lives here; the app talks to
-// the same rechvix Go server everyone else does (docs/architecture.md
-// §13 in the main rechvix repo). Once the main window is showing the
-// real rechvix UI, that page is just a normal website in the webview —
-// it is never granted access to any Tauri API (see
-// capabilities/default.json's `windows` scoping), so this shell adds no
-// attack surface beyond "open this one window".
+// This bundles the real backend: on launch it starts a local Postgres
+// instance and the rechvix-server binary as child processes (both on
+// 127.0.0.1 only — see backend.rs), then points the main window at the
+// server it just started. No tax/inventory/accounting/permission logic
+// lives here in Rust or JS — that's all in the Go server, same as every
+// other rechvix deployment (docs/architecture.md §13 in the main repo).
+// The difference from a normal self-hosted install is only *where* that
+// server runs: bundled and local instead of something you set up
+// yourself, so the app works offline with zero setup, and first launch
+// lands on the product's own account-creation ("bootstrap") screen
+// instead of asking "which server?".
+//
+// build-msix.ps1 is what actually assembles the pieces this code expects
+// to find next to its own exe (rechvix-server.exe, web/, pgsql/) — see
+// paths.rs's module comment for why "next to this exe" rather than
+// Tauri's own externalBin/resources bundler mechanism, which MSIX
+// packaging bypasses entirely.
 
+mod backend;
+mod paths;
+mod secrets;
+
+use backend::RunningBackend;
+use paths::AppPaths;
+use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, SubmenuBuilder};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_store::StoreExt;
+use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
-const STORE_FILE: &str = "settings.json";
-const SERVER_URL_KEY: &str = "server_url";
-const SETTINGS_WINDOW_LABEL: &str = "settings";
+struct BackendState(Mutex<Option<RunningBackend>>);
 
-/// A saved server URL must be a real http(s) URL — anything else (a bare
-/// hostname, a `file://` path, a typo) would otherwise get handed
-/// straight to `WebviewWindow::navigate` and fail confusingly deep inside
-/// the webview instead of with a clear message on the form that took it.
-fn parse_server_url(raw: &str) -> Result<Url, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err("Enter your rechvix server's address.".into());
-    }
-    let url = Url::parse(trimmed)
-        .map_err(|_| "That doesn't look like a valid URL — e.g. https://rechvix.example.com or http://192.168.1.40:8090".to_string())?;
-    match url.scheme() {
-        "http" | "https" => Ok(url),
-        other => Err(format!("Unsupported address scheme \"{other}:\" — use http:// or https://")),
+/// Runs the full startup sequence and either navigates the main window to
+/// the now-running local server, or shows the failure in the loading
+/// window itself — there's no settings-page fallback anymore, so every
+/// failure has to be legible right here. Shared between the initial
+/// launch (`.setup()`) and the "Try again" button's `retry_startup`
+/// command, since both need to do exactly the same thing.
+fn attempt_startup(app: AppHandle) {
+    let paths = match AppPaths::resolve(&app) {
+        Ok(p) => p,
+        Err(e) => {
+            show_error(&app, &e);
+            return;
+        }
+    };
+
+    match backend::start_backend(&paths) {
+        Ok(running) => {
+            let port = running.http_port;
+            if let Some(state) = app.try_state::<BackendState>() {
+                *state.0.lock().unwrap() = Some(running);
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(url) = Url::parse(&format!("http://127.0.0.1:{port}/")) {
+                    let _ = window.navigate(url);
+                }
+            }
+        }
+        Err(e) => show_error(&app, &e.user_message(&paths)),
     }
 }
 
-fn read_saved_server_url(app: &AppHandle) -> Option<Url> {
-    let store = app.store(STORE_FILE).ok()?;
-    let raw = store.get(SERVER_URL_KEY)?;
-    let raw = raw.as_str()?;
-    Url::parse(raw).ok()
+fn show_error(app: &AppHandle, message: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(payload) = serde_json::to_string(message) {
+            let _ = window.eval(&format!("window.showStartupError({payload})"));
+        }
+    }
 }
 
-/// Called from the bundled settings page (first run, or reopened later
-/// via the "Change Server…" menu item) once the user submits an address.
-/// Persists it, points the main window at it, and — if this call came
-/// from the secondary settings window rather than the main one — closes
-/// that secondary window, since its job is done.
+/// Re-run by the loading page's "Try again" button. Any child processes
+/// from a failed attempt are already cleaned up inside `start_backend`
+/// itself before it returns an error, so there's nothing to tear down
+/// here first.
 #[tauri::command]
-fn save_server_url(app: AppHandle, window: tauri::WebviewWindow, url: String) -> Result<(), String> {
-    let parsed = parse_server_url(&url)?;
-
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
-    store.set(SERVER_URL_KEY, serde_json::Value::String(parsed.to_string()));
-    store.save().map_err(|e| e.to_string())?;
-
-    let main = app.get_webview_window("main").ok_or("Main window is gone.")?;
-    main.navigate(parsed).map_err(|e| e.to_string())?;
-    main.show().map_err(|e| e.to_string())?;
-    let _ = main.set_focus();
-
-    if window.label() != "main" {
-        let _ = window.close();
-    }
-    Ok(())
-}
-
-/// Prefills the settings page with whatever's already saved, so
-/// reopening it via "Change Server…" doesn't present a blank form.
-#[tauri::command]
-fn get_server_url(app: AppHandle) -> Option<String> {
-    read_saved_server_url(&app).map(|u| u.to_string())
-}
-
-/// Opens the settings page as its own small window, reused if it's
-/// already open rather than stacking duplicates — this is the only way
-/// back to "change server" once the main window has navigated away to
-/// the real (external, un-privileged) rechvix site.
-fn open_settings_window(app: &AppHandle) {
-    if let Some(existing) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
-        let _ = existing.show();
-        let _ = existing.set_focus();
-        return;
-    }
-    let _ = WebviewWindowBuilder::new(app, SETTINGS_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
-        .title("Rechvix — Server settings")
-        .inner_size(480.0, 360.0)
-        .resizable(false)
-        .center()
-        .build();
+fn retry_startup(app: AppHandle) {
+    attempt_startup(app);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -99,15 +85,12 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
 
     // A second launch attempt (Start Menu tile double-clicked while
-    // already running) focuses the running window instead of opening a
-    // second process pointed at the same server.
+    // already running) focuses the running window instead of starting a
+    // second local server on top of the first.
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app
-                .get_webview_window("main")
-                .or_else(|| app.get_webview_window(SETTINGS_WINDOW_LABEL))
-            {
+            if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
@@ -115,46 +98,59 @@ pub fn run() {
         }));
     }
 
-    builder
+    let app = builder
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![save_server_url, get_server_url])
+        .manage(BackendState(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![retry_startup])
         .setup(|app| {
             let app_menu = SubmenuBuilder::new(app, "Rechvix")
-                .text("change_server", "Change Server…")
                 .text("reload", "Reload")
+                .separator()
+                .text("open_data_folder", "Open Data Folder")
                 .separator()
                 .text("quit", "Quit Rechvix")
                 .build()?;
             let menu = MenuBuilder::new(app).items(&[&app_menu]).build()?;
             app.set_menu(menu)?;
 
-            let handle = app.handle().clone();
             app.on_menu_event(move |app_handle, event| match event.id().0.as_str() {
-                "change_server" => open_settings_window(app_handle),
                 "reload" => {
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.eval("window.location.reload()");
+                    }
+                }
+                "open_data_folder" => {
+                    if let Ok(paths) = AppPaths::resolve(app_handle) {
+                        let _ = app_handle
+                            .opener()
+                            .open_path(paths.logs_dir.to_string_lossy(), None::<&str>);
                     }
                 }
                 "quit" => app_handle.exit(0),
                 _ => {}
             });
 
-            // First run (no saved URL yet): the main window's static
-            // config already points at the bundled settings page, so
-            // there's nothing to navigate — just show it. Once a server
-            // is already known, skip the settings page entirely and go
-            // straight to it, so a returning user never sees it flash by.
-            let main = handle.get_webview_window("main").expect("main window must exist");
-            if let Some(saved) = read_saved_server_url(&handle) {
-                main.navigate(saved)?;
-            }
+            let main = app.get_webview_window("main").expect("main window must exist");
             main.show()?;
             main.set_focus()?;
 
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || attempt_startup(handle));
+
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+            if let Some(state) = app_handle.try_state::<BackendState>() {
+                if let Some(running) = state.0.lock().unwrap().take() {
+                    if let Ok(paths) = AppPaths::resolve(app_handle) {
+                        backend::stop_backend(running, &paths);
+                    }
+                }
+            }
+        }
+    });
 }

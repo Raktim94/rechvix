@@ -8,6 +8,11 @@ name: Desktop MSIX (build, package, install/uninstall test)
 # `cargo check` it locally. windows-latest is the only honest way to
 # verify this app actually works before anyone downloads it.
 #
+# As of v0.2.0.0 the package also bundles a Windows cross-compile of
+# apps/server and a portable Postgres, so this workflow now also builds
+# the Go server for real and triggers on changes to apps/server and
+# apps/web too, not just apps/desktop.
+#
 # Produces two artifacts:
 #   - Rechvix-StoreSubmission.msix: unsigned, upload as-is to Partner
 #     Center (swap Identity/Publisher in msix/AppxManifest.xml for your
@@ -21,6 +26,12 @@ on:
     branches: [main]
     paths:
       - "apps/desktop/**"
+      - "apps/server/**"
+      - "apps/web/**"
+      - "migrations/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
       - ".github/workflows/desktop-msix.yml"
   workflow_dispatch: {}
 
@@ -34,7 +45,7 @@ permissions:
 jobs:
   build-package-test:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
@@ -46,9 +57,25 @@ jobs:
         with:
           node-version: "22"
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Cache portable Postgres download
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\pg-cache
+          # Bump this suffix whenever build-msix.ps1's $PostgresVersion
+          # changes, so a stale cached zip is never silently reused.
+          key: postgres-windows-x64-18.0-1
 
       - name: Build + package (unsigned)
         working-directory: apps/desktop/msix
