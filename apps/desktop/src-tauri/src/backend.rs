@@ -100,8 +100,11 @@ fn append_log(path: &std::path::Path) -> Stdio {
 }
 
 /// Recursively copies `src` into `dst`, creating directories as needed.
-/// Hand-rolled rather than pulling in a crate for one call site — this
-/// only ever copies the bundled `pgsql/` tree, once, on first run.
+/// Hand-rolled rather than pulling in a crate for one call site — used as
+/// the non-Windows fallback only; Windows uses `robocopy` instead (see
+/// `ensure_writable_pg_install`), which is dramatically faster for the
+/// thousands of small files under Postgres's `share/timezone/`.
+#[cfg(not(windows))]
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
@@ -124,6 +127,47 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
 /// `C:\Program Files\WindowsApps\...`). Copies the bundled Postgres into
 /// the writable per-package data directory once; a no-op on every
 /// subsequent launch.
+///
+/// On Windows this shells out to `robocopy` rather than copying file by
+/// file from Rust: Postgres's `share/timezone/` alone is 600+ small
+/// files, and a naive per-file copy loop against files living under
+/// WindowsApps (which involves some reparse-point/virtualization
+/// overhead on every open) was measured taking long enough on a GitHub
+/// Actions runner to blow well past a 90s startup budget. `robocopy` is
+/// built for exactly this (bulk directory mirroring) and is an ordinary
+/// System32 binary reading from — not executing anything inside —
+/// `install_dir`, so it isn't subject to the ACL restriction that blocks
+/// `initdb`/`postgres.exe` from launching *further* child processes
+/// there.
+#[cfg(windows)]
+fn ensure_writable_pg_install(paths: &AppPaths) -> Result<(), StartupError> {
+    if paths.pg_bin_dir().join(exe_name("postgres")).exists() {
+        return Ok(());
+    }
+    let mut cmd = Command::new("robocopy.exe");
+    cmd.arg(&paths.pg_install_source_dir)
+        .arg(&paths.pg_install_dir)
+        .arg("/E") // include subdirectories, including empty ones
+        .arg("/R:2").arg("/W:1") // don't hang retrying a locked file for the default 1M×30s
+        .arg("/MT:8") // multi-threaded — the thousands-of-small-files case this exists for
+        .arg("/NFL").arg("/NDL").arg("/NJH").arg("/NJS").arg("/NP"); // quiet: only the exit code matters
+    no_window(&mut cmd);
+    let status = cmd.status().map_err(|e| {
+        StartupError::Initdb(format!("could not copy the bundled database into a writable location: {e}"))
+    })?;
+    // robocopy's exit code is a bitmask, not a plain 0/nonzero: 0-7 are
+    // all success/informational (files copied, some skipped because
+    // identical, etc.); 8+ means a real failure. This is standard
+    // robocopy behavior, not something to "fix" — checking `.success()`
+    // here would treat a completely normal run as an error.
+    let code = status.code().unwrap_or(-1);
+    if code >= 8 {
+        return Err(StartupError::Initdb(format!("robocopy exited with code {code}")));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
 fn ensure_writable_pg_install(paths: &AppPaths) -> Result<(), StartupError> {
     if paths.pg_bin_dir().join(exe_name("postgres")).exists() {
         return Ok(());
@@ -282,7 +326,7 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
     // First run now also pays for copying the bundled Postgres into a
     // writable location (see ensure_writable_pg_install) on top of initdb
     // and the first migration pass — a wider budget than every run after.
-    let healthcheck_budget = if first_run { Duration::from_secs(90) } else { Duration::from_secs(30) };
+    let healthcheck_budget = if first_run { Duration::from_secs(120) } else { Duration::from_secs(30) };
     if let Err(e) = wait_for_http_ready(http_port, &mut server_process, healthcheck_budget) {
         let _ = server_process.kill();
         let _ = server_process.wait();
