@@ -226,7 +226,14 @@ fn start_postgres(paths: &AppPaths, port: u16) -> Result<(), StartupError> {
         .arg("-D").arg(&paths.pgdata_dir)
         .arg("-l").arg(&paths.pg_log_file)
         .arg("-w").arg("-t").arg("30")
-        .arg("-o").arg(format!("-p {port} -h 127.0.0.1")); // never 0.0.0.0 — see the trust-auth note above
+        .arg("-o").arg(format!("-p {port} -h 127.0.0.1")) // never 0.0.0.0 — see the trust-auth note above
+        // pg_ctl's OWN stdout/stderr, separate from `-l`'s target: pg_ctl
+        // can fail before the server ever launches (bad argument, can't
+        // find postgres.exe, the restricted-token dance itself failing),
+        // in which case `-l`'s file stays empty and this is the only
+        // place any diagnostic ends up.
+        .stdout(append_log(&paths.pgctl_log_file))
+        .stderr(append_log(&paths.pgctl_log_file));
     no_window(&mut cmd);
     let status = cmd.status().map_err(|e| StartupError::PostgresStart(e.to_string()))?;
     if !status.success() {

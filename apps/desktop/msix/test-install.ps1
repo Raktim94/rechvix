@@ -81,7 +81,7 @@ try {
 } catch {
   Write-Host "==> Backend never reported ready — dumping whatever diagnostics exist under $localDataRoot" -ForegroundColor Red
   Get-ChildItem -Path $localDataRoot -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    found: $($_.FullName)" }
-  foreach ($name in @("startup-error.txt", "server.log", "postgres.log")) {
+  foreach ($name in @("startup-error.txt", "server.log", "postgres.log", "pgctl.log")) {
     $found = Get-ChildItem -Path $localDataRoot -Recurse -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($found) {
       Write-Host "----- $($found.FullName) -----" -ForegroundColor Yellow

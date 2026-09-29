@@ -31,6 +31,12 @@ pub struct AppPaths {
     pub logs_dir: PathBuf,
     pub server_log_file: PathBuf,
     pub pg_log_file: PathBuf,
+    /// `pg_ctl`'s own stdout/stderr — separate from `pg_log_file` (which
+    /// `-l` points at for the actual Postgres server's log): pg_ctl can
+    /// fail before ever launching the server (e.g. a bad argument), in
+    /// which case nothing lands in `-l`'s file at all and this is the
+    /// only place to look.
+    pub pgctl_log_file: PathBuf,
     pub runtime_info_file: PathBuf,
     /// Written (and cleared on the next successful start) whenever
     /// `start_backend` fails — a stable, documented location external
@@ -82,6 +88,7 @@ impl AppPaths {
             logs_dir: logs_dir.clone(),
             server_log_file: logs_dir.join("server.log"),
             pg_log_file: logs_dir.join("postgres.log"),
+            pgctl_log_file: logs_dir.join("pgctl.log"),
             runtime_info_file: data_dir.join("runtime.json"),
             startup_error_file: data_dir.join("startup-error.txt"),
         })
