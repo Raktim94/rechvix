@@ -99,6 +99,47 @@ fn append_log(path: &std::path::Path) -> Stdio {
         .unwrap_or_else(|_| Stdio::null())
 }
 
+/// Recursively copies `src` into `dst`, creating directories as needed.
+/// Hand-rolled rather than pulling in a crate for one call site — this
+/// only ever copies the bundled `pgsql/` tree, once, on first run.
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let dst_path = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_recursive(&entry.path(), &dst_path)?;
+        } else {
+            std::fs::copy(entry.path(), &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Postgres cannot run from the packaged, read-only, ACL-locked
+/// `install_dir` — see `AppPaths::pg_bin_dir`'s doc comment for exactly
+/// why (confirmed against a real MSIX install: `initdb` re-execing
+/// `postgres -V` fails with Access Denied from inside
+/// `C:\Program Files\WindowsApps\...`). Copies the bundled Postgres into
+/// the writable per-package data directory once; a no-op on every
+/// subsequent launch.
+fn ensure_writable_pg_install(paths: &AppPaths) -> Result<(), StartupError> {
+    if paths.pg_bin_dir().join(exe_name("postgres")).exists() {
+        return Ok(());
+    }
+    copy_dir_recursive(&paths.pg_install_source_dir, &paths.pg_install_dir)
+        .map_err(|e| StartupError::Initdb(format!("could not copy the bundled database into a writable location: {e}")))
+}
+
+fn exe_name(base: &str) -> String {
+    if cfg!(windows) {
+        format!("{base}.exe")
+    } else {
+        base.to_string()
+    }
+}
+
 fn run_initdb(paths: &AppPaths) -> Result<(), StartupError> {
     if paths.pgdata_dir.join("PG_VERSION").exists() {
         return Ok(()); // already initialised on a previous launch
@@ -198,6 +239,7 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
     let pg_port = pick_free_port()?;
     let http_port = pick_free_port()?;
 
+    ensure_writable_pg_install(paths)?;
     run_initdb(paths)?;
     let mut pg_process = start_postgres(paths, pg_port)?;
     if let Err(e) = wait_for_postgres_ready(paths, pg_port, Duration::from_secs(20)) {
@@ -237,7 +279,10 @@ pub fn start_backend(paths: &AppPaths) -> Result<RunningBackend, StartupError> {
         }
     };
 
-    let healthcheck_budget = if first_run { Duration::from_secs(60) } else { Duration::from_secs(30) };
+    // First run now also pays for copying the bundled Postgres into a
+    // writable location (see ensure_writable_pg_install) on top of initdb
+    // and the first migration pass — a wider budget than every run after.
+    let healthcheck_budget = if first_run { Duration::from_secs(90) } else { Duration::from_secs(30) };
     if let Err(e) = wait_for_http_ready(http_port, &mut server_process, healthcheck_budget) {
         let _ = server_process.kill();
         let _ = server_process.wait();

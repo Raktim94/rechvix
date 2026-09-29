@@ -72,7 +72,7 @@ Add-AppxPackage -Register .\package\AppxManifest.xml
 
 - [ ] App appears in the Start Menu as "Rechvix" with the correct icon
 - [ ] Launching from the Start Menu tile works identically to `tauri dev`
-- [ ] First launch takes a few seconds longer (initdb + first migration pass) — still ends on the setup screen, not stuck on "Starting Rechvix…"
+- [ ] First launch takes a few seconds longer (copying the bundled Postgres into a writable location, then initdb + first migration pass) — still ends on the setup screen, not stuck on "Starting Rechvix…". Postgres genuinely cannot run from the read-only, packaged install directory (`initdb`/the running server both need to re-exec `postgres.exe` as a further child process — self-forking on Windows has no fork(), and does this for every new connection — which fails with Access Denied from inside `C:\Program Files\WindowsApps\...`), so `src-tauri/src/backend.rs` copies it into the app's writable per-package data directory once, on first run only.
 - [ ] **Minimize**: title bar minimize button drops it to the taskbar; clicking the taskbar icon restores it
 - [ ] **Single instance**: with the app running, launch it again from the Start Menu — the *existing* window gets focus, no second `desktop.exe` process appears in Task Manager
 - [ ] **Close**: title bar close button actually exits — confirm `desktop.exe`, `rechvix-server.exe`, and `postgres.exe` are all gone from Task Manager within a few seconds, not lingering

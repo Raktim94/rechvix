@@ -77,7 +77,7 @@ Write-Host "==> Waiting for the bundled backend to report ready ($localDataRoot)
 try {
   Wait-ForCondition "runtime.json to appear (backend finished starting)" {
     Get-ChildItem -Path $localDataRoot -Recurse -Filter "runtime.json" -ErrorAction SilentlyContinue
-  } 60
+  } 120
 } catch {
   Write-Host "==> Backend never reported ready — dumping whatever diagnostics exist under $localDataRoot" -ForegroundColor Red
   Get-ChildItem -Path $localDataRoot -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    found: $($_.FullName)" }

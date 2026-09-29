@@ -23,6 +23,8 @@ use tauri::{AppHandle, Manager};
 
 pub struct AppPaths {
     pub install_dir: PathBuf,
+    pub pg_install_source_dir: PathBuf,
+    pub pg_install_dir: PathBuf,
     pub pgdata_dir: PathBuf,
     pub secrets_dir: PathBuf,
     pub aead_key_file: PathBuf,
@@ -71,6 +73,8 @@ impl AppPaths {
         // isn't its own (empty is fine; leave that check to initdb).
 
         Ok(Self {
+            pg_install_source_dir: install_dir.join("pgsql"),
+            pg_install_dir: data_dir.join("pgsql"),
             install_dir,
             pgdata_dir,
             secrets_dir: secrets_dir.clone(),
@@ -91,8 +95,20 @@ impl AppPaths {
         self.install_dir.join("web")
     }
 
+    /// Postgres must run from a writable, ordinary directory, never from
+    /// the packaged install directory — the app's own exe and the Go
+    /// server run fine directly out of `install_dir` (a plain one-level
+    /// child spawn from an already-packaged process), but Postgres needs
+    /// more than that: `initdb` re-execs `postgres -V` as a further child
+    /// to sanity-check it, and the running server re-execs itself for
+    /// every new backend process on Windows (it has no fork()) — both are
+    /// a *second* level of process creation, which fails with "Access is
+    /// denied" from inside `C:\Program Files\WindowsApps\...`'s locked-down
+    /// ACLs (confirmed against a real MSIX install, not theoretical).
+    /// `start_backend` copies `pg_install_source_dir` here once, on first
+    /// run, before ever touching Postgres.
     pub fn pg_bin_dir(&self) -> PathBuf {
-        self.install_dir.join("pgsql").join("bin")
+        self.pg_install_dir.join("bin")
     }
 
     pub fn pg_bin(&self, name: &str) -> PathBuf {
