@@ -12,14 +12,60 @@
 //
 //   - "data" paths (Postgres's actual data directory, the persisted
 //     encryption key, logs, the runtime-info file test tooling reads)
-//     live under Tauri's own `app_local_data_dir()`. For a packaged
-//     MSIX app specifically, Windows transparently redirects this into
-//     `%LOCALAPPDATA%\Packages\<PackageFamilyName>\...` — the same
-//     per-package storage `tauri-plugin-store` already relied on for
-//     `settings.json`, which is why `Remove-AppxPackage` cleans it up
-//     on uninstall with zero uninstall-specific code on our part.
+//     resolve to the REAL, already-redirected location on disk —
+//     `%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalCache\Local\<bundle
+//     identifier>\...` — computed explicitly (see `real_local_data_dir`),
+//     NOT via Tauri's `app_local_data_dir()`. That distinction matters:
+//     Tauri's resolver returns the *logical*, pre-redirection path
+//     (`%LOCALAPPDATA%\<bundle-id>\...`), which the OS transparently maps
+//     to the real container location for any *normal* child process in
+//     this package's process tree — confirmed working for initdb, which
+//     is spawned that way. But `pg_ctl start` on Windows always relaunches
+//     postgres via `CreateProcessAsUser` with an explicitly constructed
+//     restricted token (see `backend.rs::start_postgres`'s doc comment) —
+//     and that restricted grandchild does NOT get the same transparent
+//     redirection, so it sees the literal, pre-redirection path string and
+//     finds nothing there ("The system cannot find the path specified" —
+//     confirmed against a real MSIX install: this exact failure, gone the
+//     moment every path handed to Postgres became the real, concrete one
+//     instead of relying on redirection to hold for a process it doesn't
+//     cover). Resolving the real path ourselves, once, sidesteps needing
+//     redirection to work uniformly across every process in play. It's
+//     still the genuine per-package storage location either way, so
+//     `Remove-AppxPackage` still removes all of it on uninstall — nothing
+//     about that guarantee changes.
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+
+/// Must match `AppxManifest.xml`'s `Identity.Name`/`Publisher`-derived
+/// Package Family Name (Partner Center's reserved value, Store ID
+/// 9NMPSP7CR5RW) and `tauri.conf.json`'s `identifier`. Both are fixed,
+/// already-reserved values, not expected to change.
+#[cfg(windows)]
+const PACKAGE_FAMILY_NAME: &str = "NODEDRINFOTECHLIMITED.Rechvix_wsh4jzg5a6682";
+#[cfg(windows)]
+const BUNDLE_IDENTIFIER: &str = "com.nodedr.rechvix";
+
+/// Returns the real, concrete, already-redirected data directory — see
+/// this module's header comment for why this can't just be
+/// `app.path().app_local_data_dir()`. Falls back to Tauri's resolver
+/// when the package container doesn't exist (a bare `tauri dev` run,
+/// which isn't packaged at all — `TESTING.md`'s "Quick loop"), and on
+/// non-Windows targets, where none of this applies.
+#[cfg(windows)]
+fn real_local_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let package_root = PathBuf::from(local_app_data).join("Packages").join(PACKAGE_FAMILY_NAME);
+        if package_root.exists() {
+            return Ok(package_root.join("LocalCache").join("Local").join(BUNDLE_IDENTIFIER));
+        }
+    }
+    app.path().app_local_data_dir().map_err(|e| format!("could not resolve the local data directory: {e}"))
+}
+#[cfg(not(windows))]
+fn real_local_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path().app_local_data_dir().map_err(|e| format!("could not resolve the local data directory: {e}"))
+}
 
 pub struct AppPaths {
     pub install_dir: PathBuf,
@@ -73,10 +119,7 @@ impl AppPaths {
             .ok_or("the app's exe path has no parent directory")?
             .to_path_buf();
 
-        let data_dir = app
-            .path()
-            .app_local_data_dir()
-            .map_err(|e| format!("could not resolve the local data directory: {e}"))?;
+        let data_dir = real_local_data_dir(app)?;
 
         let pgdata_dir = data_dir.join("pgdata");
         let secrets_dir = data_dir.join("secrets");
