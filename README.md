@@ -395,3 +395,5 @@ license as this project's sibling, [nodedr-pos](https://github.com/Raktim94/node
 ## Case study
 
 Read the [Rechvix case study](https://www.raktimranjit.com/projects/rechvix) for the product background and design decisions.
+
+Maintainer: [Raktim Ranjit](https://www.raktimranjit.com/)
