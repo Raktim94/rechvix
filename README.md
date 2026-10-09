@@ -12,6 +12,8 @@
   <a href="https://www.nodedr.com/"><img alt="Made by Nodedr Infotech" src="https://img.shields.io/badge/Made%20by-Nodedr%20Infotech-6b1839"></a>
 </p>
 
+**[Project website](https://rechvix.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/rechvix)** · **[Maintainer: Raktim Ranjit](https://www.raktimranjit.com/)**
+
 A production-grade, multi-company, multi-branch, multi-warehouse billing,
 inventory, accounting, and tax-management platform — India GST / e-Invoice /
 e-Way Bill capable today, built to extend to other countries' tax regimes
