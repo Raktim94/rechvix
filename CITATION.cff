@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use Rechvix in research, teaching, or a public project, please cite it."
+type: software
+title: "Rechvix"
+authors:
+  - family-names: Ranjit
+    given-names: Raktim
+    website: https://www.raktimranjit.com/
+repository-code: https://github.com/Raktim94/rechvix
+url: https://rechvix.nodedr.com/
+license: AGPL-3.0-only
+abstract: "Self-hosted billing, inventory, accounting, and tax-management software with India GST support."
