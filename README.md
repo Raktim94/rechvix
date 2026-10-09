@@ -388,3 +388,8 @@ others, you must make your modified source available to those users under
 the same license — this keeps improvements to a self-hosted business tool
 in the open rather than disappearing into a closed commercial fork. Same
 license as this project's sibling, [nodedr-pos](https://github.com/Raktim94/nodedr-pos).
+
+
+## Case study
+
+Read the [Rechvix case study](https://www.raktimranjit.com/projects/rechvix) for the product background and design decisions.
