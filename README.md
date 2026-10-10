@@ -382,8 +382,8 @@ test against a prior schema.
 Copyright © 2026 [Nodedr Infotech Private Limited](https://www.nodedr.com/)
 and Raktim Ranjit. Licensed under the
 [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) — the
-[`LICENSE`](LICENSE) file itself carries this copyright notice ahead of the
-full license text. In short:
+[NOTICE.md](NOTICE.md) preserves the project copyright and version notice;
+[`LICENSE`](LICENSE) contains the standard license text. In short:
 you're free to self-host, use, and modify this software for your business.
 If you modify it and run that modified version as a network service for
 others, you must make your modified source available to those users under

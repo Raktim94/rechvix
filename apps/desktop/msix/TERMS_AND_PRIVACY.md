@@ -149,7 +149,7 @@ for that release.
 Questions about this document, the desktop app, or the Microsoft Store
 listing can be sent to:
 
-**ranjitraktim5@gmail.com**
+**mail@raktimranjit.com**
 
 This address is for the Store app and this document specifically — for
 issues with a particular self-hosted rechvix server (data, filings,
