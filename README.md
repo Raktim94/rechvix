@@ -14,6 +14,11 @@
 
 **[Try Rechvix](https://rechvix.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/rechvix)** · **[Maintainer: Raktim Ranjit](https://www.raktimranjit.com/)**
 
+<p align="center">
+  <img src="docs/assets/hero-animated.svg" alt="Rechvix: animated overview with an illustrative sample screen" width="100%">
+</p>
+
+
 A production-grade, multi-company, multi-branch, multi-warehouse billing,
 inventory, accounting, and tax-management platform — India GST / e-Invoice /
 e-Way Bill capable today, built to extend to other countries' tax regimes
@@ -241,6 +246,11 @@ implementation) layering — see `internal/modules/organisation` for the
 reference shape.
 
 ## One-command self-hosted install
+
+<p align="center">
+  <img src="docs/assets/install-animated.svg" alt="Animated terminal: clone the repo and run install.sh" width="100%">
+</p>
+
 
 **Already have Docker?** — on Linux or macOS:
 
