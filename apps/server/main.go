@@ -39,6 +39,7 @@ import (
 	einvoicehttp "rechvix/internal/modules/einvoice/httpapi"
 	einvoicepg "rechvix/internal/modules/einvoice/pg"
 	einvoicemock "rechvix/internal/modules/einvoice/v1/mock"
+	esignapp "rechvix/internal/modules/esign"
 	ewaybillapp "rechvix/internal/modules/ewaybill/app"
 	"rechvix/internal/modules/ewaybill/eligibility"
 	"rechvix/internal/modules/ewaybill/govportal"
@@ -523,6 +524,8 @@ func run() error {
 	)
 
 	recurringSvc := recurring.NewService(pool, salesSvc, notificationsSvc, permissionsChecker, auditRecorder, logger, func() string { return strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) })
+	esignSvc := esignapp.NewService(pool, salesDocRenderer{sales: salesSvc}, notificationsMailer{svc: notificationsSvc}, permissionsChecker, auditRecorder)
+	salesSvc.WithESign(esignSvc)
 	remindersSvc := reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger)
 
 	router := httpx.NewRouter(httpx.RouterConfig{AllowedOrigins: cfg.Server.AllowedOrigins, Logger: logger})
@@ -609,6 +612,9 @@ func run() error {
 			}).
 			MountPublic(r)
 
+		esignhttp := esignapp.NewHandlers(esignSvc)
+		esignhttp.MountPublic(r)
+
 		r.Group(func(r chi.Router) {
 			r.Use(identityhttp.RequireAuthOrAPIKey(identitySvc, cfg.Session.CookieName))
 			identityHandlers.MountAPIKeys(r)
@@ -630,6 +636,7 @@ func run() error {
 			ewaybillhttp.NewHandlers(ewaybillSvc, pool, permissionsChecker, govPortalSvc).Mount(r)
 			einvoicehttp.NewHandlers(einvoiceSvc, pool, permissionsChecker).Mount(r)
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
+			esignhttp.Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)
 			pricerules.NewHandlers(priceRulesSvc).Mount(r)

@@ -7,6 +7,7 @@ import { EwayBillCard } from "../../components/EwayBillCard";
 import { WhatsAppIcon } from "../../components/icons";
 import { PaymentPanel } from "../../components/PaymentPanel";
 import { PrintTemplateMenu } from "../../components/PrintTemplateMenu";
+import { SignatureRequestPanel } from "../../components/SignatureRequestPanel";
 import { DocumentStatusPicker } from "../../components/DocumentStatuses";
 import { RepeatInvoiceForm } from "../../components/RecurringPanel";
 import { EmailDocumentPanel } from "../../components/EmailDocumentPanel";
@@ -190,6 +191,7 @@ export function SalesDetailPage({ id }: { id: string }) {
         </p>
       ) : null}
       <DocumentStatusPicker documentId={document.ID} />
+      {document.Status === "FINALIZED" ? <SignatureRequestPanel documentId={document.ID} /> : null}
       {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? <RepeatInvoiceForm documentId={document.ID} /> : null}
       {document.Status !== "DRAFT" ? <EmailDocumentPanel documentType="sales_document" documentId={document.ID} subject={`${document.DocumentNumber}`} /> : null}
       {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}

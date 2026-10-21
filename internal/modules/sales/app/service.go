@@ -21,6 +21,7 @@ import (
 	accountingdomain "rechvix/internal/modules/accounting/domain"
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	contactsapp "rechvix/internal/modules/contacts/app"
+	esignapp "rechvix/internal/modules/esign"
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	inventorydomain "rechvix/internal/modules/inventory/domain"
 	orgapp "rechvix/internal/modules/organisation/app"
@@ -69,7 +70,9 @@ type Service struct {
 	outbox outbox.Writer
 	// verifactu is optional: when set, finalizing or cancelling an invoice for a Spanish company with VERI*FACTU
 	// enabled appends its record to the tamper-evident chain inside the same transaction.
-	verifactu   *verifactuapp.Service
+	verifactu *verifactuapp.Service
+	// esign is optional: when set, a document the customer signed electronically carries a note saying so when printed.
+	esign       *esignapp.Service
 	permissions *permissions.Checker
 	audit       audit.Recorder
 	now         func() time.Time
@@ -94,6 +97,12 @@ func NewService(
 	return &Service{pool: pool, documents: documents, lines: lines, inventory: inventorySvc, taxation: taxationSvc,
 		catalogue: catalogueSvc, contacts: contactsSvc, organisation: organisationSvc, pricing: pricingSvc, numbering: numberingSvc,
 		accounting: accountingSvc, outbox: outboxWriter, permissions: checker, audit: recorder, now: time.Now}
+}
+
+// WithESign enables the signed-by note on printed documents.
+func (s *Service) WithESign(e *esignapp.Service) *Service {
+	s.esign = e
+	return s
 }
 
 // WithVerifactu enables the Spanish VERI*FACTU record chain for invoices.

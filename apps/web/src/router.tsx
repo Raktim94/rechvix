@@ -26,6 +26,7 @@ import {
   SettingsPage,
   StaffPage,
   CrmPage,
+  SignPage,
   ServicePage,
 } from "./lazyPages";
 
@@ -97,6 +98,12 @@ const bootstrapRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/setup",
   component: BootstrapPage,
+});
+
+const signRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sign/$token",
+  component: () => <SignPage token={signRoute.useParams().token} />,
 });
 
 const forgotPasswordRoute = createRoute({
@@ -210,6 +217,7 @@ const routeTree = rootRoute.addChildren([
   bootstrapRoute,
   forgotPasswordRoute,
   resetPasswordRoute,
+  signRoute,
   dashboardRoute,
   salesListRoute,
   salesNewRoute,

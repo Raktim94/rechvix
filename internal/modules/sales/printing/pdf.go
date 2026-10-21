@@ -181,6 +181,11 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 		setFont(pdf, lo, st, "", 8)
 		pdf.MultiCell(0, 4, lb.Terms+": "+data.TermsAndConditions, "", "L", false)
 	}
+	if data.SignedNote != "" {
+		pdf.Ln(3)
+		setFont(pdf, lo, st, "B", 8)
+		pdf.MultiCell(0, 4, data.SignedNote, "", "L", false)
+	}
 	drawSignatureBlock(pdf, lo, st, data.AuthorizedSignatoryName, lb, data.GenericTax)
 
 	var buf bytes.Buffer

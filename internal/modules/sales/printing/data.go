@@ -181,6 +181,9 @@ type InvoiceData struct {
 	EWBValidUntil *time.Time
 	// Verifactu is the Spanish tax-agency QR block; nil for documents without a VERI*FACTU record.
 	Verifactu *VerifactuQR
+	// SignedNote is printed under the totals when the customer signed the document electronically, for example
+	// "Electronically signed by Ana Ruiz on 21-Oct-2026 (ref 1A2B3C4D)". Empty for an unsigned document.
+	SignedNote string
 }
 
 // PricingModeLabel is a small display helper — not business logic.
