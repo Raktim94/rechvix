@@ -1,411 +1,203 @@
 <p align="center">
-  <img src="docs/assets/brand/logo-circle.png" alt="Rechvix logo" width="160">
+  <img src="docs/assets/brand/logo-circle.png" alt="Rechvix open-source billing and inventory software logo" width="120">
 </p>
 
-<h1 align="center">Rechvix</h1>
-<p align="center"><strong>Billing · Inventory · Accounts · GST</strong></p>
+# Rechvix — Open-source ERP, invoicing, inventory and accounting software
 
-<p align="center">
-  <a href="LICENSE"><img alt="License: AGPL v3" src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg"></a>
-  <img alt="Go version" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white">
-  <img alt="Status" src="https://img.shields.io/badge/Status-Stage%2011%20%E2%80%93%20Hardening-orange">
-  <a href="https://www.nodedr.com/"><img alt="Made by Nodedr Infotech" src="https://img.shields.io/badge/Made%20by-Nodedr%20Infotech-6b1839"></a>
-</p>
+**Rechvix is self-hosted business software for creating invoices, managing stock, recording purchases and payments, and preparing tax records for your accountant.** It brings billing, multi-warehouse inventory and double-entry accounting into one application for distributors, workshops, industrial suppliers and small businesses.
 
-**[Try Rechvix](https://rechvix.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/rechvix)** · **[Maintainer: Raktim Ranjit](https://www.raktimranjit.com/)**
+Run it on your own server with Docker Compose or CasaOS/ZimaOS, and use the responsive web app on desktop, tablet or phone. Core business records stay in your PostgreSQL database. Rechvix is licensed under **AGPL-3.0**, with no mandatory subscription for the self-hosted application; hosting and optional external services have their own costs.
 
-<p align="center">
-  <img src="docs/assets/hero-animated.svg" alt="Rechvix: animated overview with an illustrative sample screen" width="100%">
-</p>
+[![CI](https://github.com/Raktim94/rechvix/actions/workflows/ci.yml/badge.svg)](https://github.com/Raktim94/rechvix/actions/workflows/ci.yml)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
 
+**[Read the complete tutorial: every page, with 48 screenshots](tutorial.md)** · [Install Rechvix](#install-rechvix) · [Try the hosted app](https://rechvix.nodedr.com/) · [Tax and accountant exports](#tax-calculation-and-accountant-exports) · [Documentation](#documentation)
 
-A production-grade, multi-company, multi-branch, multi-warehouse billing,
-inventory, accounting, and tax-management platform — India GST / e-Invoice /
-e-Way Bill capable today, built to extend to other countries' tax regimes
-without a rewrite.
+## What you can do with Rechvix
 
-This is **not** a CRUD demo. It's built for double-entry accounting
-correctness, tenant isolation, and 10-year maintainability from the first
-commit — see [`docs/architecture.md`](docs/architecture.md) for the reasoning
-behind every major decision.
+- **Create invoices in one workspace.** Search existing customers or create one inline, scan/search products, check stock, edit quantities and discounts, hold drafts, and finalize invoices without repeatedly switching pages.
+- **Manage products and stock.** Maintain products, variants, SKUs, barcodes, units, selling prices, categories and brands. Review warehouse balances, reservations, valuation, low stock and movement history; record reasoned stock adjustments.
+- **Track purchases and payments.** Record supplier purchases, receive stock, manage returns, allocate customer receipts and supplier payments to invoices, and review outstanding balances.
+- **Keep connected accounts.** Finalized documents post accounting entries alongside their supported tax and stock effects. Review ledgers, receivables/payables, ageing, trial balance, fiscal periods and expenses with supporting attachments.
+- **Print and share documents.** Choose A4, compact and thermal print layouts, invoice branding and language. Hindi invoices support browser printing with an embedded Devanagari font. WhatsApp/PDF sharing controls are available on supported devices and documents.
+- **Work across languages and currencies.** Choose from eight interface languages—English, Spanish, French, German, Italian, Portuguese, Dutch and Hindi. Invoice language and currency can be selected separately; foreign-currency invoices use an explicit stored exchange rate for accounting in the company currency.
+- **Prepare files for an accountant.** Download company-scoped tax workbooks, source registers, review checks and audit evidence for India, Spain, the UK and the US. Unknown statutory inputs remain visibly unresolved instead of being guessed as zero.
+- **Organize the daily workload.** Record staff, attendance and calendar tasks; use global search, keyboard shortcuts, light/dark themes and responsive navigation.
+- **Connect and protect your installation.** Use scoped API keys, signed webhooks and a permission-checked read-only MCP interface. Server-managed sessions, Argon2id passwords, TOTP MFA support, audit records and tenant Row-Level Security form the security foundation.
 
-> **Status:** Stages 0 through 10b-2 — research, architecture, the full
-> backend (catalogue, inventory, tax engine, sales, accounting, reporting,
-> government integrations, packaging) **and** the web frontend — are
-> complete, with real caveats and follow-ups documented inline rather than
-> glossed over. Stage 11 (security/performance hardening) is the one
-> remaining phase. See [`docs/TODO.md`](docs/TODO.md) for the exact,
-> stage-by-stage checklist — including every test count, every known gap,
-> and every scope note — and the [wiki](../../wiki) for a narrative
-> walkthrough.
+Some document types and administrative capabilities are exposed through APIs rather than equivalent dedicated screens. The [illustrated tutorial](tutorial.md) explains what is available in the current UI; [OpenAPI](api/openapi/openapi.yaml) documents the API surface.
 
-**[Complete illustrated tutorial — every page](tutorial.md)**
+## Screenshots from the running app
 
-## Contents
+These screenshots were captured from the **0.14.24 application on 21 October 2026**, using fictional records and a real local server/database, without mocked API responses. Long pages are shown in full in the tutorial; click an image for detail.
 
-- [Why this exists](#why-this-exists)
-- [Brand](#brand)
-- [Screenshots](#screenshots)
-- [Core design decisions](#core-design-decisions)
-- [What's built](#whats-built)
-- [Screens & features](#screens--features)
-- [Tech stack](#tech-stack)
-- [Repository structure](#repository-structure)
-- [One-command self-hosted install](#one-command-self-hosted-install)
-- [Getting started (development)](#getting-started-development)
-- [Documentation](#documentation)
-- [User manual](#user-manual)
-- [Contributing](#contributing)
-- [Status and roadmap](#status-and-roadmap)
-- [License](#license)
-
-## Why this exists
-
-Most "billing software" projects either stay a prototype (float-based money,
-editable stock counts, no real double-entry) or copy an existing commercial
-product's design wholesale. Rechvix is built from a from-scratch engineering
-brief that treats the accounting and tax logic as the hard, non-negotiable
-part, and the UI as something that has to be fast for a billing-counter
-operator, not just pretty.
-
-Same philosophy as this project's sibling,
-[nodedr-pos](https://github.com/Raktim94/nodedr-pos): **self-hosted by
-default, no external connection required to run your business.** Core
-billing, inventory, and accounting work entirely on your own machine —
-your own PostgreSQL, no mandatory cloud dependency, no phone-home telemetry.
-The only things that ever reach the internet are the integrations you
-explicitly turn on and that inherently require it by their own nature — GST
-e-Invoice/e-Way Bill submission (a government API, required by Indian law
-for those documents), WhatsApp/email sharing, and optional cloud object
-storage. Everything else — creating invoices, tracking stock, running
-reports, closing the books — works fully offline.
-
-## Brand
-
-<p align="center">
-  <img src="docs/assets/brand/banner-hero.png" alt="Rechvix brand banner — From Products to Profits, Simplified" width="100%">
-</p>
-
-<p align="center">
-  <img src="docs/assets/brand/banner-secondary.png" alt="Rechvix brand banner — A complete business management platform for a simpler, smarter tomorrow" width="100%">
-</p>
-
-The two banners above are brand/marketing artwork, not application
-screenshots — the real UI screenshots are in the next section. A square
-logo variant is also available at
-[`docs/assets/brand/logo-square.png`](docs/assets/brand/logo-square.png).
-
-## Screenshots
-
-Real screens from a running instance — seeded with a demo grocery business
-(products, customers, a supplier, and a handful of finalized invoices and a
-purchase), not mockups.
-
-| | |
+| Invoice and customer workflow | Inventory and reporting |
 |---|---|
-| ![Dashboard](docs/assets/screenshots/dashboard.webp) **Dashboard** — real-time sales/purchase KPIs and a sales trend chart. | ![Billing](docs/assets/screenshots/billing-pos.webp) **Billing (POS)** — search or scan a product, stock and price show instantly. |
-| ![Finalized invoice](docs/assets/screenshots/invoice-finalized.webp) **Finalized tax invoice** — GST computed automatically from each line's HSN code, e-Way Bill eligibility already checked. | ![Sales list](docs/assets/screenshots/sales-list.webp) **Sales** — every quotation, order, and invoice, draft or finalized. |
-| ![Inventory](docs/assets/screenshots/inventory.webp) **Inventory** — stock valuation per product and warehouse, backed by an append-only movement ledger. | ![Purchases](docs/assets/screenshots/purchases.webp) **Purchases** — what you've bought from suppliers, same draft-then-finalize flow. |
-| ![Accounting](docs/assets/screenshots/accounting.webp) **Accounting** — a live, always-balanced trial balance and who owes you / who you owe. | ![GST / e-Way Bill](docs/assets/screenshots/gst-eway-bill.webp) **GST / Tax** — the free-government-portal e-Way Bill assistant, saved vehicles and transporters. |
-| ![Reports](docs/assets/screenshots/reports.webp) **Reports** — sales invoices, gross profit by product, purchase summary. | ![Contacts](docs/assets/screenshots/contacts.webp) **Contacts** — customers and suppliers, with credit limits and payment terms. |
-| ![Catalogue](docs/assets/screenshots/catalogue.webp) **Catalogue** — every product, with its HSN/SAC code for GST classification. | ![Settings](docs/assets/screenshots/settings.webp) **Settings** — business, legal entity, branch, warehouse, and GST registration. |
-| ![First-run setup](docs/assets/screenshots/bootstrap.webp) **First-run setup** — organisation, legal entity, branch, warehouse, and owner account, in one screen. | ![Dashboard, dark mode](docs/assets/screenshots/dashboard-dark.webp) **Dashboard, dark mode.** |
+| ![Rechvix invoice builder with selected customer, industrial product, quantity, price and finalize controls](docs/assets/tutorial/24-invoice-builder-filled.png) **Single-workspace invoicing** | ![Rechvix inventory stock card showing warehouse balance, stock adjustments and purchase and sale movement history](docs/assets/tutorial/31-stock-movements.png) **Warehouse inventory and stock history** |
+| ![Rechvix new-customer form opened inline while building an invoice](docs/assets/tutorial/23-inline-customer.png) **Create a customer without leaving the invoice** | ![Rechvix dashboard with sales, purchases, receivables, payables and stock valuation](docs/assets/tutorial/05-dashboard.png) **Business dashboard** |
 
-## Core design decisions
+**[View all 48 screenshots and the step-by-step tutorial](tutorial.md)**, including purchases, contacts, accounting, expenses, staff, calendar, tax pages for four countries, backup, settings and phone layouts.
 
-| Decision | Why |
+## Start here: the complete user tutorial
+
+The root-level **[tutorial.md](tutorial.md)** covers every one of the application's **22 route patterns**, plus the main forms and dialogs.
+
+| You want to… | Open the walkthrough |
 |---|---|
-| **Modular monolith**, not microservices | Invoice finalization touches inventory, ledger, tax, and numbering atomically — that needs one transaction, not a distributed saga. |
-| **`NUMERIC`, never `float`, for money** | Floats can't represent ₹0.01 exactly; a tax/accounting system that rounds wrong is a compliance and trust problem, not a bug ticket. |
-| **Append-only stock ledger** | Stock balance is a materialized projection of immutable movements, never a directly-editable number — so it's always reconcilable. |
-| **Double-entry, enforced at 3 layers** | App-level sum check, a deferred DB constraint trigger, and an unconditional trigger making posted journal rows immutable (a trigger, not just `REVOKE UPDATE` — a table owner bypasses grants the same way it bypasses RLS) — a bug in any one layer still can't post an unbalanced or silently-edited journal. Both enforcement mechanisms are proved with raw SQL that bypasses the Go app layer entirely, not just unit-tested. |
-| **Generic tax model** | `tax_document` / `tax_line` / `tax_component`, not hardcoded `cgst`/`sgst` columns — a `TaxEngine` interface with an `IndiaGSTEngine` plugin, so a second country is additive. |
-| **Versioned government adapters** | GSTN changed the e-Invoice/e-Way Bill API schema on 2026-08-01 with weeks' notice — adapters are versioned by directory (`einvoice/v1`, `.../vNext`) so that's a new adapter, not a scramble. |
-| **RLS as defense-in-depth** | Every tenant table is scoped by `organisation_id` at the application layer *and* PostgreSQL Row-Level Security — a bug in one layer isn't a cross-tenant data leak. |
-| **No bundled reverse proxy** | Self-hosted (CasaOS) and most cloud deployments already have one; TLS termination is the operator's documented job, not a second proxy fighting the first. |
+| Set up your business or recover access | [Setup, sign-in and password recovery](tutorial.md#1-first-setup-and-signing-in) |
+| Configure tax identity, language, branding or team access | [Business settings](tutorial.md#3-settings-prepare-your-business) |
+| Add products, selling prices and customers | [Catalogue](tutorial.md#4-catalogue-products-prices-and-imports) and [contacts](tutorial.md#5-contacts-customers-and-suppliers) |
+| Create an invoice and get paid | [Invoice building](tutorial.md#7-sales-build-and-finalize-an-invoice) and [printing, payments and returns](tutorial.md#8-invoice-details-print-payment-return-and-cancellation) |
+| Receive stock and pay suppliers | [Inventory](tutorial.md#6-inventory-stock-and-movement-history) and [purchases](tutorial.md#9-purchases-stock-received-and-supplier-payments) |
+| Hand tax records to your CA/accountant | [Country-specific tax preparation and downloads](tutorial.md#12-tax-and-files-for-your-accountant) |
+| Manage staff, tasks and backups | [Staff and calendar](tutorial.md#14-staff-and-calendar) and [backup/restore](tutorial.md#16-backup-and-restore) |
+| Use Rechvix on a phone | [Mobile navigation and billing](tutorial.md#17-using-a-phone) |
 
-Full reasoning, threat model, ERD shape, and the staged build plan live in
-[`docs/architecture.md`](docs/architecture.md).
+## Tax calculation and accountant exports
 
-## What's built
+Rechvix separates **recorded tax calculation**, **accountant preparation** and **government submission**. It does not file tax returns. Accountant exports require no government API credentials, but the accountant still needs to verify completeness, deduction eligibility, adjustments and the appropriate filing workflow.
 
-Nearly everything in the original brief is implemented, tested, and
-independently re-verified — [`docs/TODO.md`](docs/TODO.md) is the exact,
-stage-by-stage source of truth (including every test count and every
-documented gap); this is the summary:
+| Country | Supported preparation | What still needs attention |
+|---|---|---|
+| **India** | GST components, HSN/place-of-supply calculations, supported purchase input-tax recording, GSTR-1/GSTR-3B workpapers and eligible offline-tool CSVs | Current utility validation, omitted/unsupported statutory sections, GSTR-2B and ITC eligibility. Any export ERROR withholds all native CSVs together. Live e-Invoice/e-Way Bill operation requires the appropriate real setup; mock/sandbox outputs are not live issuance. |
+| **Spain** | IVA and recargo calculation; ordinary rate buckets and credit-note corrections; Modelo 303 workpapers, source registers and purchase-tax candidates | Accountant allocation of deductible tax, prorrata, acquisitions/imports, carry-forwards and settlement. No AEAT upload file, SII or RRSIF/VERI*FACTU implementation. |
+| **United Kingdom** | VAT calculations, recorded input-tax candidates, sales/purchase registers and a nine-box accountant worksheet | Accountant adjustments and scheme/NI handling. The CA uses appropriate Making Tax Digital software and digital links for filing. Rechvix does not submit MTD returns. |
+| **United States** | Recorded state base sales tax and separate state schedules, with taxable/exempt/not-collected sales | Local/district taxes, nexus, use tax, marketplace rules, product taxability and state-specific return mapping. Base-rate schedules alone are not complete returns. |
 
-- **Catalogue, contacts, pricing** — products/variants/SKUs/barcodes,
-  units of measure with auditable conversions, customers/suppliers with
-  GST fields, multi-currency price lists.
-- **Inventory** — perpetual multi-warehouse stock via an append-only
-  movement ledger, batch/lot/serial tracking, weighted-average costing,
-  reservations and reorder policies, concurrency-tested against real
-  oversell and lost-update races.
-- **Tax engine** — a generic `TaxEngine` interface with a full
-  `IndiaGSTEngine`: CGST/SGST/UTGST vs. IGST, cess, HSN, place-of-supply,
-  inclusive/exclusive pricing, golden fixtures checked by hand against
-  brief figures.
-- **Sales & purchase documents** — quotations, proforma, sales orders,
-  delivery challans, tax/POS invoices, credit/debit notes, sales returns,
-  recurring invoices, purchase orders/GRN/purchase invoices/returns —
-  finalization is one atomic transaction touching tax, inventory, and
-  numbering together, with PDF output (A4, thermal 80mm/58mm, and more).
-- **Double-entry accounting** — chart of accounts, journals, fiscal
-  periods, receipts/payments/reconciliations, auto-posting from finalized
-  documents, customer/supplier ledgers derived fresh from journal lines
-  (never a mutable balance column), ageing, fiscal-year locking.
-- **Reports & dashboard** — sales/purchase/inventory/accounting/tax
-  reports, GSTR-1-oriented preparation (explicitly labeled as prep, not a
-  filing submission), CSV/XLSX/JSON/PDF export, a live 8-card dashboard.
-- **Government integrations** — a real transactional outbox +
-  background worker, e-Invoice (IRN/QR) against the NIC sandbox, and a
-  free-first e-Way Bill workflow (generate/retrieve/cancel/Part-B history,
-  plus a "prepare → open the government portal → enter the result"
-  no-paid-API path) with a persisted status machine.
-- **Integrations** — scoped, revocable API keys as a real session
-  alternative, HMAC-signed webhooks with retry/backoff and a delivery log,
-  and a real MCP server (official `modelcontextprotocol/go-sdk`) exposing
-  read-only, permission-checked tools for AI access.
-- **RBAC & security** — TOTP MFA with recovery codes, Argon2id password
-  hashing, a full audit trail, and Row-Level Security on every tenant
-  table.
-- **Packaging** — multi-stage Docker images, Docker Compose (Postgres +
-  migration job + app + worker, no bundled reverse proxy), and a CasaOS
-  manifest — actually run end-to-end (`docker compose up` →
-  bootstrap → healthy), not just written.
-- **Frontend** — a real, working web app (not a mockup): Dashboard,
-  Sales (barcode/keyboard-driven billing counter), Purchases, Inventory,
-  Contacts, Catalogue, Accounting, GST/Tax, Reports, Integrations, and
-  Settings screens, all wired to the tested backend APIs above, with
-  light/dark themes, global search, and a WCAG 2.2 AA accessibility pass.
+The country dispatcher also supports configured VAT calculations for EU member states; this is not a claim that every country's invoicing, reporting or filing obligations are implemented. The verified accountant-workpaper mapping year is **2026**. These exports do not cover every corporate, payroll or personal income tax.
 
-**Known, deliberately documented gaps** (not silently skipped — see
-`docs/TODO.md` for the full, stage-by-stage list): purchases post a single
-line-total to the ledger rather than a split GST input-tax-credit line, so
-GSTR-3B-oriented reporting isn't built yet; email/SMS/WhatsApp providers
-are interfaces only (no free public sandbox exists for any of them, unlike
-the government tax APIs); Redis/MinIO are provisioned in Compose but
-genuinely unwired; the Tauri 2 desktop shell hasn't been started; and
-Stage 11's full security/performance hardening pass (load testing at
-100k+ products, a complete IDOR/CSRF/session-fixation review, backup/
-restore verification) is still in progress.
+The ZIP package includes an XLSX workbook, CSV registers, exact-decimal source JSON, review checklist, README and SHA-256 manifest. Blank statutory fields stay blank for accountant input. Read the [accountant export contract](docs/accountant-exports.md) and [tax-regime limitations](docs/tax-regimes.md) before relying on a country workflow.
 
-## Screens & features
+## Install Rechvix
 
-| Screen | What it does today |
-|---|---|
-| **Dashboard** | Today's sales/collections/purchases, outstanding receivable/payable, current stock value, low-stock count, and a sales trend chart — all from real finalized documents, no manual entry. |
-| **Sales / Billing** | Barcode/keyboard-driven billing counter: quotations, proforma, sales orders, delivery challans, tax/cash/credit invoices, POS billing, credit/debit notes, sales returns. Every line is saved to the server immediately; finalize computes tax server-side and posts inventory + the accounting journal atomically. |
-| **Purchases** | Purchase orders, GRN, purchase invoices, and returns from suppliers, same draft-then-finalize flow as Sales. |
-| **Inventory & Catalogue** | Perpetual multi-warehouse stock via an append-only movement ledger (never a directly-editable number), batch/lot/serial tracking, weighted-average costing, reservations and reorder policies — with a real per-product stock card (current/reserved/available, movement history, manual adjustments) in the UI, not just report tables. Catalogue covers products/variants/SKUs/barcodes, categories/brands, and units of measure with auditable conversions. |
-| **Contacts** | Customers and suppliers (a party can be either or both), with credit limits, payment terms, GSTIN/tax registrations, addresses, a real ledger with ageing, and recording receipts/payments — all reachable from a contact's own detail page. |
-| **Accounting** | Full double-entry: chart of accounts, journals, fiscal periods, receipts/payments/reconciliations, auto-posted from finalized documents, customer/supplier ledgers derived fresh from journal lines (never a mutable balance column), ageing, fiscal-year locking. |
-| **GST & e-Way Bill** | CGST/SGST/UTGST vs. IGST, cess, HSN-based tax rates with validity windows, e-Invoice (IRN/QR) against the NIC sandbox, and a free-first e-Way Bill workflow — a no-paid-API "prepare → open the government portal → enter the result" path, or an automatic path through a paid government-approved connection. A bulk-prepare queue selects multiple invoices at once and downloads one ZIP of ready-to-upload files. |
-| **Reports** | Sales/purchase/inventory/accounting/tax reports, GSTR-1-oriented preparation (explicitly labeled as prep, not a filing submission), CSV/XLSX/JSON/PDF export. |
-| **Settings** | Business, legal entity, branch, warehouse, and GST registration details, plus invoice branding — logo, address/phone/email/website, bank details, UPI ID, authorized signatory, and default terms & conditions, all rendered on every printed invoice/quotation/receipt. |
-| **Integrations** | Scoped, revocable API keys (shown once) and HMAC-signed webhooks — create, list, and revoke/deactivate both, right from the app. |
-| **Backup & Restore** | Download one complete, encrypted `.nodedrbackup` file with every organisation's data; restore one back (with a typed confirmation phrase — this replaces the live database, no undo). Enabled automatically on the standard docker-compose install, no extra secret to set. |
+### Docker Compose on your own server
 
-**Coming next** — Stage 11 (security/performance hardening): a full IDOR/
-CSRF/session-fixation/webhook-replay review, load testing at 100k+ products,
-backup/restore verification, and a migration test against a prior schema.
-Explicitly deferred beyond that (see [`docs/TODO.md`](docs/TODO.md) for the
-full list): a split GST input-tax-credit line on purchases (GSTR-3B-oriented
-reporting needs it), a bulk e-Way Bill queue, the Tauri 2 desktop shell, and
-wiring up the Redis/MinIO services already provisioned in Compose.
-
-## Tech stack
-
-| Layer | Choice |
-|---|---|
-| Backend | Go 1.27, `net/http` + [chi](https://github.com/go-chi/chi), [pgx](https://github.com/jackc/pgx) |
-| Database | PostgreSQL 18 — `NUMERIC(20,6)`/`NUMERIC(24,12)` for money/rates, Row-Level Security, UUIDv7 primary keys |
-| Migrations | [golang-migrate](https://github.com/golang-migrate/migrate), plain versioned SQL |
-| Money | [`shopspring/decimal`](https://github.com/shopspring/decimal) wrapped in an internal `Money` type — never `float32`/`float64` |
-| Auth | Argon2id (benchmarked params, see [ADR 0001](docs/adr/0001-argon2id-parameters.md)), server-managed sessions, TOTP MFA |
-| Observability | `log/slog` (structured JSON) + OpenTelemetry |
-| Frontend | Vite + React 19 + TypeScript (strict mode), TanStack Query/Router, React Hook Form + Zod, Apache ECharts, self-hosted fonts (no external font/CDN calls) |
-| Desktop | Tauri 2 planned — a thin shell around the same web build, no business logic duplicated; not started yet |
-
-## Repository structure
-
-```
-apps/           server, worker, mcp, web entrypoints (desktop planned)
-internal/
-  platform/     cross-cutting: config, database, auth, permissions, audit, money, http, observability...
-  modules/      domain modules: identity, organisation, catalogue, inventory, sales, accounting, gstindia, einvoice...
-api/openapi/    OpenAPI 3.1 spec (source of truth for API clients) — all 124 real routes, mechanically verified
-migrations/     versioned SQL migrations
-deploy/         docker, compose deployment manifests
-casaos/         CasaOS/ZimaOS app store manifest and assets
-docs/           architecture, research, ADRs, API/operations/security docs, brand assets
-tests/          integration and end-to-end tests
-```
-
-Each `internal/modules/*` package follows `domain/` (pure business rules,
-no I/O) → `app/` (use-case orchestration) → `pg/` (repository
-implementation) layering — see `internal/modules/organisation` for the
-reference shape.
-
-## One-command self-hosted install
-
-<p align="center">
-  <img src="docs/assets/install-animated.svg" alt="Animated terminal: clone the repo and run install.sh" width="100%">
-</p>
-
-
-**Already have Docker?** — on Linux or macOS:
+With Docker installed, inspect [install.sh](install.sh), then run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Raktim94/rechvix/main/install.sh | bash
 ```
 
-This clones the repo, generates the secrets `deploy/compose/.env` needs, and
-runs `docker compose up -d` (Postgres + migration job + app + worker). It
-prints the URL to open when it's done. See [`install.sh`](install.sh) itself
-for exactly what it does before piping it into a shell, and
-[`deploy/compose/`](deploy/compose) if you'd rather run the Compose commands
-by hand.
+The installer clones the repository, generates the Compose secrets and starts PostgreSQL, migrations, the app and the worker. Open the URL it prints and complete `/setup`. Review TLS, secure cookies, backups and bootstrap settings before exposing an installation publicly. The [deployment guide](docs/operations/deployment.md) explains operator responsibilities and manual installation.
 
-**Starting from a clean machine?** — `scripts/quickstart.*` also installs
-Docker and git first if either is missing, then runs the installer above:
+For a machine that also needs Docker/git setup, inspect and use the [Linux/macOS quickstart](scripts/quickstart.sh) or [Windows PowerShell quickstart](scripts/quickstart.ps1). The Windows quickstart uses WSL2 for the server stack.
 
-macOS / Linux:
+### CasaOS and ZimaOS
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Raktim94/rechvix/main/scripts/quickstart.sh | bash
+Use the platform's custom Compose installation workflow with:
+
+```text
+https://raw.githubusercontent.com/Raktim94/rechvix/main/casaos/docker-compose.yml
 ```
 
-Windows (PowerShell):
+The current manifest pins **0.14.24** for the server, migration and worker services, with images published for **amd64 and arm64**. It generates database/encryption secrets on first boot. Open `http://<your-server>:8090`, then complete setup.
 
-```powershell
-irm https://raw.githubusercontent.com/Raktim94/rechvix/main/scripts/quickstart.ps1 | iex
+Back up both `/DATA/AppData/rechvix/postgres` and `/DATA/AppData/rechvix/secrets`. Keep the secrets when upgrading; removing the application data can destroy records or make encrypted data unrecoverable. Consult the [CasaOS manifest](casaos/docker-compose.yml) and [deployment guide](docs/operations/deployment.md) for the current configuration.
+
+### Desktop, tablet and mobile access
+
+The responsive web application runs in a browser against your Rechvix server. A **Tauri 2 desktop shell** is included under [`apps/desktop`](apps/desktop), with a Windows MSIX build/package/test workflow. The desktop package bundles the Go server and a local PostgreSQL database, starting them on launch so the packaged app can operate locally without a separate hosted server. Review [desktop documentation](apps/desktop/README.md) for installation/build status and platform requirements.
+
+## Architecture and technology
+
+Rechvix is a **Go modular monolith with PostgreSQL**, designed to keep related invoice, tax, stock and accounting changes in one database transaction.
+
+| Area | Implementation |
+|---|---|
+| Backend | Go 1.27, `net/http`, chi router, pgx |
+| Database | PostgreSQL 18, exact `NUMERIC` money/rates, UUIDv7, tenant RLS |
+| Frontend | React 19, TypeScript, Vite, TanStack Query/Router, React Hook Form, Zod, ECharts |
+| Money and stock | Decimal calculations; append-only stock movements and recorded cost data |
+| Accounting | Double-entry journals, database posting constraints and immutable posted records |
+| Authentication | Server-side sessions, Argon2id, TOTP MFA support, scoped authorization |
+| Integrations | Transactional outbox/worker, API keys, signed webhooks, read-only MCP tools |
+| Distribution | Docker Compose, GHCR server/worker images, CasaOS/ZimaOS, Tauri desktop shell |
+| Verification | Go unit/integration tests, static/security checks, frontend build/tests, Playwright accessibility and keyboard checks, container builds |
+
+Production safety depends on deployment configuration and operating practices as well as application controls. A passing test suite is not certification of tax compliance or proof that every security/performance risk has been eliminated. See the [architecture](docs/architecture.md), [security reporting instructions](CONTRIBUTING.md#reporting-security-issues) and [feature audit](docs/feature-audit.md).
+
+```text
+apps/             server, worker, web, desktop and MCP entrypoints
+internal/modules/ business domains: sales, purchases, inventory, tax, accounting…
+internal/platform/ shared database, auth, permissions, money and infrastructure
+api/openapi/      REST API specification
+migrations/       versioned SQL migrations
+deploy/           Docker and Compose configuration
+casaos/           CasaOS/ZimaOS manifest and assets
+tests/            integration and browser tests
+docs/             architecture, operations, tax scope and screenshot inventory
+tutorial.md       illustrated guide to every application page
 ```
 
-There's no native Windows path for the app itself — the PowerShell script
-installs [WSL2](https://learn.microsoft.com/windows/wsl/install) (Windows'
-own free Linux subsystem) if it isn't already present and runs the Linux
-quickstart inside it, so `docker` still works as a plain Windows command
-too. If WSL2 has never been enabled on the machine before, Windows needs one
-restart to finish turning it on — the script says so and picks up exactly
-where it left off when you run the same command again. Both quickstart
-scripts are safe to re-run: every step only acts if it hasn't already
-succeeded, and an existing checkout is updated in place rather than
-re-cloned. See [`scripts/quickstart.sh`](scripts/quickstart.sh) and
-[`scripts/quickstart.ps1`](scripts/quickstart.ps1) for exactly what they do.
+## Development and testing
 
-## Getting started (development)
-
-Requires Go 1.27+ (or let `go`'s toolchain auto-download it — the module
-already pins the version) and a PostgreSQL 18 instance.
+Use the Go toolchain pinned by [go.mod](go.mod), PostgreSQL 18 and a supported Node.js environment for the frontend. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and the [deployment guide](docs/operations/deployment.md) for configuration.
 
 ```bash
 git clone https://github.com/Raktim94/rechvix.git
 cd rechvix
-
-# Point at your own Postgres 18 instance
-export DATABASE_DSN="postgres://user:pass@localhost:5432/billing?sslmode=disable"
-export DATABASE_AUTO_MIGRATE=true   # applies pending migrations on startup
-
 go build ./...
-go run ./apps/server
+go test ./...
 ```
 
-Run the frontend against it:
+Configure a local database before starting the server. Apply migrations with a schema-owning role and run ordinary traffic with a separate non-owning runtime role; using the table owner for runtime traffic can bypass RLS. Start the configured backend with `go run ./apps/server` and the web frontend with:
 
 ```bash
-cd apps/web
-npm install
-npm run dev
+npm --prefix apps/web ci
+npm --prefix apps/web run dev
 ```
 
-Run the test suite:
+Additional checks:
 
 ```bash
-go test ./...                              # unit tests
-go test -tags=integration ./...            # integration tests (needs Docker — spins up a real postgres:18 via Testcontainers)
+go test -tags=integration ./...  # requires the documented test database/Docker setup
+npm --prefix apps/web run lint
+npm --prefix apps/web test
+npm --prefix apps/web run i18n:check
+npm --prefix apps/web run build
 ```
 
-Or bring up the whole backend stack (Postgres + migrations + server +
-worker) with Docker Compose:
+Browser tests live under [`tests/e2e`](tests/e2e). CI runs the repository's configured checks on pushes and pull requests; the badge above links to current results.
 
-```bash
-cd deploy/compose
-docker compose up -d
-```
+## Frequently asked questions
 
-See `internal/platform/config/config.go` for the full list of environment
-variables (session cookie settings, Argon2id tuning, OTel exporter target,
-CORS allow-list, etc.) — every required value fails fast at startup with a
-clear message rather than a nil-pointer panic later. For a one-command
-"clone and run" setup instead of the manual steps above, see
-[One-command self-hosted install](#one-command-self-hosted-install).
+### Is Rechvix free and open source?
+
+The self-hosted application is available under the [GNU Affero General Public License v3](LICENSE). You operate your own infrastructure. Review the license's obligations when modifying or distributing it or providing a modified network service; optional providers and hosting are separate.
+
+### Can I use it for an industrial supplier or warehouse business?
+
+Rechvix supports the billing, products, stock, purchasing, payments and accounting workflows used by these businesses. It is not a claim of a complete manufacturing/MRP system: production planning, bills of materials and other industry-specific requirements should be evaluated separately.
+
+### Can I create a customer while making an invoice?
+
+Yes. The billing screen lets you search previous customers or create one inline, including available tax/address details. See the [invoice tutorial](tutorial.md#7-sales-build-and-finalize-an-invoice).
+
+### Can my accountant use the tax files without connecting Rechvix to the government?
+
+Yes. The supported accountant packages are downloaded locally without tax-authority API credentials. Your accountant reviews and completes them and uses the appropriate filing tools. This does not remove separate invoicing obligations or make every file directly uploadable to every portal.
+
+### Does Rechvix work offline?
+
+The self-hosted web client needs a connection to your own Rechvix server; it does not provide offline browser editing or automatic synchronization. The packaged desktop app bundles its own server and PostgreSQL for local operation. Government portals, external sharing and configured external integrations still need connectivity.
+
+### Where is the user manual?
+
+Start with **[tutorial.md: every page and 48 screenshots](tutorial.md)**. The older [PDF user manual](docs/Rechvix-User-Manual.pdf) is also available, but may not show the latest features and screenshots.
 
 ## Documentation
 
-- [`docs/research.md`](docs/research.md) — verified platform/government API
-  version facts (not guessed — checked against current sources) and open
-  engineering decisions.
-- [`docs/architecture.md`](docs/architecture.md) — the full architecture:
-  module boundaries, domain model, tax/inventory/accounting design,
-  government-integration adapters, security architecture, testing strategy,
-  threat model, staged milestone plan.
-- [`docs/api.md`](docs/api.md) / [`api/openapi/openapi.yaml`](api/openapi/openapi.yaml) — the REST API reference and machine-readable spec, verified against every real route registration.
-- [`docs/database.md`](docs/database.md) — the schema, cross-checked against every migration.
-- [`docs/operations/deployment.md`](docs/operations/deployment.md) — real deployment commands and reasoning, gaps stated plainly.
-- [`docs/TODO.md`](docs/TODO.md) — the live, stage-by-stage build checklist — the single most accurate source for "what's actually done."
-- [`docs/adr/`](docs/adr/) — Architecture Decision Records for specific non-obvious choices (e.g. Argon2id parameters, `GetByID` organisation scoping).
-- [`CHANGELOG.md`](CHANGELOG.md) — derived from real git history, one entry per shipped stage.
-- [`docs/Rechvix-User-Manual.pdf`](docs/Rechvix-User-Manual.pdf) — the non-developer walkthrough: setup, every screen, common workflows, FAQ.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup, test commands, code conventions, PR process.
-- [Wiki](../../wiki) — narrative documentation: getting oriented in the codebase, the tax engine explained, the roadmap in prose form.
+- [Complete illustrated user tutorial](tutorial.md) — setup, every page, daily workflows and troubleshooting.
+- [Screenshot inventory](docs/assets/tutorial/README.md) — capture scope, image links and metadata.
+- [Accountant export scope](docs/accountant-exports.md) — country workpapers, supported native files and review requirements.
+- [Tax regimes and limitations](docs/tax-regimes.md) — country-specific calculations and compliance gaps.
+- [Architecture](docs/architecture.md) and [database design](docs/database.md) — business rules, transaction boundaries and schema.
+- [REST API guide](docs/api.md) and [OpenAPI specification](api/openapi/openapi.yaml).
+- [Deployment and recovery](docs/operations/deployment.md) — installation, configuration, backups and operational controls.
+- [Feature audit](docs/feature-audit.md), [implementation checklist](docs/TODO.md) and [changelog](CHANGELOG.md).
+- [Contributing](CONTRIBUTING.md) and [architecture decision records](docs/adr).
 
-## User manual
+## Project and license
 
-A full walkthrough for non-developers — self-hosting quick start, first-run
-setup, every screen explained, common workflows (create an invoice, record
-a purchase, generate an e-Way Bill), and troubleshooting/FAQ:
-[`docs/Rechvix-User-Manual.pdf`](docs/Rechvix-User-Manual.pdf).
-
-## Contributing
-
-Bug reports and pull requests are welcome — see
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for the development setup, test
-commands, code conventions, and PR process.
-
-## Status and roadmap
-
-Built in explicit, gated stages (research → architecture → foundation →
-catalogue → inventory → tax engine → sales → accounting → reporting →
-government integrations → other integrations → packaging → frontend →
-hardening). A stage isn't marked done until it has real passing unit *and*
-integration tests, independently re-verified — see
-[`docs/TODO.md`](docs/TODO.md) for the exact test counts and the specific,
-named gaps at every stage. As of this writing: **Stages 0 through 10b-2 are
-complete** (full backend, government integrations, Docker/CasaOS packaging,
-and a working frontend with a WCAG 2.2 AA accessibility pass). **Stage 11
-— security and performance hardening — is the one phase still in
-progress**: a full IDOR/CSRF/session-fixation/webhook-replay review, load
-testing at realistic scale, backup/restore verification, and a migration
-test against a prior schema.
-
-## License
-
-Copyright © 2026 [Nodedr Infotech Private Limited](https://www.nodedr.com/)
-and Raktim Ranjit. Licensed under the
-[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) — the
-[NOTICE.md](NOTICE.md) preserves the project copyright and version notice;
-[`LICENSE`](LICENSE) contains the standard license text. In short:
-you're free to self-host, use, and modify this software for your business.
-If you modify it and run that modified version as a network service for
-others, you must make your modified source available to those users under
-the same license — this keeps improvements to a self-hosted business tool
-in the open rather than disappearing into a closed commercial fork. Same
-license as this project's sibling, [nodedr-pos](https://github.com/Raktim94/nodedr-pos).
-
-
-## Case study
-
-Read the [Rechvix case study](https://www.raktimranjit.com/projects/rechvix) for the product background and design decisions.
-
-Maintainer: [Raktim Ranjit](https://www.raktimranjit.com/)
+Built by **[NodeDR Infotech Private Limited](https://www.nodedr.com/)**. Maintainer: **[Raktim Ranjit](https://www.raktimranjit.com/)**. [Project case study](https://www.raktimranjit.com/projects/rechvix) · [Issues and bug reports](https://github.com/Raktim94/rechvix/issues) · [AGPL-3.0 license](LICENSE).
