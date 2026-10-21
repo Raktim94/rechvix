@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -69,6 +70,7 @@ import (
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchaseshttp "rechvix/internal/modules/purchases/httpapi"
 	purchasespg "rechvix/internal/modules/purchases/pg"
+	"rechvix/internal/modules/recurring"
 	referencehttp "rechvix/internal/modules/reference/httpapi"
 	"rechvix/internal/modules/reminders"
 	reportingapp "rechvix/internal/modules/reporting/app"
@@ -512,6 +514,7 @@ func run() error {
 		emailProvider, nil, nil,
 	)
 
+	recurringSvc := recurring.NewService(pool, salesSvc, notificationsSvc, permissionsChecker, auditRecorder, logger, func() string { return strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) })
 	remindersSvc := reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger)
 
 	router := httpx.NewRouter(httpx.RouterConfig{AllowedOrigins: cfg.Server.AllowedOrigins, Logger: logger})
@@ -620,6 +623,7 @@ func run() error {
 			einvoicehttp.NewHandlers(einvoiceSvc, pool, permissionsChecker).Mount(r)
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
+			recurring.NewHandlers(recurringSvc).Mount(r)
 		})
 	})
 

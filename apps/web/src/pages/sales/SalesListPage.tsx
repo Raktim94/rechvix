@@ -1,3 +1,4 @@
+import { RecurringList } from "../../components/RecurringPanel";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -258,6 +259,7 @@ export function SalesListPage() {
           </div>
         )}
       </div>
+      <RecurringList />
     </div>
   );
 }

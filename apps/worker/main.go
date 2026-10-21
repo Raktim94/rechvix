@@ -15,6 +15,7 @@ import (
 	backupapp "rechvix/internal/modules/backup/app"
 	"rechvix/internal/modules/taxregimes"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 	orgpg "rechvix/internal/modules/organisation/pg"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricingpg "rechvix/internal/modules/pricing/pg"
+	"rechvix/internal/modules/recurring"
 	"rechvix/internal/modules/reminders"
 	salesapp "rechvix/internal/modules/sales/app"
 	salespg "rechvix/internal/modules/sales/pg"
@@ -180,6 +182,7 @@ func run() error {
 		logger.Info("scheduled backups enabled", "interval", interval.String(), "dir", dir, "keep", keep)
 	}
 
+	go recurring.NewService(pool, salesSvc, notificationsSvc, permissionsChecker, auditRecorder, logger, func() string { return strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) }).Loop(ctx, time.Hour)
 	go reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger).Loop(ctx, time.Hour)
 
 	poller := outbox.NewPoller(pool, outboxStore, logger)

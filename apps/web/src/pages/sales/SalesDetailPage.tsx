@@ -7,6 +7,7 @@ import { EwayBillCard } from "../../components/EwayBillCard";
 import { WhatsAppIcon } from "../../components/icons";
 import { PaymentPanel } from "../../components/PaymentPanel";
 import { PrintTemplateMenu } from "../../components/PrintTemplateMenu";
+import { RepeatInvoiceForm } from "../../components/RecurringPanel";
 import { EmailDocumentPanel } from "../../components/EmailDocumentPanel";
 import { ShareLinksPanel } from "../../components/ShareLinksPanel";
 import ui from "../../components/ui.module.css";
@@ -187,6 +188,7 @@ export function SalesDetailPage({ id }: { id: string }) {
           {convert.error instanceof ApiError ? convert.error.message : "Could not convert this document."}
         </p>
       ) : null}
+      {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? <RepeatInvoiceForm documentId={document.ID} /> : null}
       {document.Status !== "DRAFT" ? <EmailDocumentPanel documentType="sales_document" documentId={document.ID} subject={`${document.DocumentNumber}`} /> : null}
       {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}
 
