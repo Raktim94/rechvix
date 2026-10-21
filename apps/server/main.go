@@ -87,6 +87,7 @@ import (
 	salespg "rechvix/internal/modules/sales/pg"
 	"rechvix/internal/modules/sales/printing"
 	"rechvix/internal/modules/sepa"
+	"rechvix/internal/modules/shop"
 	staffapp "rechvix/internal/modules/staff/app"
 	staffhttp "rechvix/internal/modules/staff/httpapi"
 	staffpg "rechvix/internal/modules/staff/pg"
@@ -529,6 +530,7 @@ func run() error {
 	esignSvc := esignapp.NewService(pool, salesDocRenderer{sales: salesSvc}, notificationsMailer{svc: notificationsSvc}, permissionsChecker, auditRecorder)
 	salesSvc.WithESign(esignSvc)
 	onlinepaySvc := onlinepay.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)
+	shopSvc := shop.NewService(pool, salesSvc, catalogueSvc, contactsSvc, notificationsSvc, onlinepaySvc, esignSvc, salesDocRenderer{sales: salesSvc}, permissionsChecker, auditRecorder)
 	remindersSvc := reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger)
 
 	router := httpx.NewRouter(httpx.RouterConfig{AllowedOrigins: cfg.Server.AllowedOrigins, Logger: logger})
@@ -618,6 +620,7 @@ func run() error {
 		esignhttp := esignapp.NewHandlers(esignSvc)
 		esignhttp.MountPublic(r)
 		onlinepay.NewHandlers(onlinepaySvc).MountPublic(r)
+		shop.NewHandlers(shopSvc).MountPublic(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(identityhttp.RequireAuthOrAPIKey(identitySvc, cfg.Session.CookieName))
@@ -642,6 +645,7 @@ func run() error {
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 			esignhttp.Mount(r)
 			onlinepay.NewHandlers(onlinepaySvc).Mount(r)
+			shop.NewHandlers(shopSvc).Mount(r)
 			sepa.NewHandlers(sepa.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)

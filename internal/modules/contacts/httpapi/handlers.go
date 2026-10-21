@@ -55,7 +55,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrLegalNameRequired):
 		httpx.WriteError(w, r, httpx.NewBadRequest("LEGAL_NAME_REQUIRED", "legal_name is required."))
 	case errors.Is(err, domain.ErrInvalidPhone):
-		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_PHONE", "phone must be exactly 10 digits."))
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_PHONE", "phone must be 7 to 15 digits (numbers only)."))
 	case errors.Is(err, domain.ErrDuplicatePhone):
 		httpx.WriteError(w, r, httpx.NewConflict("DUPLICATE_PHONE", "This phone number is already used by another customer/supplier."))
 	case errors.As(err, &forbidden):

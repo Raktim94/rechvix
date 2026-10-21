@@ -27,6 +27,8 @@ import {
   StaffPage,
   CrmPage,
   SignPage,
+  ShopPage,
+  PortalPage,
   ServicePage,
   SepaPage,
 } from "./lazyPages";
@@ -105,6 +107,17 @@ const signRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign/$token",
   component: () => <SignPage token={signRoute.useParams().token} />,
+});
+
+const shopRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/shop/$slug",
+  component: () => <ShopPage slug={shopRoute.useParams().slug} />,
+});
+const portalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/$slug",
+  component: () => <PortalPage slug={portalRoute.useParams().slug} />,
 });
 
 const forgotPasswordRoute = createRoute({
@@ -220,6 +233,8 @@ const routeTree = rootRoute.addChildren([
   forgotPasswordRoute,
   resetPasswordRoute,
   signRoute,
+  shopRoute,
+  portalRoute,
   dashboardRoute,
   salesListRoute,
   salesNewRoute,

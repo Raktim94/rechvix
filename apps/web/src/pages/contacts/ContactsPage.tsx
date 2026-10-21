@@ -114,10 +114,10 @@ export function ContactsPage() {
                 id="party-phone"
                 className={ui.input}
                 inputMode="numeric"
-                maxLength={10}
-                placeholder="10-digit mobile number"
+                maxLength={15}
+                placeholder="Digits only, with country code outside India"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 15))}
               />
             </div>
             <div className={ui.field}>

@@ -45,7 +45,7 @@ func (s *Service) ImportParties(ctx context.Context, principal permissions.Princ
 		for _, row := range rows {
 			partyType := domain.PartyType(strings.ToUpper(strings.TrimSpace(row.Fields["party_type"])))
 			legalName := strings.TrimSpace(row.Fields["legal_name"])
-			phone := strings.TrimSpace(row.Fields["phone"])
+			phone := NormalizePhone(row.Fields["phone"])
 			email := strings.TrimSpace(row.Fields["email"])
 			currencyCode := strings.ToUpper(strings.TrimSpace(row.Fields["currency_code"]))
 
@@ -62,7 +62,7 @@ func (s *Service) ImportParties(ctx context.Context, principal permissions.Princ
 				continue
 			}
 			if phone != "" && !phonePattern.MatchString(phone) {
-				b.Error(row.Number, "phone %q must be exactly 10 digits", phone)
+				b.Error(row.Number, "phone %q must be 7 to 15 digits", phone)
 				continue
 			}
 			if phone != "" && seenPhones[phone] {
