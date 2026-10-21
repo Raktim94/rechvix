@@ -58,6 +58,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/contacts", labelKey: "nav.item.contacts", icon: <ContactsIcon /> },
       { to: "/crm", labelKey: "nav.item.crm", icon: <ContactsIcon /> },
+      { to: "/service", labelKey: "nav.item.service", icon: <SettingsIcon /> },
     ],
   },
   {

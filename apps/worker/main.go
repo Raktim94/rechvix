@@ -30,6 +30,7 @@ import (
 	einvoicepg "rechvix/internal/modules/einvoice/pg"
 	mockprovider "rechvix/internal/modules/einvoice/v1/mock"
 	sandboxprovider "rechvix/internal/modules/einvoice/v1/sandbox"
+	"rechvix/internal/modules/fieldservice"
 	"rechvix/internal/modules/gstindia"
 	gstindiapg "rechvix/internal/modules/gstindia/pg"
 	inventoryapp "rechvix/internal/modules/inventory/app"
@@ -182,6 +183,7 @@ func run() error {
 		logger.Info("scheduled backups enabled", "interval", interval.String(), "dir", dir, "keep", keep)
 	}
 
+	go fieldservice.NewService(pool, permissionsChecker, auditRecorder, logger).Loop(ctx, time.Hour)
 	go recurring.NewService(pool, salesSvc, notificationsSvc, permissionsChecker, auditRecorder, logger, func() string { return strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) }).Loop(ctx, time.Hour)
 	go reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger).Loop(ctx, time.Hour)
 

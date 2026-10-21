@@ -43,7 +43,8 @@
       "integrations": "Integraciones",
       "backup": "Copia de seguridad",
       "settings": "Ajustes",
-      "crm": "CRM"
+      "crm": "CRM",
+      "service": "Servicio técnico"
     }
   },
   "shell": {

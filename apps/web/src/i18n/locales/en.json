@@ -43,7 +43,8 @@
       "backup": "Backup",
       "settings": "Settings",
       "tax_gst": "GST / Tax",
-      "crm": "CRM"
+      "crm": "CRM",
+      "service": "Field service"
     }
   },
   "shell": {

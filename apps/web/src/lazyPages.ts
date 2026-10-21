@@ -24,3 +24,4 @@ export const StaffPage = lazy(() => import("./pages/staff/StaffPage").then((m) =
 export const CalendarPage = lazy(() => import("./pages/staff/CalendarPage").then((m) => ({ default: m.CalendarPage })));
 
 export const CrmPage = lazy(() => import("./pages/crm/CrmPage").then((m) => ({ default: m.CrmPage })));
+export const ServicePage = lazy(() => import("./pages/service/ServicePage").then((m) => ({ default: m.ServicePage })));

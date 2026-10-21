@@ -45,6 +45,7 @@ import (
 	ewaybillhttp "rechvix/internal/modules/ewaybill/httpapi"
 	ewaybillpg "rechvix/internal/modules/ewaybill/pg"
 	portalv1 "rechvix/internal/modules/ewaybill/portal/v1"
+	"rechvix/internal/modules/fieldservice"
 	"rechvix/internal/modules/gstindia"
 	gstindiaapp "rechvix/internal/modules/gstindia/app"
 	gstindiadomain "rechvix/internal/modules/gstindia/domain"
@@ -633,6 +634,7 @@ func run() error {
 			recurring.NewHandlers(recurringSvc).Mount(r)
 			pricerules.NewHandlers(priceRulesSvc).Mount(r)
 			stockprojection.NewHandlers(stockprojection.NewService(pool, permissionsChecker)).Mount(r)
+			fieldservice.NewHandlers(fieldservice.NewService(pool, permissionsChecker, auditRecorder, logger)).Mount(r)
 			crm.NewHandlers(crm.NewService(pool, contactsSvc, permissionsChecker, auditRecorder)).Mount(r)
 			docstatus.NewHandlers(docstatus.NewService(pool, permissionsChecker, auditRecorder)).Mount(r)
 		})
