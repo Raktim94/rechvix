@@ -15,7 +15,7 @@ at the start of that phase, not now. Nothing is marked done without acceptance t
 ## Phases
 
 - [~] **0 Discovery/baseline** — docs produced; baseline: build/vet/unit/tsc/lint pass; integration, e2e, screenshots **not run** (R-01). Gate: operator unblocks Docker.
-- [~] **1 Hardening + foundation** — done so far: service-layer permission audit (AST test `internal/modules/authz_audit_test.go`: 0 ungated methods beyond 9 allowlisted self-service/internal ones); pool sizing documented (R-08). Remaining: route×permission×tenant matrix test; API-key scope audit; scheduled encrypted backups + retention + restore test; DB pool config; `/v2` DTO layer + OpenAPI fix; sale-cost snapshot migration (expand→backfill→contract); design token reconciliation.
+- [~] **1 Hardening + foundation** — done so far: service-layer permission audit (AST test `internal/modules/authz_audit_test.go`: 0 ungated methods beyond 9 allowlisted self-service/internal ones); pool sizing documented (R-08); scheduled verified encrypted backups with retention (worker, opt-in; unit + integration tests pass); integration baseline 285 pass/0 fail on remote Docker. Remaining: route×permission×tenant matrix test; API-key scope audit; off-host backup copy + clean-host restore drill; `/v2` DTO layer + OpenAPI fix; sale-cost snapshot migration (expand→backfill→contract); design token reconciliation.
 - [ ] **2 CRM + tasks** — extend `parties`/`tasks`; leads, opportunities, activities, dedupe.
 - [ ] **3 Sales chain + recurring** — quote→order→delivery→invoice; wire/verify reservations; recurring engine.
 - [ ] **4 Inventory/purchasing/ITC** — warehouses/virtual locations, receipts, landed cost, ITC, historical COGS reports.

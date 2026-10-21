@@ -9,7 +9,7 @@ Severity: H/M/L. Status: Open unless stated. Evidence refers to this audit (2026
 | R-03 | Gross profit uses current average cost, not sale-time cost; misleading margin | H | `reporting/domain.GrossProfitRow` comment | Phase 4: snapshot `unit_cost` on SALE movements; expand/migrate/contract; keep "approximate" banner until backfill verified |
 | R-04 | Purchase GST input credit / GSTR-3B not built; tax reports one-sided | H | TODO l.80 | Phase 4; tax claims need jurisdiction rules verified (India GST) |
 | R-05 | OpenAPI documents snake_case, server emits PascalCase for 14/15 modules | H | TODO Stage 11 | Add versioned DTO layer (`/v2`), contract tests; do not break `apps/web` |
-| R-06 | Backups manual only; no schedule/retention/integrity check | H | `modules/backup` has Export/Restore only | Phase 1 using existing worker + AEAD |
+| R-06 | Scheduled backups now exist (verify+retention, opt-in); still no off-host copy or schedule UI | M | `backup/app/scheduled.go` | Document + drill restore on clean host; add off-host sync |
 | R-07 | Reservation wiring/concurrency unverified (Scenario 3) | H | `stock_reservations` schema + domain exist; service use not confirmed | Phase 3/4: lock-based reserve test with concurrent clerks |
 | R-08 | DB pool default 20 saturates at 20 concurrent readers (p95 45→731ms) | L | TODO Stage 11 | Already configurable; sizing guidance added to docs/operations/deployment.md (done) |
 | R-09 | Webhook outbound SSRF defense unverified | M | `modules/webhooks` | Phase 9: allowlist/deny private ranges, test |

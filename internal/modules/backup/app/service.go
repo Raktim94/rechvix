@@ -135,31 +135,61 @@ func (s *Service) Export(ctx context.Context, principal permissions.Principal) (
 		return nil, "", ErrNotConfigured
 	}
 
+	file, header, err := s.buildBackup(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	now, dumpLen, pgVersion := header.CreatedAt, header.ArchiveBytes, header.PostgresVersion
+	s.recordAudit(ctx, audit.Entry{
+		// This backup spans every organisation on this instance, not just
+		// principal's own — there is no more specific OrganisationID to
+		// record it under than the one the initiating user actually
+		// belongs to, same as any other action only an authenticated user
+		// can take.
+		OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+		Action: "backup.exported", EntityType: "database",
+		AfterState: map[string]any{"archive_bytes": dumpLen, "postgres_version": pgVersion}, At: now,
+	})
+
+	return file, backupFilename(now), nil
+}
+
+func backupFilename(t time.Time) string {
+	return fmt.Sprintf("rechvix-backup-%s.nodedrbackup", t.UTC().Format("2006-01-02-150405"))
+}
+
+// buildBackup produces the sealed backup file bytes. No permission check:
+// callers (Export, RunScheduled) gate access themselves.
+func (s *Service) buildBackup(ctx context.Context) ([]byte, Header, error) {
 	dump, err := pgtools.Dump(ctx, s.backupDSN)
 	if err != nil {
-		return nil, "", fmt.Errorf("backup: %w", err)
+		return nil, Header{}, fmt.Errorf("backup: %w", err)
 	}
 	// Best-effort — a backup with an empty PostgresVersion field is still
 	// a completely valid, restorable backup; failing the whole export
 	// over this one informational field would be the wrong trade-off.
 	pgVersion, _ := pgtools.Version(ctx)
 
+	return s.seal(dump, pgVersion, s.now())
+}
+
+// seal wraps a raw dump in the versioned, checksummed, AEAD-encrypted file format.
+func (s *Service) seal(dump []byte, pgVersion string, now time.Time) ([]byte, Header, error) {
 	sum := sha256.Sum256(dump)
-	now := s.now()
 	header := Header{
 		Version: backupFormatVersion, CreatedAt: now, PostgresVersion: pgVersion,
 		SHA256: hex.EncodeToString(sum[:]), ArchiveBytes: len(dump),
 	}
 	headerJSON, err := json.Marshal(header)
 	if err != nil {
-		return nil, "", fmt.Errorf("backup: encoding header: %w", err)
+		return nil, Header{}, fmt.Errorf("backup: encoding header: %w", err)
 	}
 	// headerJSON is AEAD "additional data": authenticated (Open fails if
 	// it's altered) but not itself encrypted — exactly what Inspect below
 	// needs to read metadata without decrypting the archive.
 	sealed, err := s.aead.Seal(dump, headerJSON)
 	if err != nil {
-		return nil, "", fmt.Errorf("backup: encrypting: %w", err)
+		return nil, Header{}, fmt.Errorf("backup: encrypting: %w", err)
 	}
 
 	var buf bytes.Buffer
@@ -170,18 +200,7 @@ func (s *Service) Export(ctx context.Context, principal permissions.Principal) (
 	buf.Write(headerJSON)
 	buf.Write(sealed)
 
-	s.recordAudit(ctx, audit.Entry{
-		// This backup spans every organisation on this instance, not just
-		// principal's own — there is no more specific OrganisationID to
-		// record it under than the one the initiating user actually
-		// belongs to, same as any other action only an authenticated user
-		// can take.
-		OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
-		Action: "backup.exported", EntityType: "database",
-		AfterState: map[string]any{"archive_bytes": len(dump), "postgres_version": pgVersion}, At: now,
-	})
-
-	return buf.Bytes(), fmt.Sprintf("rechvix-backup-%s.nodedrbackup", now.Format("2006-01-02-150405")), nil
+	return buf.Bytes(), header, nil
 }
 
 // Inspect parses a backup file's header WITHOUT decrypting the archive

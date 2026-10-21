@@ -8,9 +8,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	backupapp "rechvix/internal/modules/backup/app"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -135,6 +138,32 @@ func run() error {
 	// per-channel permanent failure rather than silently dropping them.
 	notificationsSvc := notificationsapp.NewService(pool, notificationspg.NewShareLinkRepo(pool), outboxStore,
 		permissionsChecker, auditRecorder, nil, nil, nil)
+
+	// Scheduled encrypted backups: off unless BACKUP_SCHEDULE_INTERVAL is set
+	// (e.g. "24h"). Needs BACKUP_DATABASE_DSN (RLS-bypassing role, same as
+	// apps/server) and a writable BACKUP_SCHEDULE_DIR (default /backups).
+	if raw := os.Getenv("BACKUP_SCHEDULE_INTERVAL"); raw != "" {
+		interval, err := time.ParseDuration(raw)
+		if err != nil || interval < time.Minute {
+			return fmt.Errorf("BACKUP_SCHEDULE_INTERVAL %q must be a duration of at least 1m (e.g. 24h)", raw)
+		}
+		keep := 7
+		if v := os.Getenv("BACKUP_RETENTION_COUNT"); v != "" {
+			if keep, err = strconv.Atoi(v); err != nil || keep < 1 {
+				return fmt.Errorf("BACKUP_RETENTION_COUNT %q must be an integer >= 1", v)
+			}
+		}
+		dir := os.Getenv("BACKUP_SCHEDULE_DIR")
+		if dir == "" {
+			dir = "/backups"
+		}
+		backupSvc := backupapp.NewService(pool, os.Getenv("BACKUP_DATABASE_DSN"), aead, permissionsChecker, auditRecorder)
+		if !backupSvc.Enabled() {
+			return fmt.Errorf("BACKUP_SCHEDULE_INTERVAL is set but BACKUP_DATABASE_DSN is empty")
+		}
+		go backupSvc.RunScheduleLoop(ctx, dir, keep, interval, logger)
+		logger.Info("scheduled backups enabled", "interval", interval.String(), "dir", dir, "keep", keep)
+	}
 
 	poller := outbox.NewPoller(pool, outboxStore, logger)
 	poller.Register(einvoiceapp.EventTypeGenerate, einvoiceSvc.Handler())

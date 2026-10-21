@@ -16,7 +16,7 @@ it was re-run on 2026-10-21 (285 pass / 0 fail).
 | `go test ./...` (unit) | pass, 25 packages with tests |
 | `apps/web`: `tsc -b` | pass |
 | `apps/web`: `npm run lint` (oxlint) | pass, warnings only (`set-state-in-effect` x7, `only-export-components` x1) |
-| `go test -tags=integration ./...` | **pass, 285 tests, 0 failures** (2026-10-21, Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
+| `go test -tags=integration ./...` | **pass, 285 tests, 0 failures, but the 3 pg_dump-dependent backup tests were skipped in that run**; re-run with `pg_dump` 18 on PATH they pass (2026-10-21, Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
 | Playwright / e2e / screenshots | **not run** — Postgres stack unavailable (needs Docker) |
 | staticcheck / govulncheck | not run locally (CI job `go-static` runs them) |
 
@@ -43,7 +43,7 @@ Columns: ID · user outcome · existing location · backend · UI · security ·
 | A3 | Audit log | `platform/audit`, `modules/audit` | Full | Partial | RLS | integ | L | — | 1 | audit entries on every mutation |
 | A4 | API keys + scopes | `modules/integrations`, MCP | Partial | Stub (bare placeholder page) | scope path unreviewed | integ MCP only | **H** | — | 1/9 | general scope-bypass test |
 | A5 | Custom fields/status rules | none | Missing | Missing | — | — | M | — | 2+ | — |
-| A6 | Scheduled encrypted backup | `modules/backup` (manual export/restore, AEAD) | **Partial: manual only** | Full | AEAD | integ | **H** | worker | 1 | scheduled run + retention + restore-to-clean |
+| A6 | Scheduled encrypted backup | `modules/backup` (+ `scheduled.go`, worker loop) | Full: scheduled, verified, retained (opt-in via env) | Manual UI only; no schedule UI | AEAD, 0600 files | unit + integ pass | M | worker | 1 | off-host copy and restore-to-clean-host drill still to do |
 | A7 | Accountant read-only invite | none | Missing | Missing | — | — | M | A2 | 9 | — |
 | A8 | Upload quotas | `platform/files` | Unknown | — | — | — | M | — | 1 | verify |
 

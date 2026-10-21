@@ -492,3 +492,19 @@ exists to catch before it becomes a production incident.
 None of these are silently assumed solved elsewhere — they're real,
 open gaps, tracked the same way `docs/operations/deployment.md`'s
 Backups section already flags the missing scheduler.
+
+## Scheduled backups (worker)
+
+The worker can write verified, encrypted backups on a schedule. Off by default.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKUP_SCHEDULE_INTERVAL` | unset (off) | Go duration, minimum `1m`, e.g. `24h`. First run is one interval after start. |
+| `BACKUP_SCHEDULE_DIR` | `/backups` | Directory (mode 0700); mount a volume here, ideally on a different disk. |
+| `BACKUP_RETENTION_COUNT` | `7` | Newest N files kept; older `rechvix-backup-*.nodedrbackup` removed. |
+| `BACKUP_DATABASE_DSN` | required | Same RLS-bypassing role the server uses. Worker refuses to start if the schedule is on and this is empty. |
+
+Each run: `pg_dump` → AEAD-encrypt → **decrypt and checksum-verify** → atomic write (0600) → prune.
+A file that fails verification is never kept, and failures are logged as `scheduled backup failed`.
+Restore uses the same file format as manual export (Settings → Backup, or `Service.Restore`).
+Copy backups off the host too; a backup on the same disk is not disaster recovery.

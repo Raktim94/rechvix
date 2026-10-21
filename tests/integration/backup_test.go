@@ -5,8 +5,11 @@ package integration
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 
 	backupapp "rechvix/internal/modules/backup/app"
 	catalogueapp "rechvix/internal/modules/catalogue/app"
@@ -141,5 +144,48 @@ func TestBackup_Restore_RejectsTamperedFile(t *testing.T) {
 
 	if err := backupSvc.Restore(ctx, principal, tampered, backupapp.RestoreConfirmationPhrase); err == nil {
 		t.Fatal("Restore succeeded against a tampered file — AEAD authentication did not catch it")
+	}
+}
+
+// TestBackup_RunScheduled_WritesVerifiedFileAndPrunes exercises the
+// worker's scheduled path against real Postgres: a backup lands on disk
+// with owner-only permissions, passes Verify, and retention keeps only the
+// newest file.
+func TestBackup_RunScheduled_WritesVerifiedFileAndPrunes(t *testing.T) {
+	ctx := context.Background()
+	backupSvc := newTestBackupService(t)
+	dir := t.TempDir()
+
+	first, err := backupSvc.RunScheduled(ctx, dir, 1)
+	if err != nil {
+		t.Fatalf("RunScheduled #1: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond) // file names carry second-resolution timestamps
+	second, err := backupSvc.RunScheduled(ctx, dir, 1)
+	if err != nil {
+		t.Fatalf("RunScheduled #2: %v", err)
+	}
+	if first == second {
+		t.Fatalf("expected distinct file names, both %s", first)
+	}
+	if _, err := os.Stat(first); !os.IsNotExist(err) {
+		t.Errorf("older backup should have been pruned (keep=1), stat err = %v", err)
+	}
+	info, err := os.Stat(second)
+	if err != nil {
+		t.Fatalf("newest backup missing: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("backup permissions = %v, want 0600", info.Mode().Perm())
+	}
+	data, err := os.ReadFile(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backupSvc.Verify(data); err != nil {
+		t.Fatalf("Verify of scheduled backup: %v", err)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dir, "*.partial")); len(leftovers) != 0 {
+		t.Errorf("partial files left behind: %v", leftovers)
 	}
 }
