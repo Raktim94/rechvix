@@ -39,6 +39,8 @@ behind every major decision.
 > and every scope note — and the [wiki](../../wiki) for a narrative
 > walkthrough.
 
+**[Complete illustrated tutorial — every page](tutorial.md)**
+
 ## Contents
 
 - [Why this exists](#why-this-exists)

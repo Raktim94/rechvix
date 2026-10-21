@@ -1,0 +1,346 @@
+{
+  "source_commit": "33cf1465055a4ec82bba6b56ce527c2a480848d7",
+  "app_version": "0.14.24",
+  "captured_on": "2026-10-21",
+  "environment": "Local running Go server and isolated PostgreSQL; fictional records; no API mocks",
+  "route_patterns": 22,
+  "screenshot_count": 48,
+  "files": [
+    {
+      "file": "01-login.png",
+      "width": 1440,
+      "height": 1070,
+      "sha256": "252d8fe5967a088db078464dd3f806950bec0e871ccfa24e561691aeb0ba0095",
+      "route": "/login"
+    },
+    {
+      "file": "02-setup.png",
+      "width": 1440,
+      "height": 1084,
+      "sha256": "5fa26250120af9bb9fd7a2422c53e16896778a665c8339a86983bfd6e5d4952a",
+      "route": "/setup"
+    },
+    {
+      "file": "03-forgot-password.png",
+      "width": 1440,
+      "height": 1070,
+      "sha256": "61128b0fff00a9819dd3541441ea33a21822719229c68d761b09c03992316ac2",
+      "route": "/forgot-password"
+    },
+    {
+      "file": "04-reset-password.png",
+      "width": 1440,
+      "height": 1070,
+      "sha256": "4c56a6baf4a1957847a654e79d4076367c23db0961814cb021d35499bc534bc6",
+      "route": "/reset-password"
+    },
+    {
+      "file": "05-dashboard.png",
+      "width": 1440,
+      "height": 1101,
+      "sha256": "7b5820885e788a64b257ad9ed08e436d682a58dc90ed7eafaf2d88ed1c152e60",
+      "route": "/"
+    },
+    {
+      "file": "06-sales.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "edea5882103b60ccaeb0d6140cd1ecd29d84112013a80cd404069bbd563ab5f5",
+      "route": "/sales"
+    },
+    {
+      "file": "07-new-invoice.png",
+      "width": 1440,
+      "height": 1026,
+      "sha256": "158ac90d82afca0974d47c427c0814a181ef52fe5f9927dd0873cea25fabf9fd",
+      "route": "/sales/new"
+    },
+    {
+      "file": "08-invoice-detail.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "f92bb376966d1fd0333a7d62ae36f6120719f728c8155c3c669be17e066155ea",
+      "route": "/sales/01a15e18-a79e-7270-b515-02e23833cbb7"
+    },
+    {
+      "file": "09-purchases.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "bcab672f7d5cdcf7fc43d071e61fa7f5617f32cb1b0095fd2def70feb4f96f2c",
+      "route": "/purchases"
+    },
+    {
+      "file": "10-inventory.png",
+      "width": 1440,
+      "height": 1071,
+      "sha256": "689672f935eb9a84f1d7c25f28c7a0f1dc3b6efc1b2f32cf369ae671b7a30d48",
+      "route": "/inventory"
+    },
+    {
+      "file": "11-catalogue.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "25b047d0c6b079cbb5b7b134d57e7b08332deb5197272d0f3c24824b90f3bb19",
+      "route": "/catalogue"
+    },
+    {
+      "file": "12-contacts.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "33720fe0bd4f2738904282c786bf8d8e26bb756f50da359cadc2fbac4cfba9b5",
+      "route": "/contacts"
+    },
+    {
+      "file": "13-contact-detail.png",
+      "width": 1440,
+      "height": 1495,
+      "sha256": "378ed52f8c3970acef1894b6bf374e3f2580d841709c9a768a38779a32468e98",
+      "route": "/contacts/01a15e18-7985-7c54-9525-50c972334bb1"
+    },
+    {
+      "file": "14-accounting.png",
+      "width": 1440,
+      "height": 2500,
+      "sha256": "54e8cc1bbe7f4bd2b5489fdc07040e4ded034b20d848ee4be2eea0112ddf94a2",
+      "route": "/accounting"
+    },
+    {
+      "file": "15-expenses.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "1f5760b2a6bfcf673b7735398ef541956ae98add0a043d38fc72cb2d0e0e5b27",
+      "route": "/expenses"
+    },
+    {
+      "file": "16-india-tax.png",
+      "width": 1440,
+      "height": 3627,
+      "sha256": "9eba19e0659adcf55b7580334fc8b15bcac9aa9bd3182302170265d82dec0be2",
+      "route": "/gst"
+    },
+    {
+      "file": "17-reports.png",
+      "width": 1440,
+      "height": 3430,
+      "sha256": "29e5b31900cd34eab5b19f86db629ed2195965d513c64b82abab24b07a5c6c72",
+      "route": "/reports"
+    },
+    {
+      "file": "18-staff.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "6425b9f65623cff093eccfc0885865fbb3bf75ded68be91db232c33e1f9d7f8d",
+      "route": "/staff"
+    },
+    {
+      "file": "19-calendar.png",
+      "width": 1440,
+      "height": 1103,
+      "sha256": "81d57bb13071acf95b97bb0e4526522640002bf896f00ebe6f88c57dc7385583",
+      "route": "/calendar"
+    },
+    {
+      "file": "20-integrations.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "b703fb8293a54610604a0478ec30650ed91f8e677f010bd016fa78edf5de9f1e",
+      "route": "/integrations"
+    },
+    {
+      "file": "21-backup.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "619120f3ef07f6de948a142ece32627d0179a740edb96d19cc8fccdc9ca7b1b5",
+      "route": "/backup"
+    },
+    {
+      "file": "22-settings.png",
+      "width": 1440,
+      "height": 3067,
+      "sha256": "deb2b63c966d069d3910ee0ec5d726e515f51a044f27e3c59aa97e09f7946929",
+      "route": "/settings"
+    },
+    {
+      "file": "23-inline-customer.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "555e01b58682ddb47b6b314108b7c32c8ed39ca6ed3028d7dbe0c79160fc0956",
+      "route": "/sales/new"
+    },
+    {
+      "file": "24-invoice-builder-filled.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "a6e94e30b5015c9a2c60f106c8f65c987c977c37f335eb2511b48f1639afe744",
+      "route": "/sales/new"
+    },
+    {
+      "file": "25-invoice-payment.png",
+      "width": 1440,
+      "height": 1184,
+      "sha256": "46a8b8c6504603caa9fd0c57ac790f92ac9a954b902030e814c2e7cfc5253f00",
+      "route": "/sales/01a15e18-a79e-7270-b515-02e23833cbb7"
+    },
+    {
+      "file": "26-credit-note.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "9803b30ec9387d4008d9f0e1d0ca69b30be290c315084d018eac9d1493b2ff4c",
+      "route": "/sales/01a15e18-a79e-7270-b515-02e23833cbb7"
+    },
+    {
+      "file": "27-print-options.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "8bcbac53c3bfa2bf9d485d1a0300083689688ede706bc95048b91b21bc865d60",
+      "route": "/sales/01a15e18-a79e-7270-b515-02e23833cbb7"
+    },
+    {
+      "file": "28-hindi-print.png",
+      "width": 1440,
+      "height": 1069,
+      "sha256": "766b3e81eb1524917e58a7c4a6825314b1236409fc48566dde548781622bf3a5",
+      "route": "/api/v1/sales/documents/01a15e18-a79e-7270-b515-02e23833cbb7/print?lang=hi"
+    },
+    {
+      "file": "29-new-purchase.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "a663a42e9fdf46b61944423c153f4898bf2e11b05619453eef1739ce197ca1c1",
+      "route": "/purchases"
+    },
+    {
+      "file": "30-purchase-detail.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "050d426458576e39f7520614e55e8682fe1a7b3ff5aa9f4d554f5891d8472487",
+      "route": "/purchases"
+    },
+    {
+      "file": "31-stock-movements.png",
+      "width": 1440,
+      "height": 1382,
+      "sha256": "979a657aa1e27acb902aac86d53da837dede15d1044a4023ed8958a607eeef5e",
+      "route": "/inventory"
+    },
+    {
+      "file": "32-new-product.png",
+      "width": 1440,
+      "height": 1154,
+      "sha256": "609e4142d83347f495b9716983f00331622f75a01828b7e2aab9bfc6be05d286",
+      "route": "/catalogue"
+    },
+    {
+      "file": "33-edit-product.png",
+      "width": 1440,
+      "height": 1287,
+      "sha256": "19ec1332aa4171db896823fcc8444b7a139455c8dc550b8865d5538e3c050d62",
+      "route": "/catalogue"
+    },
+    {
+      "file": "34-new-contact.png",
+      "width": 1440,
+      "height": 1006,
+      "sha256": "33fabd0b7519e2ae2f1cd8c5b20f2e34c5cdab7dbf0f41e2c0ffd9192f3077f9",
+      "route": "/contacts"
+    },
+    {
+      "file": "35-fiscal-period.png",
+      "width": 1136,
+      "height": 344,
+      "sha256": "246e7a8c5b5637206f3b61fa55d631202710939d6aec20e6b023964ad3ac4438",
+      "route": "/accounting"
+    },
+    {
+      "file": "36-calendar-task.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "be852a6faa7ad5201e1a411bbe3b6d9bc2449795a21564d0d57cba8fde709b66",
+      "route": "/calendar"
+    },
+    {
+      "file": "37-api-key.png",
+      "width": 1440,
+      "height": 1045,
+      "sha256": "31e918dd8ebf853beebd3ff1ee8570c41ce7d967a821b6cf45a8d614e43912b5",
+      "route": "/integrations"
+    },
+    {
+      "file": "38-webhook.png",
+      "width": 1440,
+      "height": 1043,
+      "sha256": "56a870e89d8721aa72b7c99200141ef39978acb8605e362c6c85a8963d2b091b",
+      "route": "/integrations"
+    },
+    {
+      "file": "39-team-member.png",
+      "width": 1136,
+      "height": 410,
+      "sha256": "a2f66e2f9ce3a88682f04df5c130d45ab509458d64246852d911ebca42fcbc2e",
+      "route": "/settings"
+    },
+    {
+      "file": "40-bank-account.png",
+      "width": 1136,
+      "height": 344,
+      "sha256": "4e63b17fcaa008a22a38f59069dde4e6a2c559cae59656442a589f5ef24dbf7f",
+      "route": "/settings"
+    },
+    {
+      "file": "41-branch.png",
+      "width": 1136,
+      "height": 340,
+      "sha256": "92809c502b975e4d75d9a10f5ac40921d95f5693b848c7957f7c750c2e932979",
+      "route": "/settings"
+    },
+    {
+      "file": "42-india-accountant-export.png",
+      "width": 1440,
+      "height": 5452,
+      "sha256": "98c850309a223555b6c122321fca5def9018f5184bc416c72a26ad93bee6c604",
+      "route": "/gst"
+    },
+    {
+      "file": "43-spain-tax.png",
+      "width": 1440,
+      "height": 4537,
+      "sha256": "ffa47ceb3e161e0fe172a022e491eb2238cb3a4003b28c1d2cc7a24e4cbdcb67",
+      "route": "/gst"
+    },
+    {
+      "file": "44-mobile-dashboard.png",
+      "width": 375,
+      "height": 900,
+      "sha256": "74f6d5187692aedb73affe613cb37dfdc7dd1762f1d02dfb4d4d13b70b463bc3",
+      "route": "/"
+    },
+    {
+      "file": "45-mobile-invoice.png",
+      "width": 375,
+      "height": 900,
+      "sha256": "78c636ccaeb8ea0536c09c618f7a842218beaba671e2f268587f8ae5bfe2be4e",
+      "route": "/sales/new"
+    },
+    {
+      "file": "46-mobile-navigation.png",
+      "width": 375,
+      "height": 900,
+      "sha256": "cd50ab0fc39bce421ec54a59dc953ff79e2ad5f4d1005429098b32dfa73089d8",
+      "route": "/settings"
+    },
+    {
+      "file": "47-uk-tax.png",
+      "width": 1440,
+      "height": 1822,
+      "sha256": "7806b29e346327a24f30bce5e01ad150df5cfffacefa70d97c9844b7658da460",
+      "route": "/gst"
+    },
+    {
+      "file": "48-us-tax.png",
+      "width": 1440,
+      "height": 1415,
+      "sha256": "583f002e8a7c1a4c2b22de6f8298c94aac85ca31d9db8cdc88271b5ad7242d49",
+      "route": "/gst"
+    }
+  ]
+}
