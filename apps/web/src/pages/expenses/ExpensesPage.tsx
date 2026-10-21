@@ -254,7 +254,7 @@ export function ExpensesPage() {
         ) : (expenses.data ?? []).length === 0 ? (
           <p className={layout.emptyState}>No expenses recorded yet.</p>
         ) : (
-          <div className={ui.tableScroll}>
+          <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>
               <thead>
                 <tr>

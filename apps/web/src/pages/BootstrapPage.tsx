@@ -10,7 +10,9 @@ import { LanguageSelect } from "../components/LanguageSelect";
 import { PasswordInput } from "../components/PasswordInput";
 import { api, ApiError } from "../lib/api-client";
 import { GST_STATE_CODES } from "../lib/gstStateCodes";
+import { countryName, currencyName, sortByName } from "../lib/names";
 import { useCountries, useCurrencies } from "../lib/reference";
+import { slugCode } from "../lib/slug";
 
 /**
  * First-run setup: creates the first organisation + owner user via
@@ -44,17 +46,6 @@ type FormValues = {
 
 interface BootstrapResponse {
   organisation_id: string;
-}
-
-/** Same auto-slug idiom CataloguePage uses for an unset SKU code — branch_code/
- * warehouse_code are NOT NULL (warehouses.code is even UNIQUE per organisation)
- * but this form never collected them at all (docs/adr/0007's sibling gap). */
-function slugCode(name: string, maxLen: number): string {
-  return name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, maxLen);
 }
 
 /** The browser's own region ("es-ES" -> "ES") as a starting guess; the user confirms it. */
@@ -184,13 +175,17 @@ export function BootstrapPage() {
             <input id="legalEntityName" {...register("legalEntityName")} />
             {errors.legalEntityName ? <p className={styles.error}>{errors.legalEntityName.message}</p> : null}
           </div>
+          {/* The selects mount only once their options exist: a native <select> cannot take
+              a default value before its options are in the DOM, and would silently show the
+              first entry (Andorra) while the form held another country. */}
+          {countries.data && currencies.data ? (
           <div className={styles.grid2}>
             <div className={styles.field}>
               <label htmlFor="countryCode">{t("setup.country")}</label>
               <select id="countryCode" {...register("countryCode")}>
-                {(countries.data ?? []).map((c) => (
+                {sortByName(countries.data ?? [], (c) => countryName(c.code, c.name)).map((c) => (
                   <option key={c.code} value={c.code}>
-                    {c.name}
+                    {countryName(c.code, c.name)}
                   </option>
                 ))}
               </select>
@@ -199,18 +194,23 @@ export function BootstrapPage() {
             <div className={styles.field}>
               <label htmlFor="currencyCode">{t("setup.currency")}</label>
               <select id="currencyCode" {...register("currencyCode")}>
-                {(currencies.data ?? []).map((c) => (
+                {sortByName(currencies.data ?? [], (c) => c.code).map((c) => (
                   <option key={c.code} value={c.code}>
-                    {c.code} — {c.name}
+                    {c.code} — {currencyName(c.code, c.name)}
                   </option>
                 ))}
               </select>
               {errors.currencyCode ? <p className={styles.error}>{errors.currencyCode.message}</p> : null}
             </div>
           </div>
+          ) : (
+            <p className={styles.subtitle} role="status">
+              {t("common.loading")}
+            </p>
+          )}
           {taxMissing ? (
             <p className={styles.error} role="status">
-              {t("tax.notSupported", { country: country?.name })}
+              {t("tax.notSupported", { country: country ? countryName(country.code, country.name) : "" })}
             </p>
           ) : null}
           <div className={styles.field}>

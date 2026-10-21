@@ -337,7 +337,7 @@ function VehiclesSection() {
         </button>
       </div>
       {vehicles.data?.length ? (
-        <div className={ui.tableScroll} style={{ marginTop: 12 }}>
+        <div className={ui.tableScroll} tabIndex={0} style={{ marginTop: 12 }}>
           <table className={ui.table}>
             <thead>
               <tr>
@@ -393,7 +393,7 @@ function TransportersSection() {
         </button>
       </div>
       {transporters.data?.length ? (
-        <div className={ui.tableScroll} style={{ marginTop: 12 }}>
+        <div className={ui.tableScroll} tabIndex={0} style={{ marginTop: 12 }}>
           <table className={ui.table}>
             <thead>
               <tr>
@@ -450,7 +450,7 @@ function TaxRatesSection() {
       </div>
       {lookupHsn ? (
         rates.data?.length ? (
-          <div className={ui.tableScroll} style={{ marginBottom: 16 }}>
+          <div className={ui.tableScroll} tabIndex={0} style={{ marginBottom: 16 }}>
             <table className={ui.table}>
               <thead>
                 <tr>
@@ -599,11 +599,11 @@ function BulkEwayBillPanel({ legalEntityId }: { legalEntityId: string | undefine
         <p className={layout.emptyState}>No finalized invoices are eligible for an e-Way Bill yet.</p>
       ) : (
         <>
-          <div className={ui.tableScroll} style={{ maxHeight: 280, overflowY: "auto" }}>
+          <div className={ui.tableScroll} tabIndex={0} style={{ maxHeight: 280, overflowY: "auto" }}>
             <table className={ui.table}>
               <thead>
                 <tr>
-                  <th scope="col" />
+                  <th scope="col"><span className="srOnly">Actions</span></th>
                   <th scope="col">Number</th>
                   <th scope="col">Type</th>
                   <th scope="col">Date</th>

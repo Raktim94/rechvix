@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import modal from "../../components/Modal.module.css";
@@ -11,6 +12,7 @@ import { useAuth } from "../../auth/AuthProvider";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
 import { getOcrProvider, setOcrProvider, type OcrProvider } from "../../lib/ocr";
+import { useTaxReference } from "../../lib/reference";
 import { useOrgContext, type Branch, type LegalEntity, type Warehouse } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 
@@ -290,7 +292,7 @@ function TeamPanel() {
           {members.error instanceof ApiError ? members.error.message : "Couldn't load your team."}
         </p>
       ) : (
-        <div className={ui.tableScroll}>
+        <div className={ui.tableScroll} tabIndex={0}>
           <table className={ui.table}>
             <thead>
               <tr>
@@ -395,6 +397,74 @@ function GSTDetailsForm({ legalEntityId, currentGSTIN, currentStateCode }: { leg
         </p>
       ) : null}
       {save.isSuccess ? <p style={{ color: "var(--color-positive)" }}>Saved.</p> : null}
+    </div>
+  );
+}
+
+/** Tax details for a company outside India: the tax ID printed on invoices and,
+ * for the US, the states where sales tax is collected. Indian companies use
+ * GSTDetailsForm instead. */
+function InternationalTaxForm({ legalEntity }: { legalEntity: LegalEntity }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const ref = useTaxReference(legalEntity.CountryCode);
+  const [taxId, setTaxId] = useState(legalEntity.TaxID ?? "");
+  const [regions, setRegions] = useState<string[]>(legalEntity.USCollectionRegions ?? []);
+  const isUS = legalEntity.CountryCode === "US";
+
+  const save = useMutation({
+    mutationFn: async () => {
+      let saved = await api.put<LegalEntity>(`/legal-entities/${legalEntity.ID}/tax-id`, { tax_id: taxId });
+      if (isUS) saved = await api.put<LegalEntity>(`/legal-entities/${legalEntity.ID}/us-collection-regions`, { regions });
+      return saved;
+    },
+    onSuccess: (saved) => {
+      // Show what the server actually stored (it trims and upper-cases the ID).
+      setTaxId(saved.TaxID ?? "");
+      setRegions(saved.USCollectionRegions ?? []);
+      void queryClient.invalidateQueries({ queryKey: ["legal-entities"] });
+    },
+  });
+  const dirty = taxId !== (legalEntity.TaxID ?? "") || (isUS && regions.join() !== (legalEntity.USCollectionRegions ?? []).join());
+  const states = Object.entries(ref.data?.state_base_rates ?? {}).sort(([a], [b]) => a.localeCompare(b));
+
+  return (
+    <div className={ui.formGrid} style={{ marginTop: 12 }}>
+      <div className={ui.field}>
+        <label htmlFor="settings-tax-id">{t("tax.sellerTaxId")}</label>
+        <input id="settings-tax-id" className={ui.input} value={taxId} maxLength={40} onChange={(e) => setTaxId(e.target.value)} />
+        <p className={ui.muted} style={{ marginTop: 4 }}>
+          {t("tax.sellerTaxIdHelp")}
+        </p>
+      </div>
+      {isUS ? (
+        <fieldset className={ui.field} style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend>{t("tax.collectionRegions")}</legend>
+          <p className={ui.muted}>{t("tax.collectionRegionsHelp")}</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", maxHeight: 220, overflowY: "auto" }}>
+            {states.map(([code, rate]) => (
+              <label key={code} style={{ display: "flex", gap: 6, alignItems: "center", minHeight: 32 }}>
+                <input
+                  type="checkbox"
+                  checked={regions.includes(code)}
+                  onChange={(e) => setRegions((cur) => (e.target.checked ? [...cur, code].sort() : cur.filter((r) => r !== code)))}
+                />
+                {t("tax.rateLabel", { code, rate })}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
+      {ref.data ? <p className={ui.muted}>{t("tax.sectionHelp", { version: ref.data.rate_pack_version })}</p> : null}
+      <button type="button" className={ui.btnPrimary} disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+        {save.isPending ? "…" : t("tax.saveTaxDetails")}
+      </button>
+      {save.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)" }}>
+          {save.error instanceof ApiError ? save.error.message : t("tax.saveFailed")}
+        </p>
+      ) : null}
+      {save.isSuccess && !dirty ? <p style={{ color: "var(--color-positive)" }}>{t("tax.saved")}</p> : null}
     </div>
   );
 }
@@ -873,7 +943,7 @@ function BankAccountsPanel({ legalEntityId }: { legalEntityId: string }) {
       ) : (accounts.data ?? []).length === 0 ? (
         <p className={layout.emptyState}>No bank accounts yet — receipts and payments will post to Cash by default.</p>
       ) : (
-        <div className={ui.tableScroll}>
+        <div className={ui.tableScroll} tabIndex={0}>
           <table className={ui.table}>
             <thead>
               <tr>
@@ -942,7 +1012,7 @@ function WarehousesForBranch({ branchId }: { branchId: string }) {
         <ul style={{ listStyle: "none", margin: "4px 0", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
           {(warehouses.data ?? []).map((w) => (
             <li key={w.ID} className={ui.muted}>
-              {w.Name} <span style={{ opacity: 0.7 }}>({w.Code})</span>
+              {w.Name} <span className={ui.muted}>({w.Code})</span>
             </li>
           ))}
         </ul>
@@ -1119,7 +1189,12 @@ export function SettingsPage() {
               <dt className={layout.subtitle}>Currency</dt>
               <dd>{org.organisation?.DefaultCurrencyCode}</dd>
             </dl>
-            {org.legalEntity ? (
+            {org.legalEntity && org.legalEntity.CountryCode !== "IN" ? (
+              // Keyed only by the company, not by its saved values: remounting on save would
+                // reset the form and wipe the "Saved." confirmation.
+                <InternationalTaxForm key={org.legalEntity.ID} legalEntity={org.legalEntity} />
+            ) : null}
+            {org.legalEntity && org.legalEntity.CountryCode === "IN" ? (
               <GSTDetailsForm
                 // Keyed by the values themselves so the form's local
                 // draft state remounts fresh after a successful save
@@ -1144,7 +1219,7 @@ export function SettingsPage() {
         <InvoiceBrandingForm key={`${org.legalEntity.ID}-${org.legalEntity.UpdatedAt}`} legalEntity={org.legalEntity} />
       ) : null}
 
-      <div className={layout.panel}>
+      <div className={layout.panel} hidden={!!org.legalEntity && org.legalEntity.CountryCode !== "IN"}>
         <h2>GST &amp; e-Way Bill</h2>
         <p className={layout.emptyState} style={{ textAlign: "left", padding: 0 }}>
           Tax rates, e-Way Bill mode, vehicles, and transporters live on the{" "}

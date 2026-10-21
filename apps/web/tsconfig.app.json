@@ -24,5 +24,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Node-runner unit tests (npm test) use Node types the browser build does not have.
+  "exclude": ["src/**/*.test.ts"]
 }

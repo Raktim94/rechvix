@@ -208,7 +208,7 @@ export function SalesListPage() {
             {documents.data.length === 0 ? "No sales yet — start your first sale above." : "No sales match these filters."}
           </p>
         ) : (
-          <div className={ui.tableScroll}>
+          <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>
               <thead>
                 <tr>
@@ -218,7 +218,7 @@ export function SalesListPage() {
                   <th scope="col">Status</th>
                   <th scope="col">Date</th>
                   <th scope="col">Total</th>
-                  <th scope="col" />
+                  <th scope="col"><span className="srOnly">Actions</span></th>
                 </tr>
               </thead>
               <tbody>

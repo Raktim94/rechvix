@@ -5,6 +5,8 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -321,5 +323,46 @@ func TestLedgerCurrency_ReportsAndJournalsFollowTheOrganisation(t *testing.T) {
 				t.Errorf("dashboard currencies = %s/%s, want %s", dash.TodaySales.Currency(), dash.OutstandingReceivable.Currency(), tc.currency)
 			}
 		})
+	}
+}
+
+// TestPrint_SpanishInvoice_ItemisesIVAAndCarriesTaxIDs goes from a finalized
+// Spanish invoice to the data the PDF renders: the IVA must be itemised, both
+// tax IDs must be present, and none of the GST wording may appear.
+func TestPrint_SpanishInvoice_ItemisesIVAAndCarriesTaxIDs(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupRegimeFixture(t, ctx, "ES", "EUR", "STANDARD")
+	if err := accountingSvc.EnsureDefaultChartOfAccounts(ctx, fx.Principal, fx.Principal.OrganisationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newTestOrgService(t).UpdateLegalEntityTaxID(ctx, fx.Principal, fx.LegalEntityID, " b12345678 "); err != nil {
+		t.Fatalf("UpdateLegalEntityTaxID: %v", err)
+	}
+	doc, err := finalizeRegimeInvoice(t, ctx, salesSvc, fx, regimeInvoice{currency: "EUR", qty: "2", price: "100"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := salesSvc.BuildInvoiceData(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("BuildInvoiceData: %v", err)
+	}
+	if !data.GenericTax || data.Currency != "EUR" || data.DocumentTypeLabel != "INVOICE" {
+		t.Fatalf("generic=%v currency=%s label=%s", data.GenericTax, data.Currency, data.DocumentTypeLabel)
+	}
+	if data.Seller.TaxID != "B12345678" || data.Seller.GSTIN != "" {
+		t.Errorf("seller ids = tax %q gstin %q, want B12345678 / empty", data.Seller.TaxID, data.Seller.GSTIN)
+	}
+	if len(data.TaxTotals) != 1 || data.TaxTotals[0].Label != "IVA" || data.TaxTotals[0].Rate != "21" || data.TaxTotals[0].Amount != "42.00" {
+		t.Fatalf("tax totals = %+v, want one IVA 21%% line of 42.00", data.TaxTotals)
+	}
+	if l := data.Lines[0]; l.TaxRate != "21%" || l.TaxValue != "42.00" || l.TaxableValue != "200.00" || l.LineTotal != "242.00" || l.HSNSAC != "Standard" {
+		t.Errorf("line = %+v", l)
+	}
+	if data.GrandTotal != "242.00" || data.SubtotalTaxable != "200.00" {
+		t.Errorf("totals taxable=%s grand=%s, want 200.00 / 242.00", data.SubtotalTaxable, data.GrandTotal)
+	}
+	if !strings.HasPrefix(data.DocumentNumber, "INV/2026/") && !strings.HasPrefix(data.DocumentNumber, fmt.Sprintf("INV/%d/", time.Now().Year())) {
+		t.Errorf("document number %q should use a calendar-year series outside India", data.DocumentNumber)
 	}
 }

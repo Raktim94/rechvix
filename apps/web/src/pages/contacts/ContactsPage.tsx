@@ -184,7 +184,7 @@ export function ContactsPage() {
         ) : filteredParties.length === 0 ? (
           <p className={layout.emptyState}>{parties.data.length === 0 ? "No contacts yet." : "No contacts match this filter."}</p>
         ) : (
-          <div className={ui.tableScroll}>
+          <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>
               <thead>
                 <tr>

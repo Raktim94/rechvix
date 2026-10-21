@@ -186,7 +186,7 @@ export function ImportPanel({
                 (skipped), <strong>{report.Errors}</strong> error{report.Errors === 1 ? "" : "s"} — {report.Total} row(s) total.
               </p>
               {(report.Results ?? []).length > 0 ? (
-                <div className={ui.tableScroll}>
+                <div className={ui.tableScroll} tabIndex={0}>
                   <table className={ui.table}>
                     <thead>
                       <tr>

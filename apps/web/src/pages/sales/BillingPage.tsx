@@ -6,6 +6,7 @@ import { SearchIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
+import { EMPTY_TAX_DETAILS, TaxDetailsFields, taxDetailsReady, type TaxDetails } from "../../components/TaxDetailsFields";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
@@ -162,6 +163,8 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const org = useOrgContext();
+  const supplierCountry = org.legalEntity?.CountryCode ?? "IN";
+  const isIndia = supplierCountry === "IN";
 
   const [documentId, setDocumentId] = useState<string | undefined>(resumeDocumentId);
   const [documentType, setDocumentType] = useState<DocumentType>("TAX_INVOICE");
@@ -177,6 +180,8 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   // gstindia.Engine's intra/inter-state split is purely
   // SupplierStateCode == SupplyPlace.StateCode).
   const [placeOfSupplyOverride, setPlaceOfSupplyOverride] = useState<string | null>(null);
+  // Outside India there is no GST place of supply; these facts drive the VAT/sales-tax engine instead.
+  const [taxDetails, setTaxDetails] = useState<TaxDetails>(EMPTY_TAX_DETAILS);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
@@ -310,7 +315,15 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
         warehouse_id: org.warehouse.ID,
         customer_party_id: customer.ID,
         document_type: documentType,
-        place_of_supply_state_code: placeOfSupply || org.legalEntity.GSTStateCode || "00",
+        ...(isIndia
+          ? { place_of_supply_state_code: placeOfSupply || org.legalEntity.GSTStateCode || "00" }
+          : {
+              customer_country: taxDetails.customerCountry || undefined,
+              supply_region: taxDetails.supplyRegion || undefined,
+              customer_tax_exempt: taxDetails.taxExempt,
+              equivalence_surcharge: taxDetails.surcharge,
+              customer_tax_registration_id: taxDetails.registrationId || undefined,
+            }),
         currency_code: org.organisation.DefaultCurrencyCode || "INR",
         base_currency_code: org.organisation.DefaultCurrencyCode || "INR",
         exchange_rate: "1",
@@ -457,7 +470,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   // presented as the final amount, which is what "Grand total" alone
   // (once it exists, post-finalize) still means.
   const runningSubtotal = lines.reduce((sum, l) => sum + Number(l.LineTotal.amount), 0);
-  const currencyCode = grandTotal?.currency ?? doc.data?.document.CurrencyCode ?? "INR";
+  const currencyCode = grandTotal?.currency ?? doc.data?.document.CurrencyCode ?? org.legalEntity?.BaseCurrencyCode ?? org.organisation?.DefaultCurrencyCode ?? "INR";
 
   // Counter shortcuts (brief §18): F2 product search, F3 customer search,
   // Ctrl+Enter finalize — the three real actions this screen actually
@@ -525,7 +538,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 {customerAgeing.data ? (
                   <span className={styles.customerBalance}>
                     Outstanding: {formatMoney(customerAgeing.data.Total)}
-                    {customer.CreditLimitAmount ? ` · Credit limit: ₹${customer.CreditLimitAmount}` : ""}
+                    {customer.CreditLimitAmount ? ` · Credit limit: ${formatMoney({ amount: customer.CreditLimitAmount, currency: org.organisation?.DefaultCurrencyCode ?? "INR" })}` : ""}
                   </span>
                 ) : null}
                 <button
@@ -605,7 +618,11 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             )}
           </div>
 
-          {customer && !documentId ? (
+          {customer && !documentId && !isIndia ? (
+            <TaxDetailsFields supplierCountry={supplierCountry} customerId={customer.ID} value={taxDetails} onChange={setTaxDetails} />
+          ) : null}
+
+          {customer && !documentId && isIndia ? (
             <div className={ui.field}>
               <label htmlFor="place-of-supply">Place of supply</label>
               <select
@@ -633,7 +650,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             <button
               type="button"
               className={ui.btnPrimary}
-              disabled={!customer || !placeOfSupply || org.isPending || startSale.isPending}
+              disabled={!customer || (isIndia ? !placeOfSupply : !taxDetailsReady(supplierCountry, taxDetails)) || org.isPending || startSale.isPending}
               onClick={() => startSale.mutate()}
             >
               {startSale.isPending ? "Starting…" : "Start sale"}
@@ -722,7 +739,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
           <div className={layout.panel}>
             <h2>Items ({lines.length})</h2>
             {lines.length === 0 ? (
-              <div className={ui.tableScroll}>
+              <div className={ui.tableScroll} tabIndex={0}>
                 <table className={`${ui.table} ${styles.lineGrid}`}>
                   <thead>
                     <tr>
@@ -746,7 +763,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                       <th scope="col" className={styles.colRight}>
                         Amount
                       </th>
-                      <th scope="col" />
+                      <th scope="col"><span className="srOnly">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -759,7 +776,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                 </table>
               </div>
             ) : (
-              <div className={ui.tableScroll}>
+              <div className={ui.tableScroll} tabIndex={0}>
                 <table className={`${ui.table} ${styles.lineGrid}`}>
                   <thead>
                     <tr>
@@ -783,7 +800,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
                       <th scope="col" className={styles.colRight}>
                         Amount
                       </th>
-                      <th scope="col" />
+                      <th scope="col"><span className="srOnly">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>

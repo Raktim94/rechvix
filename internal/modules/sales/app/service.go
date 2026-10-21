@@ -255,7 +255,13 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 		PaymentTermsDays: p.PaymentTermsDays, CreatedBy: principal.UserID, CreatedAt: now, UpdatedAt: now,
 	}
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		number, err := s.numbering.NextDocumentNumber(ctx, principal.OrganisationID, p.BranchID, string(p.DocumentType), documentPrefix(p.DocumentType), issueDate)
+		// The numbering period follows the issuing legal entity's country (India:
+		// April-March; elsewhere the calendar year).
+		legalEntity, err := s.organisation.GetLegalEntityForOtherModule(ctx, principal.OrganisationID, p.LegalEntityID)
+		if err != nil {
+			return fmt.Errorf("sales: resolving legal entity for numbering: %w", err)
+		}
+		number, err := s.numbering.NextDocumentNumberFor(ctx, principal.OrganisationID, p.BranchID, string(p.DocumentType), documentPrefix(p.DocumentType), issueDate, legalEntity.CountryCode)
 		if err != nil {
 			return err
 		}

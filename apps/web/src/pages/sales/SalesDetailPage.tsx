@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { EInvoiceCard } from "../../components/EInvoiceCard";
 import { EwayBillCard } from "../../components/EwayBillCard";
 import { WhatsAppIcon } from "../../components/icons";
@@ -11,6 +12,7 @@ import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
+import { useOrgContext } from "../../lib/useOrgContext";
 import { useShareSalesDocumentOnWhatsApp, useShareSalesDocumentPdf } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
 import { CancelDocumentModal } from "./CancelDocumentModal";
@@ -19,6 +21,8 @@ import styles from "./SalesDetailPage.module.css";
 import { CONVERTIBLE_TARGETS, DOCUMENT_TYPE_LABELS, EWB_ELIGIBLE_TYPES, PAYABLE_TYPES, type SalesDocument, type SalesDocumentLine } from "./types";
 
 export function SalesDetailPage({ id }: { id: string }) {
+  const { t } = useTranslation();
+  const org = useOrgContext();
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const navigate = useNavigate();
@@ -84,6 +88,8 @@ export function SalesDetailPage({ id }: { id: string }) {
   }
 
   const { document } = doc.data;
+  // e-Way Bill, e-Invoice and the GST place of supply are Indian regimes; other countries do not use them.
+  const isIndia = (org.legalEntities?.find((le) => le.ID === document.LegalEntityID)?.CountryCode ?? "IN") === "IN";
   // Go marshals a nil slice as JSON null, not [] — defensive even though
   // a finalized document always has >=1 line in practice (see
   // apps/web/src/lib/api-client.ts's getListField doc comment).
@@ -194,20 +200,22 @@ export function SalesDetailPage({ id }: { id: string }) {
             <span>
               Issue date: <strong>{new Date(document.IssueDate).toLocaleDateString()}</strong>
             </span>
-            <span>
-              Place of supply: <strong>{document.PlaceOfSupplyStateCode}</strong>
-            </span>
+            {isIndia ? (
+              <span>
+                Place of supply: <strong>{document.PlaceOfSupplyStateCode}</strong>
+              </span>
+            ) : null}
           </div>
 
           {lines.length === 0 ? (
             <p className={layout.emptyState}>No items on this document.</p>
           ) : (
-            <div className={ui.tableScroll}>
+            <div className={ui.tableScroll} tabIndex={0}>
               <table className={ui.table}>
                 <thead>
                   <tr>
                     <th scope="col">#</th>
-                    <th scope="col">HSN/SAC</th>
+                    <th scope="col">{isIndia ? "HSN/SAC" : t("tax.category")}</th>
                     <th scope="col">Qty</th>
                     <th scope="col">Rate</th>
                     <th scope="col">Total</th>
@@ -233,10 +241,10 @@ export function SalesDetailPage({ id }: { id: string }) {
           </div>
         </div>
 
-        {document.Status === "FINALIZED" && EWB_ELIGIBLE_TYPES.has(document.DocumentType) ? (
+        {isIndia && document.Status === "FINALIZED" && EWB_ELIGIBLE_TYPES.has(document.DocumentType) ? (
           <EwayBillCard documentId={document.ID} />
         ) : null}
-        {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? (
+        {isIndia && document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? (
           <EInvoiceCard documentId={document.ID} />
         ) : null}
       </div>

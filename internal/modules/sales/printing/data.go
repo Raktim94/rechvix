@@ -41,8 +41,11 @@ const (
 // SellerInfo is the supplier-side header block — sourced from the legal
 // entity/organisation, not the sales_documents row.
 type SellerInfo struct {
-	LegalName    string
-	GSTIN        string
+	LegalName string
+	GSTIN     string
+	// TaxID/TaxIDLabel replace GSTIN outside India (NIF, VAT number, EIN).
+	TaxID        string
+	TaxIDLabel   string
 	AddressLines []string
 	Phone        string
 	Email        string
@@ -63,6 +66,8 @@ type SellerInfo struct {
 type PartyInfo struct {
 	Name         string
 	GSTIN        string
+	TaxID        string
+	TaxIDLabel   string
 	AddressLines []string
 }
 
@@ -85,6 +90,18 @@ type LineItem struct {
 	IGSTRate      string
 	IGSTValue     string
 	LineTotal     string
+	// TaxRate/TaxValue are the combined tax of the line for non-GST regimes
+	// (e.g. "21%" / "21.00"); the CGST/SGST/IGST fields above are India's.
+	TaxRate  string
+	TaxValue string
+}
+
+// TaxTotal is one line of the tax summary for non-GST regimes, aggregated by
+// tax name and rate: Label "IVA", Rate "21", Amount "21.00".
+type TaxTotal struct {
+	Label  string
+	Rate   string
+	Amount string
 }
 
 // InvoiceData is everything a template needs to render — assembled by
@@ -105,14 +122,22 @@ type InvoiceData struct {
 	Transporter       string
 	VehicleNumber     string
 	Lines             []LineItem
-	SubtotalTaxable   string
-	TotalCGST         string
-	TotalSGST         string
-	TotalIGST         string
-	TotalCess         string
-	RoundOff          string
-	GrandTotal        string
-	AmountInWords     string
+	// GenericTax selects the non-GST layout: Tax % / Tax columns and itemised
+	// TaxTotals instead of CGST/SGST/IGST. Currency is printed with the total.
+	GenericTax bool
+	Currency   string
+	TaxTotals  []TaxTotal
+	// TaxNotes are statements the law requires on some invoices, for example
+	// reverse charge or export zero-rating; one per distinct treatment.
+	TaxNotes        []string
+	SubtotalTaxable string
+	TotalCGST       string
+	TotalSGST       string
+	TotalIGST       string
+	TotalCess       string
+	RoundOff        string
+	GrandTotal      string
+	AmountInWords   string
 	// PreviousBalance is a print-layer stub — no customer ledger exists
 	// until Stage 6 (accounting). nil renders the "Previous Balance" row
 	// as blank/omitted rather than a fabricated ₹0.00, so the printed

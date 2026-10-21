@@ -448,7 +448,7 @@ export function PurchaseScanReviewModal({
             {lines.length === 0 ? (
               <p className={ui.muted}>No line items were detected in this scan — you can still create the purchase and add items manually.</p>
             ) : (
-              <div className={ui.tableScroll}>
+              <div className={ui.tableScroll} tabIndex={0}>
                 <table className={ui.table}>
                   <thead>
                     <tr>
@@ -456,7 +456,7 @@ export function PurchaseScanReviewModal({
                       <th scope="col">Match</th>
                       <th scope="col">Qty</th>
                       <th scope="col">Unit price</th>
-                      <th scope="col" />
+                      <th scope="col"><span className="srOnly">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>

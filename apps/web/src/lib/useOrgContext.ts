@@ -14,6 +14,8 @@ export interface LegalEntity {
   BaseCurrencyCode: string;
   /** US states ("US-CA") where sales tax is collected. */
   USCollectionRegions: string[];
+  /** Seller tax ID outside India (NIF, VAT number, EIN); India uses GSTIN. */
+  TaxID: string;
   // Invoice branding (migrations/0034) — see
   // internal/modules/organisation/domain.LegalEntity's own comment.
   Phone: string;

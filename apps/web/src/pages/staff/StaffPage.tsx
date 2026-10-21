@@ -110,7 +110,7 @@ export function StaffPage() {
         ) : (staff.data ?? []).length === 0 ? (
           <p className={layout.emptyState}>No staff members yet.</p>
         ) : (
-          <div className={ui.tableScroll}>
+          <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>
               <thead>
                 <tr>

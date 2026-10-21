@@ -12,6 +12,7 @@ package numbering
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,7 +49,15 @@ func NewService(pool database.Runner, repo Repository) *Service {
 // §2 — so a caller like sales.CreateDocument can allocate a number in the
 // same transaction as the document row it belongs to).
 func (s *Service) NextDocumentNumber(ctx context.Context, orgID, branchID uuid.UUID, documentType, prefix string, asOf time.Time) (string, error) {
-	fy := FinancialYearFor(asOf)
+	return s.NextDocumentNumberFor(ctx, orgID, branchID, documentType, prefix, asOf, "IN")
+}
+
+// NextDocumentNumberFor is NextDocumentNumber for a legal entity in countryCode:
+// India keeps the April-March "2026-27" series; every other country uses the
+// calendar year ("2026"), which is what Spanish, UK and US businesses expect on
+// an invoice. A new series starts at 1 each period.
+func (s *Service) NextDocumentNumberFor(ctx context.Context, orgID, branchID uuid.UUID, documentType, prefix string, asOf time.Time, countryCode string) (string, error) {
+	fy := SeriesPeriodFor(countryCode, asOf)
 	seq, err := s.repo.Next(ctx, orgID, branchID, documentType, fy, prefix)
 	if err != nil {
 		return "", fmt.Errorf("numbering: allocating next number: %w", err)
@@ -70,4 +79,18 @@ func FinancialYearFor(asOf time.Time) string {
 		return fmt.Sprintf("%d-%02d", y-1, y%100)
 	}
 	return fmt.Sprintf("%d-%02d", y, (y+1)%100)
+}
+
+// SeriesPeriodFor is the numbering period label for a country: India's
+// April-March financial year, or the calendar year elsewhere. Countries whose
+// businesses number by a different fiscal calendar (for example the UK tax year)
+// still get the calendar year here; a company-configurable calendar is not
+// implemented.
+func SeriesPeriodFor(countryCode string, asOf time.Time) string {
+	switch strings.ToUpper(strings.TrimSpace(countryCode)) {
+	case "", "IN":
+		return FinancialYearFor(asOf)
+	default:
+		return fmt.Sprintf("%d", asOf.Year())
+	}
 }

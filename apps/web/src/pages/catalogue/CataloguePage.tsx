@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import { useOrgContext } from "../../lib/useOrgContext";
+import { useTaxReference } from "../../lib/reference";
+import { slugCode } from "../../lib/slug";
 import layout from "../DashboardPage.module.css";
 import { ImportAiMarkdownButton } from "../purchases/ImportAiMarkdownButton";
 import { ScanBillButton } from "../purchases/ScanBillButton";
@@ -151,6 +154,10 @@ function StockChangeSection({ variantId, warehouseId, baseUOMID }: { variantId: 
 export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }) {
   const queryClient = useQueryClient();
   const org = useOrgContext();
+  const { t } = useTranslation();
+  // Outside India a product's tax code is a category from the country's verified rate table, not an HSN/SAC code.
+  const isIndia = (org.legalEntity?.CountryCode ?? "IN") === "IN";
+  const taxRef = useTaxReference(isIndia ? undefined : org.legalEntity?.CountryCode);
   const [query, setQuery] = useState("");
   // 1-based — only meaningful for the plain browse listing below; a
   // search (query non-empty) always goes through SearchProducts instead,
@@ -329,7 +336,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       });
       const variant = await api.post<{ ID: string }>(`/catalogue/variants`, {
         product_id: product.ID,
-        sku_code: skuCode || product.Name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24),
+        sku_code: skuCode || slugCode(product.Name, 24) || "SKU-" + product.ID.slice(0, 8).toUpperCase(),
         attributes: {},
       });
       if (barcode.trim()) {
@@ -357,7 +364,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       // Optional: set this HSN code's GST rate right here instead of
       // sending the user to a separate GST page just to make a freshly
       // added product actually billable at the right tax rate.
-      if (gstRate) {
+      if (isIndia && gstRate) {
         await api.post("/gst/tax-rates", {
           hsn_sac_code: hsn,
           classification: "TAXABLE",
@@ -558,10 +565,35 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
               <input id="product-name" className={ui.input} value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className={ui.field}>
-              <label htmlFor="product-hsn">HSN/SAC code</label>
-              <input id="product-hsn" className={ui.input} value={hsn} onChange={(e) => setHsn(e.target.value)} />
+              {isIndia ? (
+                <>
+                  <label htmlFor="product-hsn">HSN/SAC code</label>
+                  <input id="product-hsn" className={ui.input} value={hsn} onChange={(e) => setHsn(e.target.value)} />
+                </>
+              ) : (
+                <>
+                  <label htmlFor="product-hsn">{t("tax.category")}</label>
+                  <select id="product-hsn" className={ui.select} value={hsn} onChange={(e) => setHsn(e.target.value)}>
+                    <option value="" disabled>
+                      {t("tax.selectCategory")}
+                    </option>
+                    {(taxRef.data?.categories ?? []).map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.rate ? t("tax.rateLabel", { code: c.code, rate: c.rate }) : t("tax.rateless", { code: c.code })}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={ui.muted} style={{ display: "block", marginTop: 4 }}>
+                    {taxRef.data?.supported === false
+                      ? t("tax.notSupported", { country: org.legalEntity?.CountryCode })
+                      : taxRef.data
+                        ? `${t("tax.categoryHelp")} ${t("tax.ratePackVersion", { version: taxRef.data.rate_pack_version })}`
+                        : t("tax.categoryHelp")}
+                  </span>
+                </>
+              )}
             </div>
-            <div className={ui.field}>
+            <div className={ui.field} hidden={!isIndia}>
               <label htmlFor="product-gst">GST rate for this HSN (%, optional)</label>
               <input id="product-gst" className={ui.input} value={gstRate} onChange={(e) => setGstRate(e.target.value)} placeholder="e.g. 18" />
               {/* This is always the ONE combined rate — CGST+SGST always
@@ -880,7 +912,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                 {restoreProducts.error instanceof ApiError ? restoreProducts.error.message : "Could not restore these products."}
               </p>
             ) : null}
-            <div className={ui.tableScroll}>
+            <div className={ui.tableScroll} tabIndex={0}>
               <table className={ui.table}>
                 <thead>
                   <tr>
@@ -893,12 +925,12 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                       />
                     </th>
                     <th scope="col">Name</th>
-                    <th scope="col">HSN/SAC</th>
+                    <th scope="col">{isIndia ? "HSN/SAC" : t("tax.category")}</th>
                     <th scope="col">Price</th>
                     <th scope="col">Category</th>
                     <th scope="col">Brand</th>
                     <th scope="col">Status</th>
-                    <th scope="col" />
+                    <th scope="col"><span className="srOnly">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>

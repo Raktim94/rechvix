@@ -84,13 +84,13 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
     <div className={layout.panel}>
       <h2>GST / tax registration</h2>
       {regs.data?.length ? (
-        <div className={ui.tableScroll} style={{ marginTop: 8, marginBottom: 16 }}>
+        <div className={ui.tableScroll} tabIndex={0} style={{ marginTop: 8, marginBottom: 16 }}>
           <table className={ui.table}>
             <thead>
               <tr>
                 <th scope="col">GSTIN</th>
                 <th scope="col">State</th>
-                <th scope="col"></th>
+                <th scope="col"><span className="srOnly">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -180,13 +180,13 @@ function AddressesPanel({ partyId }: { partyId: string }) {
     <div className={layout.panel}>
       <h2>Addresses</h2>
       {addresses.data?.length ? (
-        <div className={ui.tableScroll} style={{ marginTop: 8, marginBottom: 16 }}>
+        <div className={ui.tableScroll} tabIndex={0} style={{ marginTop: 8, marginBottom: 16 }}>
           <table className={ui.table}>
             <thead>
               <tr>
                 <th scope="col">Type</th>
                 <th scope="col">Address</th>
-                <th scope="col"></th>
+                <th scope="col"><span className="srOnly">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -415,7 +415,7 @@ function LedgerPanel({ partyId }: { partyId: string }) {
       ) : entries.length === 0 ? (
         <p className={layout.emptyState}>No transactions yet.</p>
       ) : (
-        <div className={ui.tableScroll}>
+        <div className={ui.tableScroll} tabIndex={0}>
           <table className={ui.table}>
             <thead>
               <tr>

@@ -6,7 +6,10 @@ export interface NewPartyDetails {
   legalName: string;
   phone?: string;
   currencyCode: string;
+  /** The business tax number: a GSTIN for India, otherwise a VAT/NIF-style ID. */
   gstin?: string;
+  /** ISO 3166-1 alpha-2 of the party; defaults to "IN" for backwards compatibility. */
+  countryCode?: string;
   addressLine1?: string;
   city?: string;
   state?: string;
@@ -30,12 +33,14 @@ export async function createPartyWithDetails(details: NewPartyDetails): Promise<
     currency_code: details.currencyCode,
   });
 
+  const countryCode = (details.countryCode ?? "IN").toUpperCase();
   const trimmedGstin = (details.gstin ?? "").trim().toUpperCase();
   if (trimmedGstin) {
     await api.post(`/contacts/parties/${party.ID}/tax-registrations`, {
-      country_code: "IN",
+      country_code: countryCode,
       registration_number: trimmedGstin,
-      state_code: trimmedGstin.slice(0, 2),
+      // Only a GSTIN encodes a state (its first two digits).
+      state_code: countryCode === "IN" ? trimmedGstin.slice(0, 2) : "",
       is_primary: true,
     });
   }
@@ -52,7 +57,7 @@ export async function createPartyWithDetails(details: NewPartyDetails): Promise<
       city,
       state,
       postal_code: postalCode,
-      country_code: "IN",
+      country_code: countryCode,
       is_default: true,
     });
   }

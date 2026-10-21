@@ -49,11 +49,32 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 `POST /sales/documents` accepts `customer_country`, `supply_region` (ISO 3166-2: `US-CA`, `ES-CN`), `customer_tax_exempt`,
 `equivalence_surcharge`. Omitted fields keep the old behaviour.
 
+## Invoices outside India
+
+* **Layout:** for a legal entity whose country is not India the PDF switches to a generic layout: `Tax category | Qty |
+  Rate | Taxable | Tax % | Tax | Total` per line, one summary line per tax and rate ("IVA 21%: 42.00"), and
+  "Grand Total (EUR)". India keeps the GST layout (HSN, CGST/SGST/IGST, "TAX INVOICE") unchanged.
+* **IDs:** the seller's tax ID (`PUT /legal-entities/{id}/tax-id`, Settings → tax details) and the customer's selected tax
+  registration print as "Tax ID". The ID is stored as typed (trimmed, upper-cased) and is **not validated** (no
+  national checksum, no VIES).
+* **Legal notes** print when they apply: reverse charge, intra-Community supply, export, exempt, zero-rated, US
+  exemption certificate, US not registered to collect, US state without sales tax.
+* **Numbering:** `INV/<calendar year>/000001` outside India; India keeps `INV/2026-27/000001` (April-March).
+* **Text:** Windows-1252 text (all Western European languages and the euro sign) uses the built-in fonts and every theme
+  looks as before; any other text (for example Polish, Czech, Hungarian, Greek, Cyrillic) switches that document to an
+  embedded Unicode font. Scripts that font lacks (Devanagari, CJK, Arabic) cannot be printed.
+
 ## Known gaps
 
 * Purchases still call the engine with the old input; input VAT on purchases and reclaim reporting for VAT countries are not done.
 * Accounting's tax account is labelled "GST Output Tax Payable" for every country (numerically correct, label is India-specific).
+* Invoice wording is English only ("INVOICE", "Bill To", "Taxable Amount"); invoice language is not yet selectable and the
+  signature line still reads "For Authorized Signatory".
+* A Spanish invoice must also carry items this system does not capture (for example the date of the transaction when it
+  differs from the issue date, and the customer's address and NIF on full invoices to businesses); review the layout with
+  your gestor. SII, VERI*FACTU, FacturaE/Peppol and other electronic-invoicing and real-time reporting regimes are not implemented.
+* Credit notes outside India reuse the same document types and layout; the legal wording for rectifying invoices is not added.
 * No VAT return / Modelo 303 / UK MTD / sales-tax filing exports.
 * Rates sourced from two secondary publications for the EU; the Commission's TEDB could not be fetched. Re-verify before filing.
-* Web UI: first-run setup now chooses country, currency and timezone. The invoice screen does not yet expose `customer_country`, `supply_region`, exemption/surcharge flags, and there is no screen for the US collection-regions setting (API only).
+* The UI covers the sale and set-up path (setup, product tax category, invoice tax details, Settings tax ID and US collection states). Purchases, returns/credit notes, contacts' detail pages and reports are still India-shaped in places (HSN/GST wording).
 * Rate pack updates are code changes (new `RatePackVersion`); there is no admin UI to edit rates.

@@ -7,18 +7,7 @@ import ui from "./ui.module.css";
 import { api, ApiError } from "../lib/api-client";
 import { GST_STATE_CODES } from "../lib/gstStateCodes";
 import { useOrgContext } from "../lib/useOrgContext";
-
-/** Same auto-slug idiom BootstrapPage/CataloguePage already use for an
- * unset code field — branch_code/warehouse_code are NOT NULL (and
- * warehouses.code is UNIQUE per organisation), but this form only
- * collects names, same reasoning as BootstrapPage's identical helper. */
-function slugCode(name: string, maxLen: number): string {
-  return name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, maxLen);
-}
+import { slugCode } from "../lib/slug";
 
 interface LegalEntityResponse {
   ID: string;

@@ -433,6 +433,36 @@ func (s *Service) UpdateLegalEntityGST(ctx context.Context, principal permission
 	return le, nil
 }
 
+// UpdateLegalEntityTaxID sets the seller's tax identifier printed on invoices
+// outside India (NIF, VAT number, EIN). The value is stored as typed, trimmed and
+// upper-cased; it is not validated against any national checksum or VIES.
+func (s *Service) UpdateLegalEntityTaxID(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID, taxID string) (*domain.LegalEntity, error) {
+	if err := s.permissions.Require(ctx, principal, "settings.manage", permissions.Scope{}); err != nil {
+		return nil, err
+	}
+	taxID = strings.ToUpper(strings.TrimSpace(taxID))
+	if len(taxID) > 40 {
+		return nil, fmt.Errorf("%w: tax id is longer than 40 characters", domain.ErrInvalidInput)
+	}
+	var le *domain.LegalEntity
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		le, err = s.legalEntities.UpdateTaxID(ctx, principal.OrganisationID, legalEntityID, taxID)
+		if err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "legal_entity.tax_id_updated", EntityType: "legal_entity", EntityID: &legalEntityID,
+			AfterState: map[string]any{"tax_id": taxID}, At: s.now(),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return le, nil
+}
+
 // UpdateLegalEntityUSCollectionRegions sets the US states ("US-CA") in which the
 // entity is registered to collect sales tax. Tax is charged only in these
 // states; whether the entity has nexus elsewhere is a legal decision this

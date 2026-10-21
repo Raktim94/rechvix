@@ -174,7 +174,7 @@ function ApiKeysPanel() {
       ) : (keys.data ?? []).length === 0 ? (
         <p className={layout.emptyState}>No API keys yet.</p>
       ) : (
-        <div className={ui.tableScroll}>
+        <div className={ui.tableScroll} tabIndex={0}>
           <table className={ui.table}>
             <thead>
               <tr>
@@ -183,7 +183,7 @@ function ApiKeysPanel() {
                 <th scope="col">Scopes</th>
                 <th scope="col">Last used</th>
                 <th scope="col">Expires</th>
-                <th scope="col" />
+                <th scope="col"><span className="srOnly">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -304,14 +304,14 @@ function WebhooksPanel() {
       ) : (endpoints.data ?? []).length === 0 ? (
         <p className={layout.emptyState}>No webhooks registered yet.</p>
       ) : (
-        <div className={ui.tableScroll}>
+        <div className={ui.tableScroll} tabIndex={0}>
           <table className={ui.table}>
             <thead>
               <tr>
                 <th scope="col">URL</th>
                 <th scope="col">Events</th>
                 <th scope="col">Status</th>
-                <th scope="col" />
+                <th scope="col"><span className="srOnly">Actions</span></th>
               </tr>
             </thead>
             <tbody>

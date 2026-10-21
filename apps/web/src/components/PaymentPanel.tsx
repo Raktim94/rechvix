@@ -271,7 +271,7 @@ export function PaymentPanel({
       ) : (transactions.data ?? []).length === 0 ? (
         <p className={layout.emptyState}>No payments recorded against this {isReceive ? "invoice" : "bill"} yet.</p>
       ) : (
-        <div className={ui.tableScroll}>
+        <div className={ui.tableScroll} tabIndex={0}>
           <table className={ui.table}>
             <thead>
               <tr>

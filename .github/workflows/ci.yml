@@ -109,6 +109,8 @@ jobs:
         run: npm run lint
       - name: locale parity (every language has the same keys and placeholders as en)
         run: node scripts/check-locales.mjs
+      - name: unit tests
+        run: npm test
       - name: build (includes tsc -b — strict typecheck)
         run: npm run build
 

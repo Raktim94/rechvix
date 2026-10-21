@@ -38,7 +38,7 @@ export function ReportTable({ path, emptyLabel }: { path: string; emptyLabel?: s
           PDF
         </a>
       </div>
-      <div className={ui.tableScroll}>
+      <div className={ui.tableScroll} tabIndex={0}>
         <table className={ui.table}>
           <thead>
             <tr>

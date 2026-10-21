@@ -28,6 +28,13 @@ Language and formatting are separate. Formatting uses `<language>-<company count
 `en-IN`), so a Spanish speaker at a US company sees US conventions. Indian companies keep `en-IN` grouping.
 Amounts are formatted by `Intl.NumberFormat` from the ISO 4217 code, so decimals follow the currency (JPY 0, KWD 3).
 
+## Invoices, fonts and numbering
+* PDF text: Western European text prints with the built-in fonts; other Latin-extended, Greek and Cyrillic text switches
+  the document to an embedded Unicode font; Devanagari, CJK and Arabic cannot be printed (docs/tax-regimes.md).
+* Numbers: calendar-year series outside India, April-March series in India.
+* Country and currency names in the UI come from the browser (`Intl.DisplayNames`) in the interface language, and lists are sorted by that language.
+* Codes generated from names (branch, warehouse, SKU) fold accents ("Almacén" -> "ALMACEN") instead of dropping them.
+
 ## Currencies and countries
 
 * All 165 transactional ISO 4217 currencies (amendment published 2026-09-17), with their minor units:

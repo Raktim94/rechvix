@@ -201,6 +201,12 @@
   overflow-x: auto;
 }
 
+/* Focusable so keyboard users can scroll a wide table (WCAG 2.1.1); needs a visible ring (2.4.7). */
+.tableScroll:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .exportRow {
   display: flex;
   align-items: center;

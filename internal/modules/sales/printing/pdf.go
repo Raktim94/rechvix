@@ -141,6 +141,15 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 	pdf.SetMargins(8, 8, 8)
 	pdf.SetLineWidth(st.ruleWidth)
 
+	// See encoding.go: built-in fonts + converted text when everything fits
+	// Windows-1252, otherwise the embedded Unicode font for the whole document.
+	if needsUnicode(data) {
+		registerUnicodeFonts(pdf)
+		st.fontFamily = unicodeFamily
+	} else {
+		data = forBuiltInFonts(data)
+	}
+
 	title := lo.titleOverride
 	if title == "" {
 		title = data.DocumentTypeLabel
@@ -207,6 +216,9 @@ func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, title str
 	if data.Seller.GSTIN != "" {
 		pdf.CellFormat(0, 5, "GSTIN: "+data.Seller.GSTIN, "", 1, "C", false, 0, "")
 	}
+	if data.Seller.TaxID != "" {
+		pdf.CellFormat(0, 5, labelOr(data.Seller.TaxIDLabel, "Tax ID")+": "+data.Seller.TaxID, "", 1, "C", false, 0, "")
+	}
 	pdf.Ln(2)
 
 	setFont(pdf, lo, st, st.titleStyle, 12)
@@ -270,6 +282,9 @@ func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 	if data.BillTo.GSTIN != "" {
 		pdf.CellFormat(0, 5, "GSTIN: "+data.BillTo.GSTIN, "", 1, "L", false, 0, "")
 	}
+	if data.BillTo.TaxID != "" {
+		pdf.CellFormat(0, 5, labelOr(data.BillTo.TaxIDLabel, "Tax ID")+": "+data.BillTo.TaxID, "", 1, "L", false, 0, "")
+	}
 	if len(data.ShipTo.AddressLines) > 0 && !lo.narrow {
 		pdf.Ln(1)
 		setFont(pdf, lo, st, "B", 9)
@@ -300,6 +315,11 @@ func drawItemTable(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 	}
 	widths := []float64{8, 55, 18, 15, 15, 18, 18, 18, 18, 18}
 	headers := []string{"#", "Description", "HSN", "Qty", "Rate", "Taxable", "CGST", "SGST", "IGST", "Total"}
+	if data.GenericTax {
+		// VAT / sales tax: one combined Tax % and Tax column instead of CGST/SGST/IGST.
+		widths = []float64{8, 50, 22, 14, 18, 22, 16, 20, 24}
+		headers = []string{"#", "Description", "Tax category", "Qty", "Rate", "Taxable", "Tax %", "Tax", "Total"}
+	}
 	headerBorder := "1"
 	if !st.boxedTable {
 		headerBorder = "B"
@@ -326,6 +346,17 @@ func drawItemTable(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 		row := []string{
 			fmt.Sprintf("%d", l.SNo), l.Description, l.HSNSAC, l.Quantity, l.Rate, l.TaxableValue,
 			taxCell(l.CGSTRate, l.CGSTValue), taxCell(l.SGSTRate, l.SGSTValue), taxCell(l.IGSTRate, l.IGSTValue), l.LineTotal,
+		}
+		if data.GenericTax {
+			rate := l.TaxRate
+			if rate == "" {
+				rate = "0%"
+			}
+			tax := l.TaxValue
+			if tax == "" {
+				tax = "0"
+			}
+			row = []string{fmt.Sprintf("%d", l.SNo), l.Description, l.HSNSAC, l.Quantity, l.Rate, l.TaxableValue, rate, tax, l.LineTotal}
 		}
 		for i, v := range row {
 			align := "L"
@@ -355,10 +386,17 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 		pdf.CellFormat(0, 5, fmt.Sprintf("%-30s %s", label, value), "", 1, "R", false, 0, "")
 	}
 	row("Taxable Amount:", data.SubtotalTaxable)
-	row("CGST:", data.TotalCGST)
-	row("SGST:", data.TotalSGST)
-	row("IGST:", data.TotalIGST)
-	row("Cess:", data.TotalCess)
+	if data.GenericTax {
+		// One line per tax and rate, e.g. "IVA 21%:", so the tax is visible, not implied.
+		for _, t := range data.TaxTotals {
+			row(fmt.Sprintf("%s %s%%:", t.Label, t.Rate), t.Amount)
+		}
+	} else {
+		row("CGST:", data.TotalCGST)
+		row("SGST:", data.TotalSGST)
+		row("IGST:", data.TotalIGST)
+		row("Cess:", data.TotalCess)
+	}
 	row("Round Off:", data.RoundOff)
 	if data.PreviousBalance != nil {
 		row("Previous Balance:", data.PreviousBalance.StringFixed(0))
@@ -379,16 +417,28 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 		resetDrawColor(pdf)
 		pdf.Ln(1)
 	}
+	grandLabel := "Grand Total:"
+	if data.GenericTax && data.Currency != "" {
+		grandLabel = "Grand Total (" + data.Currency + "):"
+	}
 	setFont(pdf, lo, st, "B", 10)
 	if st.headerFill {
 		pdf.SetFillColor(st.accent.r, st.accent.g, st.accent.b)
 		pdf.SetTextColor(255, 255, 255)
-		pdf.CellFormat(0, 7, fmt.Sprintf("%-30s %s", "Grand Total:", data.GrandTotal), "", 1, "R", true, 0, "")
+		pdf.CellFormat(0, 7, fmt.Sprintf("%-30s %s", grandLabel, data.GrandTotal), "", 1, "R", true, 0, "")
 		resetTextColor(pdf)
 	} else {
 		setAccentText(pdf, st)
-		row("Grand Total:", data.GrandTotal)
+		row(grandLabel, data.GrandTotal)
 		resetTextColor(pdf)
+	}
+	// Statements the law requires on some invoices (reverse charge, export, exemption).
+	if len(data.TaxNotes) > 0 {
+		setFont(pdf, lo, st, "", 8)
+		pdf.Ln(1)
+		for _, n := range data.TaxNotes {
+			pdf.MultiCell(0, 4, n, "", "L", false)
+		}
 	}
 	if data.AmountInWords != "" {
 		setFont(pdf, lo, st, "", 8)
@@ -418,4 +468,11 @@ func drawSignatureBlock(pdf *fpdf.Fpdf, lo layout, st style, signatoryName strin
 		pdf.Ln(6)
 		pdf.CellFormat(0, 5, signatoryName, "", 1, "R", false, 0, "")
 	}
+}
+
+func labelOr(label, fallback string) string {
+	if label != "" {
+		return label
+	}
+	return fallback
 }

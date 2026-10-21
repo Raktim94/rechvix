@@ -358,7 +358,7 @@ export function PurchasesPage() {
               {lines.length === 0 ? (
                 <p className={layout.emptyState}>No items yet.</p>
               ) : (
-                <div className={ui.tableScroll}>
+                <div className={ui.tableScroll} tabIndex={0}>
                   <table className={ui.table}>
                     <thead>
                       <tr>
@@ -503,7 +503,7 @@ export function PurchasesPage() {
         ) : filteredDocuments.length === 0 ? (
           <p className={layout.emptyState}>{documents.data.length === 0 ? "No purchases yet." : "No purchases match these filters."}</p>
         ) : (
-          <div className={ui.tableScroll}>
+          <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>
               <thead>
                 <tr>

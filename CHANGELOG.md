@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Tax: Spain (IVA incl. recargo de equivalencia), United Kingdom and all 27 EU member states (VAT, intra-EU B2B reverse charge, exports), and US state sales tax, behind a country dispatcher; India GST is unchanged (docs/tax-regimes.md). Migrations 0044-0046.
+- All 165 ISO 4217 currencies and 250 countries; reference endpoints; first-run setup chooses country, currency and timezone.
+- Eight UI languages (en, es, fr, de, it, pt, nl, hi) with locale-aware money/date formatting; locale parity check in CI.
+- Invoice PDFs outside India itemise tax, show tax IDs, the currency and legal notes; Unicode text support.
+- Scheduled, verified, encrypted backups with retention (worker, opt-in).
+- Historical cost snapshots on stock movements (`stock_movements.base_unit_cost`) for accurate gross profit.
+
+### Fixed
+- Accounting and reports labelled every amount "INR" regardless of the company's currency.
+- Gross profit counted quotations/orders/challans as revenue and added credit notes instead of subtracting them.
+- Invoice PDFs printed accented letters and the euro sign incorrectly.
+- Mobile layout: the page scrolled sideways below ~1196px; topbar and 320px reflow; table scroll regions are keyboard-focusable; contrast of sidebar group labels.
+- Setup country select could show a different country from the one the form held.
+- Dependency vulnerabilities (excelize, vite).
+
 Staged per `docs/architecture.md` §16 / `docs/TODO.md`. A stage is listed
 here once it has real passing unit *and* integration tests — see
 `docs/TODO.md` for exactly what's built vs. in progress within a stage.

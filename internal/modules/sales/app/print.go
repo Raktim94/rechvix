@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	taxdomain "rechvix/internal/modules/taxation/domain"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -151,6 +153,23 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		items = append(items, item)
 	}
 
+	// Non-GST regimes: itemise tax by name and rate, and collect the legal notes.
+	genericTax := legalEntity.CountryCode != "IN" && legalEntity.CountryCode != ""
+	var taxTotals []printing.TaxTotal
+	var taxNotes []string
+	if genericTax {
+		taxTotals, taxNotes = genericTaxSummary(taxLines, componentsByLine)
+		perLine := genericLineTaxes(taxLines, componentsByLine)
+		for i := range items {
+			if lt, ok := perLine[items[i].SNo]; ok {
+				items[i].TaxRate, items[i].TaxValue = lt.rate, lt.value
+				// Outside India the printed line total includes the tax, matching the grand total.
+				items[i].LineTotal = lt.gross
+				items[i].HSNSAC = displayTaxCategory(items[i].HSNSAC)
+			}
+		}
+	}
+
 	var totalCGST, totalSGST, totalIGST, totalCess string
 	for _, tl := range taxLines {
 		for _, c := range componentsByLine[tl.ID] {
@@ -181,7 +200,9 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 	return &printing.InvoiceData{
 		Seller: printing.SellerInfo{
 			LegalName:    legalEntity.LegalName,
-			GSTIN:        legalEntity.GSTIN,
+			GSTIN:        indiaOnly(genericTax, legalEntity.GSTIN),
+			TaxID:        legalEntity.TaxID,
+			TaxIDLabel:   taxIDLabel(genericTax),
 			AddressLines: splitNonEmptyLines(legalEntity.Address),
 			Phone:        legalEntity.Phone,
 			Email:        legalEntity.Email,
@@ -192,9 +213,9 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 			BankIFSC:     legalEntity.BankIFSC,
 			UPIID:        legalEntity.UPIID,
 		},
-		BillTo:            printing.PartyInfo{Name: customer.LegalName, GSTIN: customerGSTIN, AddressLines: billAddr},
+		BillTo:            printing.PartyInfo{Name: customer.LegalName, GSTIN: indiaOnly(genericTax, customerGSTIN), TaxID: indiaOnly(!genericTax, customerGSTIN), TaxIDLabel: taxIDLabel(genericTax), AddressLines: billAddr},
 		ShipTo:            printing.PartyInfo{Name: customer.LegalName, AddressLines: shipAddr},
-		DocumentTypeLabel: printing.DocumentTypeLabel(doc.DocumentType),
+		DocumentTypeLabel: documentLabel(doc.DocumentType, genericTax),
 		DocumentNumber:    doc.DocumentNumber,
 		IssueDate:         doc.IssueDate,
 		DueDate:           doc.DueDate,
@@ -203,6 +224,10 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		Transporter:       doc.Transporter,
 		VehicleNumber:     doc.VehicleNumber,
 		Lines:             items,
+		GenericTax:        genericTax,
+		Currency:          taxDoc.CurrencyCode,
+		TaxTotals:         taxTotals,
+		TaxNotes:          taxNotes,
 		SubtotalTaxable:   taxDoc.TotalTaxableAmount.StringFixed(money.RoundHalfUp),
 		TotalCGST:         totalCGST,
 		TotalSGST:         totalSGST,
@@ -215,6 +240,130 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		TermsAndConditions:      terms,
 		AuthorizedSignatoryName: legalEntity.AuthorizedSignatoryName,
 	}, nil
+}
+
+// indiaOnly returns v unless the document uses a non-GST regime, in which case
+// the India-specific field stays empty.
+func indiaOnly(generic bool, v string) string {
+	if generic {
+		return ""
+	}
+	return v
+}
+
+func taxIDLabel(generic bool) string {
+	if generic {
+		return "Tax ID"
+	}
+	return "GSTIN"
+}
+
+// documentLabel is the printed heading. Outside India a tax invoice is simply an
+// "INVOICE"; the GST wording would be wrong on a Spanish, UK or US document.
+func documentLabel(t domain.DocumentType, generic bool) string {
+	label := printing.DocumentTypeLabel(t)
+	if generic && label == "TAX INVOICE" {
+		return "INVOICE"
+	}
+	return label
+}
+
+// displayTaxCategory turns the stored tax code into words for a printed invoice:
+// "STANDARD" -> "Standard", "RATE:10" -> "Reduced", and so on. The rate itself is
+// printed in the Tax % column.
+func displayTaxCategory(code string) string {
+	c := strings.ToUpper(strings.TrimSpace(code))
+	switch {
+	case c == "STANDARD":
+		return "Standard"
+	case strings.HasPrefix(c, "RATE:"), c == "REDUCED":
+		return "Reduced"
+	case c == "ZERO":
+		return "Zero rate"
+	case c == "EXEMPT":
+		return "Exempt"
+	case c == "TAXABLE":
+		return "Taxable"
+	}
+	return code
+}
+
+type lineTax struct{ rate, value, gross string }
+
+// genericLineTaxes returns, by line number, the combined tax rate ("21%" or
+// "21%+5.2%") and amount of each line for non-GST regimes. It only formats
+// amounts the tax engine already computed.
+func genericLineTaxes(taxLines []*taxdomain.TaxLine, comps map[uuid.UUID][]*taxdomain.TaxComponentRow) map[int]lineTax {
+	out := make(map[int]lineTax, len(taxLines))
+	for _, tl := range taxLines {
+		n, err := strconv.Atoi(tl.LineRef)
+		if err != nil {
+			continue
+		}
+		var rates []string
+		for _, c := range comps[tl.ID] {
+			rates = append(rates, c.Rate.String()+"%")
+		}
+		out[n] = lineTax{rate: strings.Join(rates, "+"), value: tl.TotalTaxAmount.StringFixed(money.RoundHalfUp), gross: tl.GrossAmount.StringFixed(money.RoundHalfUp)}
+	}
+	return out
+}
+
+// taxNoteFor is the statement a classification needs on the printed document;
+// "" for ordinary taxed supplies.
+func taxNoteFor(classification string) string {
+	switch classification {
+	case "REVERSE_CHARGE":
+		return "Reverse charge: the customer accounts for the VAT."
+	case "INTRA_EU_B2B":
+		return "Intra-Community supply: VAT not charged, reverse charge applies."
+	case "EXPORT":
+		return "Export outside the supplier's VAT area: VAT not charged."
+	case "EXEMPT":
+		return "Exempt supply."
+	case "ZERO_RATED":
+		return "Zero-rated supply."
+	case "EXEMPT_CERTIFICATE":
+		return "No sales tax charged: customer exemption certificate on file."
+	case "NOT_COLLECTED":
+		return "No sales tax charged: not registered to collect in the destination state."
+	case "STATE_HAS_NO_SALES_TAX":
+		return "No state sales tax applies in the destination state."
+	}
+	return ""
+}
+
+// genericTaxSummary aggregates the document's tax components by name and rate
+// (in first-seen order) and collects the distinct legal notes.
+func genericTaxSummary(taxLines []*taxdomain.TaxLine, comps map[uuid.UUID][]*taxdomain.TaxComponentRow) ([]printing.TaxTotal, []string) {
+	type key struct{ name, rate string }
+	sums := map[key]money.Money{}
+	var order []key
+	var notes []string
+	seenNote := map[string]bool{}
+	for _, tl := range taxLines {
+		if n := taxNoteFor(tl.Classification); n != "" && !seenNote[n] {
+			seenNote[n] = true
+			notes = append(notes, n)
+		}
+		for _, c := range comps[tl.ID] {
+			k := key{c.ComponentType, c.Rate.String()}
+			cur, ok := sums[k]
+			if !ok {
+				order = append(order, k)
+				sums[k] = c.Amount
+				continue
+			}
+			if total, err := cur.Add(c.Amount); err == nil {
+				sums[k] = total
+			}
+		}
+	}
+	out := make([]printing.TaxTotal, 0, len(order))
+	for _, k := range order {
+		out = append(out, printing.TaxTotal{Label: k.name, Rate: k.rate, Amount: sums[k].StringFixed(money.RoundHalfUp)})
+	}
+	return out, notes
 }
 
 // splitNonEmptyLines turns LegalEntity.Address's free-text, newline

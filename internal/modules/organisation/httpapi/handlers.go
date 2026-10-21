@@ -43,6 +43,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/legal-entities", h.createLegalEntity)
 	r.Put("/legal-entities/{id}/gst", h.updateLegalEntityGST)
 	r.Put("/legal-entities/{id}/us-collection-regions", h.updateLegalEntityUSCollectionRegions)
+	r.Put("/legal-entities/{id}/tax-id", h.updateLegalEntityTaxID)
 	r.Put("/legal-entities/{id}/invoice-branding", h.updateInvoiceBranding)
 	r.Get("/branches", h.listBranches)
 	r.Post("/branches", h.createBranch)
@@ -212,6 +213,31 @@ func (h *Handlers) updateLegalEntityGST(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	le, err := h.svc.UpdateLegalEntityGST(r.Context(), principal(r), id, req.GSTIN, req.GSTStateCode)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, le)
+}
+
+type updateTaxIDRequest struct {
+	TaxID string `json:"tax_id"`
+}
+
+// updateLegalEntityTaxID sets the seller's tax identifier printed on invoices
+// outside India (NIF, VAT number, EIN). Indian entities use /gst instead.
+func (h *Handlers) updateLegalEntityTaxID(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[updateTaxIDRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	le, err := h.svc.UpdateLegalEntityTaxID(r.Context(), principal(r), id, req.TaxID)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

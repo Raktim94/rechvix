@@ -128,7 +128,7 @@ function FiscalPeriodsPanel() {
       ) : (periods.data ?? []).length === 0 ? (
         <p className={layout.emptyState}>No fiscal periods yet — without one, books can never be locked closed.</p>
       ) : (
-        <div className={ui.tableScroll}>
+        <div className={ui.tableScroll} tabIndex={0}>
           <table className={ui.table}>
             <thead>
               <tr>
@@ -136,7 +136,7 @@ function FiscalPeriodsPanel() {
                 <th scope="col">Start</th>
                 <th scope="col">End</th>
                 <th scope="col">Status</th>
-                <th scope="col" />
+                <th scope="col"><span className="srOnly">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -224,7 +224,7 @@ export function AccountingPage() {
         ) : accounts.data.length === 0 ? (
           <p className={layout.emptyState}>No accounts set up yet.</p>
         ) : (
-          <div className={ui.tableScroll}>
+          <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>
               <thead>
                 <tr>

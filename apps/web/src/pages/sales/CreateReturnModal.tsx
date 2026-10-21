@@ -82,7 +82,7 @@ export function CreateReturnModal({
             </label>
           </div>
 
-          <div className={ui.tableScroll} style={{ marginTop: 16 }}>
+          <div className={ui.tableScroll} tabIndex={0} style={{ marginTop: 16 }}>
             <table className={ui.table}>
               <thead>
                 <tr>
