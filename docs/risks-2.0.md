@@ -4,7 +4,7 @@ Severity: H/M/L. Status: Open unless stated. Evidence refers to this audit (2026
 
 | ID | Risk | Sev | Evidence | Mitigation / owner phase |
 |---|---|---|---|---|
-| R-01 | Integration + e2e suites not runnable in this environment (Docker socket permission denied), so cross-tenant/RLS evidence is from the 2026-09-04 TODO note only | H | `docker ps` → permission denied | Operator adds user to `docker` group (or provides CI run). Until then every Phase 1 gate relies on CI. **Needs operator action.** |
+| R-01 | RESOLVED for integration: ran 285/285 via remote Docker. e2e/Playwright still not run | M | `docker ps` → permission denied | Operator adds user to `docker` group (or provides CI run). Until then every Phase 1 gate relies on CI. **Needs operator action.** |
 | R-02 | Stage 11 security review incomplete: IDOR beyond org scoping, RBAC bypass, mass assignment, general API-key scope bypass | H | TODO l.162-170 | Phase 1: systematic route×permission×tenant matrix test, generated from router |
 | R-03 | Gross profit uses current average cost, not sale-time cost; misleading margin | H | `reporting/domain.GrossProfitRow` comment | Phase 4: snapshot `unit_cost` on SALE movements; expand/migrate/contract; keep "approximate" banner until backfill verified |
 | R-04 | Purchase GST input credit / GSTR-3B not built; tax reports one-sided | H | TODO l.80 | Phase 4; tax claims need jurisdiction rules verified (India GST) |

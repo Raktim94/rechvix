@@ -5,7 +5,7 @@ test files, not from `docs/TODO.md` checkboxes. Legend: **Full** = implemented a
 unit-tested; **Partial** = real but incomplete; **Stub** = scaffold only; **Missing** = absent;
 **Blocked-cred / Blocked-reg** = needs credentials / regulatory validation.
 "Integration" test status could not be re-run in this audit (see `docs/risks-2.0.md` R-01);
-it is taken from TODO.md's 2026-09-04 run (92/92) and is labelled *unverified today*.
+it was re-run on 2026-10-21 (285 pass / 0 fail).
 
 ## Baseline (reproducible)
 
@@ -16,7 +16,7 @@ it is taken from TODO.md's 2026-09-04 run (92/92) and is labelled *unverified to
 | `go test ./...` (unit) | pass, 25 packages with tests |
 | `apps/web`: `tsc -b` | pass |
 | `apps/web`: `npm run lint` (oxlint) | pass, warnings only (`set-state-in-effect` x7, `only-export-components` x1) |
-| `go test -tags=integration ./...` | **not run** — Docker socket permission denied for this user |
+| `go test -tags=integration ./...` | **pass, 285 tests, 0 failures** (2026-10-21, Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
 | Playwright / e2e / screenshots | **not run** — Postgres stack unavailable (needs Docker) |
 | staticcheck / govulncheck | not run locally (CI job `go-static` runs them) |
 
