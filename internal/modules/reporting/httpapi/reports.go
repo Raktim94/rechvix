@@ -80,9 +80,9 @@ func (h *Handlers) grossProfit(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	t := export.Table{Title: "Gross Profit (approx. COGS — see docs)", Headers: []string{"Product", "SKU", "Qty Sold", "Revenue", "Approx COGS", "Approx Profit"}}
+	t := export.Table{Title: "Gross Profit (cost from stock-movement snapshots; rows marked approximate predate them)", Headers: []string{"Product", "SKU", "Qty Sold", "Revenue", "COGS", "Profit", "Cost basis"}}
 	for _, g := range rows {
-		t.Rows = append(t.Rows, []string{g.ProductName, g.SKU, g.QuantitySold, g.Revenue.StringFixed(fixed), g.ApproxCOGS.StringFixed(fixed), g.ApproxProfit.StringFixed(fixed)})
+		t.Rows = append(t.Rows, []string{g.ProductName, g.SKU, g.QuantitySold, g.Revenue.StringFixed(fixed), g.ApproxCOGS.StringFixed(fixed), g.ApproxProfit.StringFixed(fixed), g.CostBasis})
 	}
 	writeTable(w, r, t)
 }

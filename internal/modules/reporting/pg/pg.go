@@ -263,6 +263,7 @@ func (r *Repo) scanDetail(ctx context.Context, q string, args []any) ([]domain.D
 // GrossProfit — see domain.GrossProfitRow's doc comment for the
 // approximate-COGS caveat (current average_cost, not historical).
 func (r *Repo) GrossProfit(ctx context.Context, f domain.Filter) ([]domain.GrossProfitRow, error) {
+	// Revenue and quantity per variant. Credit notes and returns count negative.
 	w := newWhere(f.OrganisationID, "sd")
 	w.add("sd.status", "FINALIZED")
 	w.addRange("sd.issue_date", f.From, f.To)
@@ -271,37 +272,90 @@ func (r *Repo) GrossProfit(ctx context.Context, f domain.Filter) ([]domain.Gross
 	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 
 	q := fmt.Sprintf(`
-		SELECT pv.id, pr.name, pv.sku_code, SUM(sdl.quantity),
-		       SUM(sdl.line_total_amount),
-		       COALESCE(SUM(sdl.quantity * sb.average_cost), 0)
+		SELECT pv.id, pr.name, pv.sku_code,
+		       SUM(CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -sdl.quantity ELSE sdl.quantity END),
+		       SUM(CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -sdl.line_total_amount ELSE sdl.line_total_amount END)
 		FROM sales_document_lines sdl
 		JOIN sales_documents sd ON sd.id = sdl.sales_document_id
 		JOIN product_variants pv ON pv.id = sdl.product_variant_id
 		JOIN products pr ON pr.id = pv.product_id
-		LEFT JOIN stock_balances sb ON sb.organisation_id = sd.organisation_id
-		    AND sb.warehouse_id = sd.warehouse_id AND sb.product_variant_id = sdl.product_variant_id
-		WHERE %s
+		WHERE %s AND sd.document_type IN ('TAX_INVOICE','POS_INVOICE','RECURRING_INVOICE','DEBIT_NOTE','CREDIT_NOTE','SALES_RETURN')
 		GROUP BY pv.id, pr.name, pv.sku_code
 		ORDER BY pr.name`, w.sql())
 	rows, err := r.pool.Q(ctx).Query(ctx, q, w.args...)
 	if err != nil {
 		return nil, fmt.Errorf("reporting: gross profit query: %w", err)
 	}
-	defer rows.Close()
 	var out []domain.GrossProfitRow
+	revenueByVariant := map[uuid.UUID]decimal.Decimal{}
 	for rows.Next() {
 		var g domain.GrossProfitRow
-		var qty, revenue, cogs decimal.Decimal
-		if err := rows.Scan(&g.ProductVariantID, &g.ProductName, &g.SKU, &qty, &revenue, &cogs); err != nil {
+		var qty, revenue decimal.Decimal
+		if err := rows.Scan(&g.ProductVariantID, &g.ProductName, &g.SKU, &qty, &revenue); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("reporting: scanning gross profit row: %w", err)
 		}
 		g.QuantitySold = qty.String()
 		g.Revenue = inr(revenue)
-		g.ApproxCOGS = inr(cogs)
-		g.ApproxProfit = inr(revenue.Sub(cogs))
+		revenueByVariant[g.ProductVariantID] = revenue
 		out = append(out, g)
 	}
-	return out, rows.Err()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Cost per variant from the stock-movement ledger, using the same document
+	// filters. Movements without a snapshot fall back to the current average
+	// cost and are counted so the row can be labelled "approximate".
+	w2 := newWhere(f.OrganisationID, "sd")
+	w2.add("sd.status", "FINALIZED")
+	w2.addRange("sd.issue_date", f.From, f.To)
+	w2.addOptionalUUID("sd.warehouse_id", f.WarehouseID)
+	w2.addOptionalUUID("sm.product_variant_id", f.ProductVariantID)
+	w2.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
+	cq := fmt.Sprintf(`
+		SELECT sm.product_variant_id,
+		       COALESCE(SUM(CASE WHEN sm.movement_type = 'SALE_RETURN' THEN -1 ELSE 1 END
+		                    * sm.base_quantity * COALESCE(sm.base_unit_cost, sb.average_cost, 0)), 0),
+		       COUNT(*) FILTER (WHERE sm.base_unit_cost IS NULL)
+		FROM stock_movements sm
+		JOIN sales_documents sd ON sd.id = sm.reference_id
+		LEFT JOIN stock_balances sb ON sb.organisation_id = sm.organisation_id
+		    AND sb.warehouse_id = sm.warehouse_id AND sb.product_variant_id = sm.product_variant_id
+		WHERE sm.reference_type = 'sales_document' AND sm.movement_type IN ('SALE','SALE_RETURN') AND %s
+		GROUP BY sm.product_variant_id`, w2.sql())
+	crows, err := r.pool.Q(ctx).Query(ctx, cq, w2.args...)
+	if err != nil {
+		return nil, fmt.Errorf("reporting: gross profit cost query: %w", err)
+	}
+	defer crows.Close()
+	type cost struct {
+		cogs       decimal.Decimal
+		unsnapshot int64
+	}
+	costs := map[uuid.UUID]cost{}
+	for crows.Next() {
+		var id uuid.UUID
+		var c cost
+		if err := crows.Scan(&id, &c.cogs, &c.unsnapshot); err != nil {
+			return nil, fmt.Errorf("reporting: scanning gross profit cost row: %w", err)
+		}
+		costs[id] = c
+	}
+	if err := crows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		c := costs[out[i].ProductVariantID]
+		out[i].ApproxCOGS = inr(c.cogs)
+		out[i].ApproxProfit = inr(revenueByVariant[out[i].ProductVariantID].Sub(c.cogs))
+		out[i].CostBasis = "historical"
+		if c.unsnapshot > 0 {
+			out[i].CostBasis = "approximate"
+		}
+	}
+	return out, nil
 }
 
 // --- Purchases ---

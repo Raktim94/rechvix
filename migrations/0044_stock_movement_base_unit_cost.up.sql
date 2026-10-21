@@ -1,0 +1,14 @@
+-- Historical cost snapshot on every stock movement (expand step).
+--
+-- Gross-profit reporting used each variant's CURRENT stock_balances.average_cost
+-- as the cost of every past sale, which drifts when purchase costs move
+-- (docs/risks-2.0.md R-03). base_unit_cost records the weighted-average cost
+-- per BASE unit that applied at the moment of the movement: the receipt's own
+-- base cost for inward receipts, and the balance's average cost for everything
+-- else. stock_movements is append-only, so the snapshot is never rewritten.
+--
+-- Nullable on purpose: rows written before this migration have no recoverable
+-- snapshot (the average at that instant was not stored). Reports must treat
+-- NULL as "approximate" and say so; there is deliberately NO backfill from the
+-- current average, because that would present the old approximation as fact.
+ALTER TABLE stock_movements ADD COLUMN base_unit_cost numeric(20,6) CHECK (base_unit_cost IS NULL OR base_unit_cost >= 0);

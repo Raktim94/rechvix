@@ -98,13 +98,16 @@ type StockMovement struct {
 	Quantity         decimal.Decimal
 	BaseQuantity     decimal.Decimal
 	UnitCost         *decimal.Decimal
-	BatchID          *uuid.UUID
-	SerialNumberID   *uuid.UUID
-	ReferenceType    string
-	ReferenceID      *uuid.UUID
-	Notes            string
-	CreatedBy        uuid.UUID
-	CreatedAt        time.Time
+	// BaseUnitCost is the weighted-average cost per BASE unit at the instant
+	// of this movement (migration 0044). nil only for rows that predate it.
+	BaseUnitCost   *decimal.Decimal
+	BatchID        *uuid.UUID
+	SerialNumberID *uuid.UUID
+	ReferenceType  string
+	ReferenceID    *uuid.UUID
+	Notes          string
+	CreatedBy      uuid.UUID
+	CreatedAt      time.Time
 }
 
 type StockBalance struct {

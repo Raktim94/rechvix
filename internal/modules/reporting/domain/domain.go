@@ -110,18 +110,20 @@ type DocumentDetailRow struct {
 	GrandTotal     money.Money
 }
 
-// GrossProfitRow reports revenue against an APPROXIMATE cost of goods
-// sold. stock_movements.unit_cost is only populated for inward movements
-// (migrations/0012) — a SALE movement does not snapshot the weighted-
-// average cost that was in effect at the moment it was recorded. This
-// report therefore uses each product variant's CURRENT stock_balances.
-// average_cost as the COGS basis for every historical sale of that
-// variant, not the true historical cost at each sale's own point in time.
-// For a business whose costs are reasonably stable this is a close
-// approximation; for one with volatile purchase costs it will drift.
-// Getting an exact historical figure needs stock_movements to snapshot
-// unit_cost on SALE rows too (a schema change), which is flagged as a
-// follow-up, not built in this pass — see this module's ADR.
+// GrossProfitRow reports revenue against cost of goods sold.
+//
+// Revenue counts TAX_INVOICE, POS_INVOICE, RECURRING_INVOICE and DEBIT_NOTE
+// documents and subtracts CREDIT_NOTE and SALES_RETURN documents; quotations,
+// proformas, orders and delivery challans are not revenue.
+//
+// COGS comes from the base_unit_cost snapshot each SALE / SALE_RETURN
+// stock movement recorded when it ran (migration 0044), so later purchase
+// price changes do not rewrite past margins. Movements written before that
+// migration have no snapshot; they are costed at the variant's CURRENT average
+// cost and the row's CostBasis becomes "approximate" so the UI and exports can
+// say so. CostBasis is "historical" only when every contributing movement
+// carried a snapshot. The ApproxCOGS/ApproxProfit field names are kept for API
+// compatibility; read them together with CostBasis.
 type GrossProfitRow struct {
 	ProductVariantID uuid.UUID
 	ProductName      string
@@ -130,6 +132,7 @@ type GrossProfitRow struct {
 	Revenue          money.Money
 	ApproxCOGS       money.Money
 	ApproxProfit     money.Money
+	CostBasis        string // "historical" | "approximate"
 }
 
 type StockValuationRow struct {

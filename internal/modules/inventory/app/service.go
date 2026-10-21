@@ -245,6 +245,11 @@ func (s *Service) recordMovement(ctx context.Context, orgID, actorUserID uuid.UU
 
 	newQty := balBefore.QuantityOnHand
 	newAvgCost := balBefore.AverageCost
+	// Historical cost snapshot (migration 0044): the average cost per base
+	// unit that applies to THIS movement. Outward movements and non-receipt
+	// inward ones (e.g. SALE_RETURN) carry the average as it was before they
+	// ran; receipts overwrite it below with their own base cost.
+	snapshotCost := balBefore.AverageCost
 	if direction == domain.DirectionIn {
 		if domain.IsReceipt(p.MovementType) {
 			// p.UnitCost is cost per UnitID (the transacted unit — e.g.
@@ -258,6 +263,7 @@ func (s *Service) recordMovement(ctx context.Context, orgID, actorUserID uuid.UU
 			// conversion ratio — normalize by the same factor already
 			// used to convert quantity, before it ever reaches costing.
 			baseUnitCost := p.UnitCost.Div(factor)
+			snapshotCost = baseUnitCost
 			newAvgCost = s.costing.OnReceipt(balBefore.QuantityOnHand, balBefore.AverageCost, baseQty, baseUnitCost)
 
 			// Cost-lot ledger (migrations/0036): additive to the weighted
@@ -299,7 +305,7 @@ func (s *Service) recordMovement(ctx context.Context, orgID, actorUserID uuid.UU
 	mv := &domain.StockMovement{
 		ID: id, OrganisationID: orgID, WarehouseID: p.WarehouseID, ProductVariantID: p.ProductVariantID,
 		MovementType: p.MovementType, UnitID: p.UnitID, Quantity: p.Quantity, BaseQuantity: baseQty,
-		UnitCost: p.UnitCost, BatchID: batchID, SerialNumberID: serialID,
+		UnitCost: p.UnitCost, BaseUnitCost: &snapshotCost, BatchID: batchID, SerialNumberID: serialID,
 		ReferenceType: p.ReferenceType, ReferenceID: p.ReferenceID, Notes: p.Notes,
 		CreatedBy: actorUserID, CreatedAt: now,
 	}

@@ -121,3 +121,12 @@ indexed queries, deliberately not a materialized table).
   profile is provisioned but genuinely unwired to any code.
 - No `redis`-backed tables (by definition) — same status, provisioned but
   unwired.
+
+## Migration 0044 — `stock_movements.base_unit_cost`
+
+Nullable `numeric(20,6)`, expand-only. Set by `inventory/app.Service.RecordMovement` on every new
+movement to the weighted-average cost per **base** unit in force at that instant (receipts use their
+own base cost). Gross-profit reporting sums `base_quantity × base_unit_cost` over `SALE` (+) and
+`SALE_RETURN` (−) movements of FINALIZED sales documents. Rows older than this migration stay NULL
+and are reported as `approximate`; no backfill is done because the true average at that instant was
+never stored. Rollback: `0044…down.sql` drops the column (report falls back to approximate for all rows).

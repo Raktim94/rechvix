@@ -593,3 +593,48 @@ func TestReporting_Dashboard_PerformanceSanityCheck(t *testing.T) {
 		t.Fatalf("dashboard summary took %s for %d+%d documents — too slow for a live-query design (docs/adr/0004)", elapsed, salesCount, purchaseCount)
 	}
 }
+
+// TestReporting_GrossProfit_UsesHistoricalCost_NotCurrentAverage is the
+// regression test for risks R-03: a later, dearer purchase moves the variant's
+// weighted-average cost, but a sale that already happened must keep the cost
+// it was sold at.
+func TestReporting_GrossProfit_UsesHistoricalCost_NotCurrentAverage(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, purchasesSvc, accountingSvc, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	grossProfitRow := func() reportingdomain.GrossProfitRow {
+		t.Helper()
+		rows, err := reportingSvc.GrossProfit(ctx, fx.Principal, reportingdomain.Filter{WarehouseID: &fx.WarehouseID, ProductVariantID: &fx.VariantID})
+		if err != nil {
+			t.Fatalf("GrossProfit: %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("GrossProfit returned %d rows, want 1", len(rows))
+		}
+		return rows[0]
+	}
+
+	// Opening stock: 100 PCS @ 50. Sell 10 -> COGS 500.
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100")
+	if got := grossProfitRow(); got.ApproxCOGS.StringFixed(0) != "500.00" || got.CostBasis != "historical" {
+		t.Fatalf("after first sale: COGS=%s basis=%s, want 500.00 historical", got.ApproxCOGS.StringFixed(0), got.CostBasis)
+	}
+
+	// Buy 100 @ 90: average becomes (90*50 + 100*90)/190 = 71.052631...
+	finalizePurchase(t, ctx, purchasesSvc, fx, "100", "90")
+	if got := grossProfitRow(); got.ApproxCOGS.StringFixed(0) != "500.00" {
+		t.Fatalf("a later purchase must not change past COGS: got %s, want 500.00 (old current-average method would give ~710.53)", got.ApproxCOGS.StringFixed(0))
+	}
+
+	// Sell 10 more at the new average: 10 * 71.052632 = 710.53 -> total 1210.53.
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100")
+	got := grossProfitRow()
+	if got.ApproxCOGS.StringFixed(0) != "1210.53" {
+		t.Fatalf("after second sale: COGS = %s, want 1210.53", got.ApproxCOGS.StringFixed(0))
+	}
+	if got.QuantitySold != "20" {
+		t.Fatalf("QuantitySold = %s, want 20", got.QuantitySold)
+	}
+}

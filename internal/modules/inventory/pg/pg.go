@@ -35,12 +35,12 @@ func (r *StockMovementRepo) Create(ctx context.Context, m *domain.StockMovement)
 		INSERT INTO stock_movements (
 			id, organisation_id, warehouse_id, product_variant_id, movement_type, unit_id,
 			quantity, base_quantity, unit_cost, batch_id, serial_number_id,
-			reference_type, reference_id, notes, created_by, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`
+			reference_type, reference_id, notes, created_by, created_at, base_unit_cost
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
 	_, err := r.pool.Q(ctx).Exec(ctx, q,
 		m.ID, m.OrganisationID, m.WarehouseID, m.ProductVariantID, string(m.MovementType), m.UnitID,
 		m.Quantity, m.BaseQuantity, m.UnitCost, m.BatchID, m.SerialNumberID,
-		nullIfEmpty(m.ReferenceType), m.ReferenceID, nullIfEmpty(m.Notes), m.CreatedBy, m.CreatedAt,
+		nullIfEmpty(m.ReferenceType), m.ReferenceID, nullIfEmpty(m.Notes), m.CreatedBy, m.CreatedAt, m.BaseUnitCost,
 	)
 	if err != nil {
 		return fmt.Errorf("inventory: inserting stock_movement: %w", err)
@@ -50,7 +50,7 @@ func (r *StockMovementRepo) Create(ctx context.Context, m *domain.StockMovement)
 
 const movementCols = `id, organisation_id, warehouse_id, product_variant_id, movement_type, unit_id,
 	quantity, base_quantity, unit_cost, batch_id, serial_number_id,
-	COALESCE(reference_type, ''), reference_id, COALESCE(notes, ''), created_by, created_at`
+	COALESCE(reference_type, ''), reference_id, COALESCE(notes, ''), created_by, created_at, base_unit_cost`
 
 func (r *StockMovementRepo) ListByVariantWarehouse(ctx context.Context, orgID, warehouseID, variantID uuid.UUID, limit int) ([]*domain.StockMovement, error) {
 	q := fmt.Sprintf(`SELECT %s FROM stock_movements
@@ -83,7 +83,7 @@ func scanMovements(rows pgx.Rows) ([]*domain.StockMovement, error) {
 		var movementType string
 		if err := rows.Scan(&m.ID, &m.OrganisationID, &m.WarehouseID, &m.ProductVariantID, &movementType, &m.UnitID,
 			&m.Quantity, &m.BaseQuantity, &m.UnitCost, &m.BatchID, &m.SerialNumberID,
-			&m.ReferenceType, &m.ReferenceID, &m.Notes, &m.CreatedBy, &m.CreatedAt); err != nil {
+			&m.ReferenceType, &m.ReferenceID, &m.Notes, &m.CreatedBy, &m.CreatedAt, &m.BaseUnitCost); err != nil {
 			return nil, fmt.Errorf("inventory: scanning stock_movement row: %w", err)
 		}
 		m.MovementType = domain.MovementType(movementType)

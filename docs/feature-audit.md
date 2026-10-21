@@ -16,7 +16,7 @@ it was re-run on 2026-10-21 (285 pass / 0 fail).
 | `go test ./...` (unit) | pass, 25 packages with tests |
 | `apps/web`: `tsc -b` | pass |
 | `apps/web`: `npm run lint` (oxlint) | pass, warnings only (`set-state-in-effect` x7, `only-export-components` x1) |
-| `go test -tags=integration ./...` | **pass, 285 tests, 0 failures, but the 3 pg_dump-dependent backup tests were skipped in that run**; re-run with `pg_dump` 18 on PATH they pass (2026-10-21, Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
+| `go test -tags=integration ./...` | **pass, 293 tests, 0 failed, 0 skipped** (2026-10-21, after migration 0044, with `pg_dump` 18 on PATH; Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
 | Playwright / e2e / screenshots | **not run** — Postgres stack unavailable (needs Docker) |
 | staticcheck / govulncheck | not run locally (CI job `go-static` runs them) |
 
@@ -71,8 +71,8 @@ Columns: ID · user outcome · existing location · backend · UI · security ·
 | C6 | Share links / WhatsApp share | `share_links`, `ShareLinksPanel` | Full | Full | token | integ | M | 7 |
 | C7 | Receivable reminders | mig 0042, `ReceivablesPanel` | Partial (no consent/quiet-hours verified) | Partial | — | ? | M | 6/8 |
 | D1 | Purchases (documents, lines) | `modules/purchases` | Full | Full | company scope | integ | M | 4 |
-| D2 | Purchase tax / **ITC** | `accounting/app/service.go` | **Partial — GSTR-3B/ITC deliberately not built (TODO l.80)** | none | — | — | **H** | 4 |
-| D3 | **COGS / gross profit** | `reporting/domain.GrossProfitRow` | **Approximate: uses current average_cost, not sale-time cost** | Labelled | — | integ | **H** | 4 |
+| D2 | Purchase tax / **ITC** | `reporting` GSTR3B (3.1(a)/(b), 4(A)(5)); `accounting/app/service.go` | **Partial — corrected 2026-10-21: a GSTR-3B summary exists with integration test; missing 3.1(c)-(e), RCM, ITC reversal (4B), ineligible ITC (4D), ITC ledger, filing** | report in UI | RLS | integ | **H** | 4 |
+| D3 | **COGS / gross profit** | `reporting` + migration 0044 `stock_movements.base_unit_cost` | **Fixed for new movements (historical snapshot); pre-0044 rows labelled `approximate`; revenue now excludes quotes/orders/challans and nets credit notes** | `Cost basis` column in report table | RLS | integ regression test (mutation-checked) | M | 4 |
 | D4 | Accounting journals | `modules/accounting` (journals, journal_lines, fiscal_periods) | Full | Full | RLS | unit+integ | L | 1 |
 | D5 | 3-way matching, landed cost, vendor statements | none | Missing | Missing | — | — | M | 4 |
 | D6 | Expenses | `expense_attachments`, `pages/expenses` | Partial | Partial | — | ? | M | 6 |
