@@ -389,3 +389,28 @@ func TestVerifactu_EnablingRequiresSpanishCompanyWithNIF(t *testing.T) {
 		t.Fatalf("settings view must list what blocks enabling: %+v %v", view, err)
 	}
 }
+
+// VERI*FACTU is Spain only: a company whose country is not Spain never records, even with the switch left on.
+func TestVerifactu_NonSpanishCompanyNeverRecords(t *testing.T) {
+	ctx := context.Background()
+	f := newVerifactuFixture(t, ctx, true)
+	if _, err := f.invoice(t, ctx, salesdomain.DocTaxInvoice, "EUR", "1", "10", nil); err != nil {
+		t.Fatal(err)
+	}
+	if rows := f.records(t, ctx); len(rows) != 1 {
+		t.Fatalf("a Spanish company records, got %d", len(rows))
+	}
+	err := sharedPool.RunScoped(ctx, f.Principal.OrganisationID, func(ctx context.Context) error {
+		_, err := sharedPool.Q(ctx).Exec(ctx, `UPDATE legal_entities SET country_code = 'FR' WHERE id = $1`, f.LegalEntityID)
+		return err
+	})
+	if err != nil {
+		t.Skipf("cannot change the country in this fixture: %v", err)
+	}
+	if _, err := f.invoice(t, ctx, salesdomain.DocTaxInvoice, "EUR", "1", "10", nil); err != nil {
+		t.Fatalf("an invoice for a non-Spanish company must still finalize: %v", err)
+	}
+	if rows := f.records(t, ctx); len(rows) != 1 {
+		t.Fatalf("a non-Spanish company must not record, got %d", len(rows))
+	}
+}

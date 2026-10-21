@@ -170,6 +170,15 @@ func (s *Service) enabled(ctx context.Context, legalEntityID uuid.UUID) (*pg.Set
 	if !st.Enabled {
 		return nil, nil
 	}
+	// Spain only: a company that is (or has since been moved to) another country never records, even if the
+	// switch was left on.
+	le, err := s.org.GetLegalEntityForOtherModule(ctx, st.OrganisationID, legalEntityID)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(le.CountryCode, "ES") {
+		return nil, nil
+	}
 	return st, nil
 }
 
