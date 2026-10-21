@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.1
+
+- VERI*FACTU is Spain only: a company whose country is not Spain never records, even if the switch was left on (previously it could only be enabled for Spain but kept recording if the country changed afterwards).
+
 ## 0.15.0
 
 ### Spain: VERI*FACTU record chain (not yet certified)
