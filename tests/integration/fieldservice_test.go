@@ -11,6 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	contactsapp "rechvix/internal/modules/contacts/app"
+	contactsdomain "rechvix/internal/modules/contacts/domain"
+	contactspg "rechvix/internal/modules/contacts/pg"
 	"rechvix/internal/modules/fieldservice"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/permissions"
@@ -124,5 +127,40 @@ func TestFieldService_AssetIncidentWorkLogAndMaintenance(t *testing.T) {
 	}
 	if _, _, err := svc.GetIncident(ctx, other.Principal, inc.ID); !errors.Is(err, fieldservice.ErrNotFound) {
 		t.Fatalf("another organisation cannot read the incident: %v", err)
+	}
+}
+
+func TestFieldService_AddressLocations(t *testing.T) {
+	ctx := context.Background()
+	_, _, acct, _ := newTestAccountingServices(t)
+	fx := spainFixture(t, ctx, acct)
+	svc := newFieldService(t)
+	checker := permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool)
+	contacts := contactsapp.NewService(sharedPool, contactspg.NewPartyRepo(sharedPool), contactspg.NewAddressRepo(sharedPool), contactspg.NewTaxRegistrationRepo(sharedPool), checker, audit.NewPGRecorder(sharedPool))
+	a1, err := contacts.AddAddress(ctx, fx.Principal, contactsapp.AddAddressParams{PartyID: fx.CustomerID, AddressType: contactsdomain.AddressShipping, Line1: "Calle Uno 1", City: "Madrid", CountryCode: "ES", IsDefault: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2, _ := contacts.AddAddress(ctx, fx.Principal, contactsapp.AddAddressParams{PartyID: fx.CustomerID, AddressType: contactsdomain.AddressShipping, Line1: "Calle Dos 2", City: "Sevilla", CountryCode: "ES"})
+	lat, lng := decimal.RequireFromString("40.4168"), decimal.RequireFromString("-3.7038")
+	if err := svc.SetAddressLocation(ctx, fx.Principal, a1.ID, &lat, &lng); err != nil {
+		t.Fatal(err)
+	}
+	bad := decimal.RequireFromString("123")
+	if err := svc.SetAddressLocation(ctx, fx.Principal, a2.ID, &bad, &lng); !errors.Is(err, fieldservice.ErrInvalid) {
+		t.Fatalf("latitude 123 is invalid: %v", err)
+	}
+	if err := svc.SetAddressLocation(ctx, fx.Principal, uuid.New(), &lat, &lng); !errors.Is(err, fieldservice.ErrNotFound) {
+		t.Fatalf("unknown address: %v", err)
+	}
+	locs, err := svc.AddressLocations(ctx, fx.Principal, fx.CustomerID)
+	if err != nil || len(locs) != 1 || locs[0].AddressID != a1.ID {
+		t.Fatalf("one pinned address of two: %+v %v", locs, err)
+	}
+	if err := svc.SetAddressLocation(ctx, fx.Principal, a1.ID, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if locs, _ := svc.AddressLocations(ctx, fx.Principal, fx.CustomerID); len(locs) != 0 {
+		t.Fatal("removing the pin clears it")
 	}
 }

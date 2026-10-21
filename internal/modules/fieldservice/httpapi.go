@@ -29,6 +29,8 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/service/incidents/{id}/comments", h.comment)
 	r.Post("/service/incidents/{id}/status", h.status)
 	r.Post("/service/incidents/{id}/assign", h.assign)
+	r.Get("/service/address-locations", h.addressLocations)
+	r.Put("/service/address-locations/{id}", h.setAddressLocation)
 	r.Get("/service/plans", h.listPlans)
 	r.Post("/service/plans", h.createPlan)
 	r.Post("/service/plans/{id}/pause", h.pausePlan)
@@ -368,6 +370,45 @@ func (h *Handlers) deletePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeletePlan(r.Context(), principal(r), id); err != nil {
+		fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handlers) addressLocations(w http.ResponseWriter, r *http.Request) {
+	party := optUUID(r, "party_id")
+	if party == nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "party_id must be a UUID."))
+		return
+	}
+	rows, err := h.svc.AddressLocations(r.Context(), principal(r), *party)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"locations": rows})
+}
+
+func (h *Handlers) setAddressLocation(w http.ResponseWriter, r *http.Request) {
+	id, ok := pid(w, r)
+	if !ok {
+		return
+	}
+	b, ok := decode[struct {
+		Latitude  string `json:"latitude"`
+		Longitude string `json:"longitude"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	lat, e1 := dec(b.Latitude)
+	lng, e2 := dec(b.Longitude)
+	if err := errors.Join(e1, e2); err != nil {
+		fail(w, r, ErrInvalid)
+		return
+	}
+	if err := h.svc.SetAddressLocation(r.Context(), principal(r), id, lat, lng); err != nil {
 		fail(w, r, err)
 		return
 	}

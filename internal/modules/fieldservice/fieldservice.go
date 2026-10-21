@@ -694,3 +694,60 @@ func (s *Service) Loop(ctx context.Context, interval time.Duration) {
 		}
 	}
 }
+
+// ---- Address locations
+
+type AddressLocation struct {
+	AddressID uuid.UUID       `json:"address_id"`
+	Latitude  decimal.Decimal `json:"latitude"`
+	Longitude decimal.Decimal `json:"longitude"`
+}
+
+// AddressLocations returns the saved map points of a customer's addresses.
+func (s *Service) AddressLocations(ctx context.Context, principal permissions.Principal, partyID uuid.UUID) ([]AddressLocation, error) {
+	if err := s.permissions.HasAny(ctx, principal, "contacts.view"); err != nil {
+		return nil, err
+	}
+	out := []AddressLocation{}
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		rows, err := s.pool.Q(ctx).Query(ctx, `
+			SELECT l.address_id, l.latitude, l.longitude FROM address_locations l JOIN party_addresses a ON a.id = l.address_id WHERE a.party_id = $1`, partyID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var x AddressLocation
+			if err := rows.Scan(&x.AddressID, &x.Latitude, &x.Longitude); err != nil {
+				return err
+			}
+			out = append(out, x)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// SetAddressLocation saves (or with nil coordinates, clears) the map point of an address.
+func (s *Service) SetAddressLocation(ctx context.Context, principal permissions.Principal, addressID uuid.UUID, lat, lng *decimal.Decimal) error {
+	if err := s.permissions.HasAny(ctx, principal, "contacts.manage"); err != nil {
+		return err
+	}
+	if err := coords(lat, lng); err != nil {
+		return err
+	}
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var one int
+		if err := s.pool.Q(ctx).QueryRow(ctx, `SELECT 1 FROM party_addresses WHERE id = $1`, addressID).Scan(&one); err != nil {
+			return ErrNotFound
+		}
+		if lat == nil {
+			_, err := s.pool.Q(ctx).Exec(ctx, `DELETE FROM address_locations WHERE address_id = $1`, addressID)
+			return err
+		}
+		_, err := s.pool.Q(ctx).Exec(ctx, `
+			INSERT INTO address_locations (address_id, organisation_id, latitude, longitude) VALUES ($1,$2,$3,$4)
+			ON CONFLICT (address_id) DO UPDATE SET latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, updated_at = now()`, addressID, principal.OrganisationID, lat, lng)
+		return err
+	})
+}
