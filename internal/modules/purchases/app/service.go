@@ -24,6 +24,7 @@ import (
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	inventorydomain "rechvix/internal/modules/inventory/domain"
 	orgapp "rechvix/internal/modules/organisation/app"
+	"rechvix/internal/modules/pricerules"
 	"rechvix/internal/modules/purchases/domain"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxdomain "rechvix/internal/modules/taxation/domain"
@@ -32,6 +33,17 @@ import (
 	"rechvix/internal/platform/money"
 	"rechvix/internal/platform/permissions"
 )
+
+// WithPriceUpdater enables automatic selling-price updates after a purchase is finalized.
+func (s *Service) WithPriceUpdater(p PriceUpdater) *Service {
+	s.prices = p
+	return s
+}
+
+// PriceUpdater keeps selling prices in step with purchase costs (internal/modules/pricerules).
+type PriceUpdater interface {
+	ApplyPurchase(ctx context.Context, orgID uuid.UUID, currency string, items []pricerules.Item) error
+}
 
 type Service struct {
 	pool      database.Runner
@@ -50,7 +62,9 @@ type Service struct {
 	organisation *orgapp.Service
 	// accounting is optional — see sales/app.Service's identical field
 	// comment for why (pre-Stage-6 callers/tests keep working with nil).
-	accounting  *accountingapp.Service
+	accounting *accountingapp.Service
+	// prices is optional: when set, finalizing a stock-receiving purchase can update selling prices.
+	prices      PriceUpdater
 	permissions *permissions.Checker
 	audit       audit.Recorder
 	now         func() time.Time
@@ -512,6 +526,16 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 				}
 				if _, err := s.inventory.RecordMovementForOtherModule(ctx, principal.OrganisationID, principal.UserID, params); err != nil {
 					return fmt.Errorf("posting stock movement for line %d: %w", line.LineNumber, err)
+				}
+			}
+			// Selling prices follow the new cost when the organisation has that rule on.
+			if s.prices != nil && inventorydomain.IsReceipt(movementType) {
+				items := make([]pricerules.Item, 0, len(lines))
+				for _, line := range lines {
+					items = append(items, pricerules.Item{VariantID: line.ProductVariantID, UnitID: line.UnitID, UnitCost: line.UnitPrice.Decimal()})
+				}
+				if err := s.prices.ApplyPurchase(ctx, principal.OrganisationID, doc.CurrencyCode, items); err != nil {
+					return err
 				}
 			}
 		}

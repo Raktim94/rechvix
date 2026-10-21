@@ -65,6 +65,7 @@ import (
 	orgapp "rechvix/internal/modules/organisation/app"
 	orghttp "rechvix/internal/modules/organisation/httpapi"
 	orgpg "rechvix/internal/modules/organisation/pg"
+	"rechvix/internal/modules/pricerules"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricinghttp "rechvix/internal/modules/pricing/httpapi"
 	pricingpg "rechvix/internal/modules/pricing/pg"
@@ -404,6 +405,9 @@ func run() error {
 		auditRecorder,
 	)
 
+	priceRulesSvc := pricerules.NewService(pool, permissionsChecker, auditRecorder)
+	purchasesSvc.WithPriceUpdater(priceRulesSvc)
+
 	salesSvc := salesapp.NewService(
 		pool,
 		salespg.NewDocumentRepo(pool),
@@ -626,6 +630,7 @@ func run() error {
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)
+			pricerules.NewHandlers(priceRulesSvc).Mount(r)
 			stockprojection.NewHandlers(stockprojection.NewService(pool, permissionsChecker)).Mount(r)
 			docstatus.NewHandlers(docstatus.NewService(pool, permissionsChecker, auditRecorder)).Mount(r)
 		})
