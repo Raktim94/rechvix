@@ -166,7 +166,9 @@ func groupExpr(g domain.GroupDimension, docAlias, lineAlias, partyJoinAlias, dat
 	}
 }
 
-func inr(d decimal.Decimal) money.Money { return money.MustNew(d, "INR") }
+func ledgerMoney(ctx context.Context, d decimal.Decimal) money.Money {
+	return money.MustNew(d, money.LedgerCurrency(ctx))
+}
 
 // --- Sales ---
 
@@ -217,7 +219,7 @@ func (r *Repo) scanSummary(ctx context.Context, q string, args []any) ([]domain.
 		if err := rows.Scan(&s.Key, &s.DocumentCount, &gross, &discount, &taxable, &tax, &grand); err != nil {
 			return nil, fmt.Errorf("reporting: scanning summary row: %w", err)
 		}
-		s.GrossAmount, s.DiscountAmount, s.TaxableAmount, s.TaxAmount, s.GrandTotal = inr(gross), inr(discount), inr(taxable), inr(tax), inr(grand)
+		s.GrossAmount, s.DiscountAmount, s.TaxableAmount, s.TaxAmount, s.GrandTotal = ledgerMoney(ctx, gross), ledgerMoney(ctx, discount), ledgerMoney(ctx, taxable), ledgerMoney(ctx, tax), ledgerMoney(ctx, grand)
 		out = append(out, s)
 	}
 	return out, rows.Err()
@@ -254,7 +256,7 @@ func (r *Repo) scanDetail(ctx context.Context, q string, args []any) ([]domain.D
 		if err := rows.Scan(&d.DocumentID, &d.DocumentType, &d.DocumentNumber, &d.PartyName, &d.IssueDate, &d.Status, &grand); err != nil {
 			return nil, fmt.Errorf("reporting: scanning detail row: %w", err)
 		}
-		d.GrandTotal = inr(grand)
+		d.GrandTotal = ledgerMoney(ctx, grand)
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -296,7 +298,7 @@ func (r *Repo) GrossProfit(ctx context.Context, f domain.Filter) ([]domain.Gross
 			return nil, fmt.Errorf("reporting: scanning gross profit row: %w", err)
 		}
 		g.QuantitySold = qty.String()
-		g.Revenue = inr(revenue)
+		g.Revenue = ledgerMoney(ctx, revenue)
 		revenueByVariant[g.ProductVariantID] = revenue
 		out = append(out, g)
 	}
@@ -348,8 +350,8 @@ func (r *Repo) GrossProfit(ctx context.Context, f domain.Filter) ([]domain.Gross
 	}
 	for i := range out {
 		c := costs[out[i].ProductVariantID]
-		out[i].ApproxCOGS = inr(c.cogs)
-		out[i].ApproxProfit = inr(revenueByVariant[out[i].ProductVariantID].Sub(c.cogs))
+		out[i].ApproxCOGS = ledgerMoney(ctx, c.cogs)
+		out[i].ApproxProfit = ledgerMoney(ctx, revenueByVariant[out[i].ProductVariantID].Sub(c.cogs))
 		out[i].CostBasis = "historical"
 		if c.unsnapshot > 0 {
 			out[i].CostBasis = "approximate"
@@ -446,8 +448,8 @@ func (r *Repo) StockValuation(ctx context.Context, f domain.Filter) ([]domain.St
 			return nil, fmt.Errorf("reporting: scanning stock valuation row: %w", err)
 		}
 		s.QuantityOnHand = qty.String()
-		s.AverageCost = inr(cost)
-		s.TotalValue = inr(qty.Mul(cost))
+		s.AverageCost = ledgerMoney(ctx, cost)
+		s.TotalValue = ledgerMoney(ctx, qty.Mul(cost))
 		out = append(out, s)
 	}
 	return out, rows.Err()
@@ -574,7 +576,7 @@ func (r *Repo) TrialBalance(ctx context.Context, orgID uuid.UUID, asOf time.Time
 		if err := rows.Scan(&t.AccountCode, &t.AccountName, &t.AccountType, &debit, &credit); err != nil {
 			return nil, fmt.Errorf("reporting: scanning trial balance row: %w", err)
 		}
-		t.Debit, t.Credit = inr(debit), inr(credit)
+		t.Debit, t.Credit = ledgerMoney(ctx, debit), ledgerMoney(ctx, credit)
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -637,7 +639,7 @@ func (r *Repo) AccountLedger(ctx context.Context, orgID, accountID uuid.UUID, f 
 			return nil, fmt.Errorf("reporting: scanning account ledger row: %w", err)
 		}
 		running = running.Add(debit).Sub(credit)
-		a.Debit, a.Credit, a.RunningBalance = inr(debit), inr(credit), inr(running)
+		a.Debit, a.Credit, a.RunningBalance = ledgerMoney(ctx, debit), ledgerMoney(ctx, credit), ledgerMoney(ctx, running)
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -685,7 +687,7 @@ func (r *Repo) HSNSummary(ctx context.Context, f domain.Filter) ([]domain.HSNSum
 		if err := rows.Scan(&h.HSNSACCode, &taxable, &cgst, &sgst, &igst, &utgst, &cess, &total); err != nil {
 			return nil, fmt.Errorf("reporting: scanning HSN summary row: %w", err)
 		}
-		h.TaxableAmount, h.CGST, h.SGST, h.IGST, h.UTGST, h.CESS, h.TotalTax = inr(taxable), inr(cgst), inr(sgst), inr(igst), inr(utgst), inr(cess), inr(total)
+		h.TaxableAmount, h.CGST, h.SGST, h.IGST, h.UTGST, h.CESS, h.TotalTax = ledgerMoney(ctx, taxable), ledgerMoney(ctx, cgst), ledgerMoney(ctx, sgst), ledgerMoney(ctx, igst), ledgerMoney(ctx, utgst), ledgerMoney(ctx, cess), ledgerMoney(ctx, total)
 		out = append(out, h)
 	}
 	return out, rows.Err()
@@ -715,7 +717,7 @@ func (r *Repo) TaxRateSummary(ctx context.Context, f domain.Filter) ([]domain.Ta
 		if err := rows.Scan(&t.Rate, &taxable, &tax, &t.DocumentCount); err != nil {
 			return nil, fmt.Errorf("reporting: scanning tax rate summary row: %w", err)
 		}
-		t.TaxableAmount, t.TaxAmount = inr(taxable), inr(tax)
+		t.TaxableAmount, t.TaxAmount = ledgerMoney(ctx, taxable), ledgerMoney(ctx, tax)
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -753,7 +755,7 @@ func (r *Repo) GSTR1(ctx context.Context, f domain.Filter) ([]domain.GSTR1Line, 
 			&taxable, &cgst, &sgst, &igst, &cess, &grand); err != nil {
 			return nil, fmt.Errorf("reporting: scanning GSTR-1 row: %w", err)
 		}
-		g.TaxableAmount, g.CGST, g.SGST, g.IGST, g.CESS, g.GrandTotal = inr(taxable), inr(cgst), inr(sgst), inr(igst), inr(cess), inr(grand)
+		g.TaxableAmount, g.CGST, g.SGST, g.IGST, g.CESS, g.GrandTotal = ledgerMoney(ctx, taxable), ledgerMoney(ctx, cgst), ledgerMoney(ctx, sgst), ledgerMoney(ctx, igst), ledgerMoney(ctx, cess), ledgerMoney(ctx, grand)
 		out = append(out, g)
 	}
 	return out, rows.Err()
@@ -804,8 +806,8 @@ func (r *Repo) gstr3bOutward(ctx context.Context, f domain.Filter) ([]domain.GST
 		return nil, fmt.Errorf("reporting: GSTR-3B outward query: %w", err)
 	}
 	return []domain.GSTR3BLine{
-		{Label: "3.1(a) Outward taxable supplies", TaxableAmount: inr(taxable), IGST: inr(igst), CGST: inr(cgst), SGST: inr(sgst), CESS: inr(cess)},
-		{Label: "3.1(b) Outward taxable supplies (zero rated)", TaxableAmount: inr(zeroTaxable), IGST: inr(zeroIGST), CGST: inr(decimal.Zero), SGST: inr(decimal.Zero), CESS: inr(decimal.Zero)},
+		{Label: "3.1(a) Outward taxable supplies", TaxableAmount: ledgerMoney(ctx, taxable), IGST: ledgerMoney(ctx, igst), CGST: ledgerMoney(ctx, cgst), SGST: ledgerMoney(ctx, sgst), CESS: ledgerMoney(ctx, cess)},
+		{Label: "3.1(b) Outward taxable supplies (zero rated)", TaxableAmount: ledgerMoney(ctx, zeroTaxable), IGST: ledgerMoney(ctx, zeroIGST), CGST: ledgerMoney(ctx, decimal.Zero), SGST: ledgerMoney(ctx, decimal.Zero), CESS: ledgerMoney(ctx, decimal.Zero)},
 	}, nil
 }
 
@@ -828,7 +830,7 @@ func (r *Repo) gstr3bITC(ctx context.Context, f domain.Filter) (domain.GSTR3BLin
 	if err := row.Scan(&taxable, &igst, &cgst, &sgst, &cess); err != nil {
 		return domain.GSTR3BLine{}, fmt.Errorf("reporting: GSTR-3B ITC query: %w", err)
 	}
-	return domain.GSTR3BLine{Label: "4(A)(5) All other ITC", TaxableAmount: inr(taxable), IGST: inr(igst), CGST: inr(cgst), SGST: inr(sgst), CESS: inr(cess)}, nil
+	return domain.GSTR3BLine{Label: "4(A)(5) All other ITC", TaxableAmount: ledgerMoney(ctx, taxable), IGST: ledgerMoney(ctx, igst), CGST: ledgerMoney(ctx, cgst), SGST: ledgerMoney(ctx, sgst), CESS: ledgerMoney(ctx, cess)}, nil
 }
 
 // --- Dashboard (docs/adr/0004-dashboard-query-design.md) ---
@@ -865,14 +867,14 @@ func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) 
 		return domain.DashboardSummary{}, fmt.Errorf("reporting: dashboard query: %w", err)
 	}
 	return domain.DashboardSummary{
-		TodaySales:            inr(todaySales),
-		TodayCollections:      inr(todayCollections),
-		TodayPurchases:        inr(todayPurchases),
-		OutstandingReceivable: inr(outstandingRec),
-		OutstandingPayable:    inr(outstandingPay),
-		CurrentStockValue:     inr(stockValue),
+		TodaySales:            ledgerMoney(ctx, todaySales),
+		TodayCollections:      ledgerMoney(ctx, todayCollections),
+		TodayPurchases:        ledgerMoney(ctx, todayPurchases),
+		OutstandingReceivable: ledgerMoney(ctx, outstandingRec),
+		OutstandingPayable:    ledgerMoney(ctx, outstandingPay),
+		CurrentStockValue:     ledgerMoney(ctx, stockValue),
 		LowStockCount:         lowStockCount,
-		OverdueReceivable:     inr(overdue),
+		OverdueReceivable:     ledgerMoney(ctx, overdue),
 	}, nil
 }
 

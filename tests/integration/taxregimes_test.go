@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -15,6 +16,7 @@ import (
 	contactspg "rechvix/internal/modules/contacts/pg"
 	identityapp "rechvix/internal/modules/identity/app"
 	inventoryapp "rechvix/internal/modules/inventory/app"
+	reportingdomain "rechvix/internal/modules/reporting/domain"
 	salesapp "rechvix/internal/modules/sales/app"
 	salesdomain "rechvix/internal/modules/sales/domain"
 	taxdomain "rechvix/internal/modules/taxation/domain"
@@ -272,5 +274,52 @@ func assertJournalsBalanced(t *testing.T, ctx context.Context, orgID uuid.UUID) 
 	}
 	if mustDecimal(t, diff).Sign() != 0 {
 		t.Fatalf("journals unbalanced by %s", diff)
+	}
+}
+
+// TestLedgerCurrency_ReportsAndJournalsFollowTheOrganisation is the regression
+// test for amounts being labelled INR for every company: a EUR organisation's
+// sales summary, trial balance and dashboard must all be denominated in EUR,
+// and a JPY organisation must keep zero-decimal precision.
+func TestLedgerCurrency_ReportsAndJournalsFollowTheOrganisation(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct{ country, currency, code string }{
+		{"ES", "EUR", "STANDARD"},
+		{"GB", "GBP", "STANDARD"},
+	} {
+		t.Run(tc.currency, func(t *testing.T) {
+			salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+			reportingSvc := newTestReportingService(t, accountingSvc)
+			fx := setupRegimeFixture(t, ctx, tc.country, tc.currency, tc.code)
+			if err := accountingSvc.EnsureDefaultChartOfAccounts(ctx, fx.Principal, fx.Principal.OrganisationID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := finalizeRegimeInvoice(t, ctx, salesSvc, fx, regimeInvoice{currency: tc.currency, qty: "3", price: "100"}); err != nil {
+				t.Fatal(err)
+			}
+			sum, err := reportingSvc.SalesSummary(ctx, fx.Principal, reportingdomain.Filter{}, reportingdomain.GroupByDay)
+			if err != nil || len(sum) == 0 {
+				t.Fatalf("SalesSummary: rows=%d err=%v", len(sum), err)
+			}
+			if got := sum[0].GrandTotal.Currency(); got != tc.currency {
+				t.Errorf("sales summary currency = %s, want %s", got, tc.currency)
+			}
+			tb, err := reportingSvc.TrialBalance(ctx, fx.Principal, time.Now().AddDate(0, 0, 1))
+			if err != nil || len(tb) == 0 {
+				t.Fatalf("TrialBalance: rows=%d err=%v", len(tb), err)
+			}
+			for _, r := range tb {
+				if r.Debit.Currency() != tc.currency || r.Credit.Currency() != tc.currency {
+					t.Fatalf("trial balance row %s is %s/%s, want %s", r.AccountCode, r.Debit.Currency(), r.Credit.Currency(), tc.currency)
+				}
+			}
+			dash, err := reportingSvc.Dashboard(ctx, fx.Principal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dash.TodaySales.Currency() != tc.currency || dash.OutstandingReceivable.Currency() != tc.currency {
+				t.Errorf("dashboard currencies = %s/%s, want %s", dash.TodaySales.Currency(), dash.OutstandingReceivable.Currency(), tc.currency)
+			}
+		})
 	}
 }

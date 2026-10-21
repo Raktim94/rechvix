@@ -3,9 +3,12 @@ package database
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"rechvix/internal/platform/money"
 )
 
 type txContextKey struct{}
@@ -123,13 +126,38 @@ func (p *Pool) RunScoped(ctx context.Context, orgID uuid.UUID, fn TxFunc) (err e
 		return fmt.Errorf("database: setting organisation scope: %w", err)
 	}
 
-	if err = fn(WithTx(ctx, tx)); err != nil {
+	scoped := WithTx(ctx, tx)
+	if cur := p.ledgerCurrency(ctx, tx, orgID); cur != "" {
+		scoped = money.WithLedgerCurrency(scoped, cur)
+	}
+	if err = fn(scoped); err != nil {
 		return err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return fmt.Errorf("database: committing scoped transaction: %w", err)
 	}
 	return nil
+}
+
+// orgCurrencies caches organisations.default_currency_code per organisation
+// for the life of the process. The column is set at setup and never changed
+// by the application, so a cache with no invalidation is safe; if that ever
+// changes, add invalidation here.
+var orgCurrencies sync.Map // uuid.UUID -> string
+
+// ledgerCurrency returns the organisation's currency, "" if it cannot be
+// read (for example during first-run bootstrap, before the row exists), in
+// which case callers fall back to money.DefaultLedgerCurrency.
+func (p *Pool) ledgerCurrency(ctx context.Context, tx pgx.Tx, orgID uuid.UUID) string {
+	if v, ok := orgCurrencies.Load(orgID); ok {
+		return v.(string)
+	}
+	var code string
+	if err := tx.QueryRow(ctx, `SELECT default_currency_code FROM organisations WHERE id = $1`, orgID).Scan(&code); err != nil {
+		return ""
+	}
+	orgCurrencies.Store(orgID, code)
+	return code
 }
 
 // SetOrganisationScope sets app.current_organisation_id for the remainder

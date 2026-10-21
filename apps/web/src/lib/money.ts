@@ -1,3 +1,5 @@
+import { formatLocale } from "../i18n";
+
 /**
  * Money — mirrors internal/platform/money.Money's JSON shape exactly
  * ({amount: string, currency: string}, e.g. {"amount":"1234.50","currency":"INR"}).
@@ -20,20 +22,26 @@ export interface Money {
 
 const formatterCache = new Map<string, Intl.NumberFormat>();
 
+// The locale follows the UI language and the active company's country (see
+// i18n/index.ts), so digits, grouping, symbol position and the number of
+// decimals (JPY has none, KWD has three) all come from Intl, not from here.
 function formatterFor(currency: string): Intl.NumberFormat {
-  let f = formatterCache.get(currency);
+  const locale = formatLocale();
+  const key = `${locale}|${currency}`;
+  let f = formatterCache.get(key);
   if (!f) {
-    f = new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency,
-      currencyDisplay: currency === "INR" ? "symbol" : "code",
-    });
-    formatterCache.set(currency, f);
+    try {
+      f = new Intl.NumberFormat(locale, { style: "currency", currency, currencyDisplay: "symbol" });
+    } catch {
+      // Unknown currency code: show the code rather than throw during render.
+      f = new Intl.NumberFormat(locale, { style: "currency", currency: "XXX", currencyDisplay: "code" });
+    }
+    formatterCache.set(key, f);
   }
   return f;
 }
 
-/** Formats a Money value for display, e.g. "₹1,23,456.50". */
+/** Formats a Money value for display, e.g. "₹1,23,456.50" (en-IN), "1.234,50 €" (es-ES). */
 export function formatMoney(m: Money): string {
   const n = Number(m.amount);
   if (Number.isNaN(n)) return `${m.amount} ${m.currency}`;

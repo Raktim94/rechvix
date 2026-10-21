@@ -16,7 +16,7 @@ it was re-run on 2026-10-21 (285 pass / 0 fail).
 | `go test ./...` (unit) | pass, 25 packages with tests |
 | `apps/web`: `tsc -b` | pass |
 | `apps/web`: `npm run lint` (oxlint) | pass, warnings only (`set-state-in-effect` x7, `only-export-components` x1) |
-| `go test -tags=integration ./...` | **pass, 312 tests, 0 failed, 0 skipped** (2026-10-21, after migrations 0044-0045, with `pg_dump` 18 on PATH; Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
+| `go test -tags=integration ./...` | **pass, 315 tests, 0 failed, 0 skipped** (2026-10-21, after migrations 0044-0045 and ledger-currency fix, with `pg_dump` 18 on PATH; Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
 | Playwright / e2e / screenshots | **not run** — Postgres stack unavailable (needs Docker) |
 | staticcheck / govulncheck | not run locally (CI job `go-static` runs them) |
 
@@ -120,5 +120,5 @@ Columns: ID · user outcome · existing location · backend · UI · security ·
 | L4 | UK VAT | `taxregimes` | Full | Pending | RLS | unit + integ | M | gov.uk/vat-rates |
 | L5 | EU VAT (27 states) with intra-EU B2B / export | `taxregimes` | Full except OSS consumer | Pending | RLS | unit + integ | M | 2 sources agree on standard rates |
 | L6 | US state sales tax | `taxregimes` | State base rate only; registered states only | Pending | RLS | unit + integ | H (not a compliance engine) | Tax Foundation 2026 |
-| L7 | UI language (multilingual) | none yet | Missing | Missing | - | - | M | next |
+| L7 | UI language (multilingual) | `apps/web/src/i18n` | Reference endpoints + formatting | 8 languages, partial screens (shell, sign-in, setup, dashboard) | - | locale parity check in CI + browser run | M | docs/localisation.md; machine-drafted, needs native review |
 | L8 | VAT returns / filings | none | Missing | Missing | - | - | H | not started |

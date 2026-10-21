@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import styles from "./AppShell.module.css";
 import { CommandPalette } from "./CommandPalette";
 import { CompanySwitcher } from "./CompanySwitcher";
@@ -8,11 +9,20 @@ import { PlusIcon, SearchIcon } from "./icons";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
+import { LanguageMenuItems } from "./LanguageMenuItems";
+import { navLabel } from "./navLabel";
+import { setFormatRegion } from "../i18n";
+import { useOrgContext } from "../lib/useOrgContext";
 import { NAV_GROUPS } from "../nav";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { logout } = useAuth();
+  const { t } = useTranslation();
+  const { legalEntity } = useOrgContext();
+  const country = legalEntity?.CountryCode;
+  // Money/date formatting follows the active company's country (see i18n/index.ts).
+  setFormatRegion(country);
   const { theme, toggle } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,18 +89,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className={styles.shell}>
       <a href="#main-content" className={styles.skipLink}>
-        Skip to main content
+        {t("shell.skipToContent")}
       </a>
-      <nav className={styles.nav} aria-label="Primary">
+      <nav className={styles.nav} aria-label={t("nav.primary")}>
         <div className={styles.wordmark}>
           <Logo />
           rechvix
         </div>
         <ul className={styles.navList}>
           {NAV_GROUPS.map((group) => (
-            <li key={group.title} className={styles.navGroup}>
+            <li key={group.titleKey} className={styles.navGroup}>
               <p className={styles.navGroupLabel} aria-hidden="true">
-                {group.title}
+                {t(group.titleKey)}
               </p>
               <ul className={styles.navGroupList}>
                 {group.items.map((item) => (
@@ -101,7 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       aria-current={pathname === item.to ? "page" : undefined}
                     >
                       <span className={styles.navIcon}>{item.icon}</span>
-                      {item.label}
+                      {navLabel(t, item, country)}
                     </Link>
                   </li>
                 ))}
@@ -117,9 +127,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       <header className={styles.topbar}>
-        <button type="button" className={styles.search} onClick={() => setPaletteOpen(true)}>
+        <button type="button" className={styles.search} onClick={() => setPaletteOpen(true)} aria-label={t("shell.searchPlaceholder")}>
           <SearchIcon />
-          <span className={styles.searchPlaceholder}>Search customers, products…</span>
+          <span className={styles.searchPlaceholder}>{t("shell.searchPlaceholder")}</span>
           <kbd className={styles.searchHint} aria-hidden="true">
             Ctrl+K
           </kbd>
@@ -127,17 +137,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className={styles.topbarSpacer} />
         <CompanySwitcher />
         <div className={styles.primaryActions}>
-          <Link to="/sales/new" className={styles.actionPrimary}>
+          <Link to="/sales/new" className={styles.actionPrimary} aria-label={t("shell.addSale")}>
             <span className={styles.actionPlus} aria-hidden="true">
               +
             </span>
-            <span className={styles.actionLabel}>Add sale</span>
+            <span className={styles.actionLabel}>{t("shell.addSale")}</span>
           </Link>
-          <Link to="/purchases" className={styles.actionSecondary}>
+          <Link to="/purchases" className={styles.actionSecondary} aria-label={t("shell.addPurchase")}>
             <span className={styles.actionPlus} aria-hidden="true">
               +
             </span>
-            <span className={styles.actionLabel}>Add purchase</span>
+            <span className={styles.actionLabel}>{t("shell.addPurchase")}</span>
           </Link>
         </div>
         <div className={styles.userMenu} ref={createRef}>
@@ -147,31 +157,31 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => setCreateOpen((v) => !v)}
             aria-expanded={createOpen}
             aria-haspopup="menu"
-            aria-label="Create something else"
-            title="Create something else"
+            aria-label={t("shell.createMore")}
+            title={t("shell.createMore")}
           >
             <PlusIcon />
           </button>
           {createOpen ? (
             <div className={styles.userDropdown} role="menu">
               <Link to="/contacts" role="menuitem" onClick={() => setCreateOpen(false)}>
-                New contact
+                {t("shell.newContact")}
               </Link>
               <Link to="/catalogue" role="menuitem" onClick={() => setCreateOpen(false)}>
-                New product
+                {t("shell.newProduct")}
               </Link>
               <Link to="/expenses" role="menuitem" onClick={() => setCreateOpen(false)}>
-                Record an expense
+                {t("shell.recordExpense")}
               </Link>
             </div>
           ) : null}
         </div>
         <button
           type="button"
-          className={styles.iconButton}
+          className={`${styles.iconButton} ${styles.shortcutsButton}`}
           onClick={() => setShortcutsOpen(true)}
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts (?)"
+          aria-label={t("shell.shortcuts")}
+          title={t("shell.shortcutsHint")}
         >
           ?
         </button>
@@ -179,7 +189,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           type="button"
           className={styles.iconButton}
           onClick={toggle}
-          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={theme === "dark" ? t("shell.switchToLight") : t("shell.switchToDark")}
         >
           {theme === "dark" ? "☀" : "☾"}
         </button>
@@ -190,7 +200,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => setMenuOpen((v) => !v)}
             aria-expanded={menuOpen}
             aria-haspopup="menu"
-            aria-label="User menu"
+            aria-label={t("shell.userMenu")}
           >
             <span className={styles.avatar} aria-hidden="true">
               U
@@ -199,10 +209,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           {menuOpen ? (
             <div className={styles.userDropdown} role="menu">
               <Link to="/settings" role="menuitem" onClick={() => setMenuOpen(false)}>
-                Settings
+                {t("shell.settings")}
               </Link>
+              <LanguageMenuItems onChosen={() => setMenuOpen(false)} />
               <button type="button" role="menuitem" onClick={() => void logout()}>
-                Log out
+                {t("shell.logout")}
               </button>
             </div>
           ) : null}

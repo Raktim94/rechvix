@@ -1,10 +1,13 @@
 import { Command } from "cmdk";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import styles from "./CommandPalette.module.css";
 import { ContactsIcon, PricingIcon, PurchasesIcon, SalesIcon, SearchIcon, SettingsIcon } from "./icons";
 import { api } from "../lib/api-client";
 import { NAV_GROUPS } from "../nav";
+import { navLabel } from "./navLabel";
+import { useOrgContext } from "../lib/useOrgContext";
 
 interface SearchResult {
   kind: "customer" | "product";
@@ -14,14 +17,16 @@ interface SearchResult {
 }
 
 const QUICK_ACTIONS = [
-  { to: "/sales/new", label: "New sale", icon: <SalesIcon /> },
-  { to: "/purchases", label: "New purchase", icon: <PurchasesIcon /> },
-  { to: "/contacts", label: "New contact", icon: <ContactsIcon /> },
-  { to: "/settings", label: "Open settings", icon: <SettingsIcon /> },
+  { to: "/sales/new", labelKey: "palette.newSale", icon: <SalesIcon /> },
+  { to: "/purchases", labelKey: "palette.newPurchase", icon: <PurchasesIcon /> },
+  { to: "/contacts", labelKey: "palette.newContact", icon: <ContactsIcon /> },
+  { to: "/settings", labelKey: "palette.openSettings", icon: <SettingsIcon /> },
 ] as const;
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const country = useOrgContext().legalEntity?.CountryCode;
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
 
@@ -64,7 +69,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     <Command.Dialog
       open={open}
       onOpenChange={onOpenChange}
-      label="Command palette"
+      label={t("palette.label")}
       shouldFilter
       className={styles.commandRoot}
       overlayClassName={styles.overlay}
@@ -76,41 +81,41 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           autoFocus
           value={query}
           onValueChange={setQuery}
-          placeholder="Search customers, products, or jump to a page…"
+          placeholder={t("palette.placeholder")}
           className={styles.input}
         />
         <kbd className={styles.escHint}>Esc</kbd>
       </div>
       <Command.List className={styles.list}>
-        <Command.Empty className={styles.empty}>No matches for "{query}".</Command.Empty>
+        <Command.Empty className={styles.empty}>{t("palette.noMatches", { query })}</Command.Empty>
 
         {results.length > 0 ? (
-          <Command.Group heading="Results">
+          <Command.Group heading={t("palette.results")}>
             {results.map((r) => (
               <Command.Item key={`${r.kind}-${r.id}`} value={`result ${r.label}`} className={styles.item} onSelect={() => go(r.to)}>
                 {r.kind === "customer" ? <ContactsIcon /> : <PricingIcon />}
                 {r.label}
-                <span className={styles.itemMeta}>{r.kind}</span>
+                <span className={styles.itemMeta}>{t(`palette.${r.kind}`)}</span>
               </Command.Item>
             ))}
           </Command.Group>
         ) : null}
 
-        <Command.Group heading="Quick actions">
+        <Command.Group heading={t("palette.quickActions")}>
           {QUICK_ACTIONS.map((a) => (
-            <Command.Item key={a.label} value={a.label} className={styles.item} onSelect={() => go(a.to)}>
+            <Command.Item key={a.to + a.labelKey} value={t(a.labelKey)} className={styles.item} onSelect={() => go(a.to)}>
               {a.icon}
-              {a.label}
+              {t(a.labelKey)}
             </Command.Item>
           ))}
         </Command.Group>
 
         {NAV_GROUPS.map((group) => (
-          <Command.Group key={group.title} heading={`Go to ${group.title}`}>
+          <Command.Group key={group.titleKey} heading={t("palette.goTo", { group: t(group.titleKey) })}>
             {group.items.map((item) => (
-              <Command.Item key={item.to} value={`go to ${item.label}`} className={styles.item} onSelect={() => go(item.to)}>
+              <Command.Item key={item.to} value={t("palette.goToItem", { item: navLabel(t, item, country) })} className={styles.item} onSelect={() => go(item.to)}>
                 {item.icon}
-                {item.label}
+                {navLabel(t, item, country)}
               </Command.Item>
             ))}
           </Command.Group>
@@ -118,13 +123,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       </Command.List>
       <div className={styles.footer}>
         <span>
-          <kbd>↑↓</kbd>Navigate
+          <kbd>↑↓</kbd>{t("palette.navigate")}
         </span>
         <span>
-          <kbd>↵</kbd>Select
+          <kbd>↵</kbd>{t("palette.select")}
         </span>
         <span>
-          <kbd>Esc</kbd>Close
+          <kbd>Esc</kbd>{t("palette.close")}
         </span>
       </div>
     </Command.Dialog>

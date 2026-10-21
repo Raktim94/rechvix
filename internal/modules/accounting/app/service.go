@@ -298,11 +298,11 @@ func (s *Service) doPost(ctx context.Context, principal permissions.Principal, r
 		if err != nil {
 			return nil, fmt.Errorf("accounting: generating journal_line id: %w", err)
 		}
-		debit, err := money.New(l.Debit, "INR")
+		debit, err := money.New(l.Debit, money.LedgerCurrency(ctx))
 		if err != nil {
 			return nil, err
 		}
-		credit, err := money.New(l.Credit, "INR")
+		credit, err := money.New(l.Credit, money.LedgerCurrency(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -595,7 +595,7 @@ func (s *Service) RecordReceipt(ctx context.Context, principal permissions.Princ
 		if err != nil {
 			return fmt.Errorf("accounting: generating receipt id: %w", err)
 		}
-		amount, err := money.New(p.Amount, "INR")
+		amount, err := money.New(p.Amount, money.LedgerCurrency(ctx))
 		if err != nil {
 			return err
 		}
@@ -681,7 +681,7 @@ func (s *Service) RecordPayment(ctx context.Context, principal permissions.Princ
 		if err != nil {
 			return fmt.Errorf("accounting: generating payment id: %w", err)
 		}
-		amount, err := money.New(p.Amount, "INR")
+		amount, err := money.New(p.Amount, money.LedgerCurrency(ctx))
 		if err != nil {
 			return err
 		}
@@ -746,7 +746,7 @@ func (s *Service) GetPartyLedger(ctx context.Context, principal permissions.Prin
 	entries := make([]domain.LedgerEntry, 0, len(rows))
 	for _, r := range rows {
 		running = running.Add(r.Debit.Decimal()).Sub(r.Credit.Decimal())
-		balance, err := money.New(running, "INR")
+		balance, err := money.New(running, money.LedgerCurrency(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -806,7 +806,7 @@ func (s *Service) GetAgeing(ctx context.Context, principal permissions.Principal
 	}
 	sort.Slice(open, func(i, j int) bool { return open[i].date.Before(open[j].date) })
 
-	zero, err := money.Zero("INR")
+	zero, err := money.Zero(money.LedgerCurrency(ctx))
 	if err != nil {
 		return domain.AgeingBucket{}, err
 	}
@@ -816,7 +816,7 @@ func (s *Service) GetAgeing(ctx context.Context, principal permissions.Principal
 			continue
 		}
 		days := int(asOf.Sub(od.date).Hours() / 24)
-		amt, err := money.New(od.amount, "INR")
+		amt, err := money.New(od.amount, money.LedgerCurrency(ctx))
 		if err != nil {
 			return domain.AgeingBucket{}, err
 		}
@@ -987,17 +987,20 @@ func (s *Service) RecordReconciliation(ctx context.Context, principal permission
 	if err != nil {
 		return nil, fmt.Errorf("accounting: generating reconciliation id: %w", err)
 	}
-	opening, err := money.New(p.OpeningBalance, "INR")
-	if err != nil {
-		return nil, err
-	}
-	closing, err := money.New(p.ClosingBalance, "INR")
-	if err != nil {
-		return nil, err
-	}
-	rec := &domain.Reconciliation{ID: id, OrganisationID: principal.OrganisationID, BankAccountID: p.BankAccountID,
-		StatementDate: p.StatementDate, OpeningBalance: opening, ClosingBalance: closing, IsReconciled: true, CreatedAt: s.now()}
+	var rec *domain.Reconciliation
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		// Built inside the scoped transaction so the amounts carry the
+		// organisation's ledger currency, not a default.
+		opening, err := money.New(p.OpeningBalance, money.LedgerCurrency(ctx))
+		if err != nil {
+			return err
+		}
+		closing, err := money.New(p.ClosingBalance, money.LedgerCurrency(ctx))
+		if err != nil {
+			return err
+		}
+		rec = &domain.Reconciliation{ID: id, OrganisationID: principal.OrganisationID, BankAccountID: p.BankAccountID,
+			StatementDate: p.StatementDate, OpeningBalance: opening, ClosingBalance: closing, IsReconciled: true, CreatedAt: s.now()}
 		return s.reconciliations.Create(ctx, rec)
 	})
 	if err != nil {

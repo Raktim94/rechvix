@@ -22,7 +22,7 @@
 
 .shell {
   display: grid;
-  grid-template-columns: var(--nav-width) 1fr;
+  grid-template-columns: var(--nav-width) minmax(0, 1fr);
   grid-template-rows: var(--topbar-height) 1fr;
   grid-template-areas: "nav topbar" "nav main";
   /* Strict height, not min-height: a 1fr grid row's implicit minimum
@@ -37,7 +37,7 @@
 
 @media (max-width: 767px) {
   .shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: var(--topbar-height) 1fr auto;
     grid-template-areas: "topbar" "main" "nav";
   }
@@ -257,6 +257,10 @@
 
 .search {
   flex: 1;
+  /* A flex item defaults to min-width:auto (its content), which kept the
+     topbar wider than the space beside the sidebar; 0 lets it shrink and the
+     placeholder ellipsis take over. */
+  min-width: 0;
   max-width: 460px;
   display: flex;
   align-items: center;
@@ -402,7 +406,7 @@
 
 /* Below ~900px the two labelled pills would crowd out the search field —
    drop the words, keep the buttons (still reachable, still one tap). */
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .actionLabel {
     display: none;
   }
@@ -569,4 +573,37 @@
   height: 1px;
   background: var(--color-border);
   margin: var(--space-1) 4px;
+}
+
+/* Phones: the keyboard-shortcuts button is useless without a keyboard, and the
+   topbar has no room for a second action; both stay reachable through the
+   command palette and the + menu. */
+@media (max-width: 767px) {
+  .shortcutsButton {
+    display: none;
+  }
+}
+@media (max-width: 480px) {
+  .actionSecondary {
+    display: none;
+  }
+}
+
+/* 320px reflow (WCAG 1.4.10): tighten the topbar so the avatar stays on screen. */
+@media (max-width: 360px) {
+  .topbar {
+    padding: 0 var(--space-2);
+    gap: var(--space-1);
+  }
+}
+
+/* Phones: collapse the search field to an icon button instead of an empty pill. */
+@media (max-width: 480px) {
+  .search {
+    flex: 0 0 auto;
+    padding: 9px;
+  }
+  .searchPlaceholder {
+    display: none;
+  }
 }

@@ -543,6 +543,9 @@ func run() error {
 				return catalogueSvc.EnsureDefaultUnits(ctx, owner)
 			})
 		identityHandlers.Mount(r, bootstrapEnabled)
+		// Static reference data (countries, currencies, tax categories) is public:
+		// the first-run setup screen needs it before anyone can sign in.
+		referencehttp.NewHandlers().Mount(r)
 		// Share-link redemption is deliberately UNAUTHENTICATED (brief
 		// §21 — the whole point is a recipient with no session/API key);
 		// it does NOT go in the RequireAuthOrAPIKey group below.
@@ -582,7 +585,6 @@ func run() error {
 			r.Use(identityhttp.RequireAuthOrAPIKey(identitySvc, cfg.Session.CookieName))
 			identityHandlers.MountAPIKeys(r)
 			orghttp.NewHandlers(orgSvc).Mount(r)
-			referencehttp.NewHandlers().Mount(r)
 			cataloguehttp.NewHandlers(catalogueSvc).Mount(r)
 			contactshttp.NewHandlers(contactsSvc).Mount(r)
 			pricinghttp.NewHandlers(pricingSvc).Mount(r)

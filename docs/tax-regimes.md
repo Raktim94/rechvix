@@ -55,5 +55,5 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 * Accounting's tax account is labelled "GST Output Tax Payable" for every country (numerically correct, label is India-specific).
 * No VAT return / Modelo 303 / UK MTD / sales-tax filing exports.
 * Rates sourced from two secondary publications for the EU; the Commission's TEDB could not be fetched. Re-verify before filing.
-* Web UI does not yet expose the new document fields or the US collection-regions setting.
+* Web UI: first-run setup now chooses country, currency and timezone. The invoice screen does not yet expose `customer_country`, `supply_region`, exemption/surcharge flags, and there is no screen for the US collection-regions setting (API only).
 * Rate pack updates are code changes (new `RatePackVersion`); there is no admin UI to edit rates.

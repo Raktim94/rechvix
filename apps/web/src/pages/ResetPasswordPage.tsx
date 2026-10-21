@@ -44,7 +44,7 @@ export function ResetPasswordPage({ token }: { token: string | undefined }) {
   };
 
   return (
-    <div className={styles.page}>
+    <main className={styles.page}>
       <div className={styles.card}>
         <div className={styles.wordmark}>
           <Logo />
@@ -90,6 +90,6 @@ export function ResetPasswordPage({ token }: { token: string | undefined }) {
           NodeDR Infotech Private Limited
         </a>
       </p>
-    </div>
+    </main>
   );
 }

@@ -9,6 +9,11 @@ export interface LegalEntity {
   LegalName: string;
   GSTIN: string;
   GSTStateCode: string;
+  /** ISO 3166-1 alpha-2; selects the tax regime on the server. */
+  CountryCode: string;
+  BaseCurrencyCode: string;
+  /** US states ("US-CA") where sales tax is collected. */
+  USCollectionRegions: string[];
   // Invoice branding (migrations/0034) — see
   // internal/modules/organisation/domain.LegalEntity's own comment.
   Phone: string;
@@ -134,4 +139,11 @@ export function useOrgContext() {
     warehouse: warehouses.data?.[0],
     selectCompany,
   };
+}
+
+/** The active company's currency: its base currency, else the organisation's
+ * default. Replaces the hard-coded "INR" the screens used to assume. */
+export function useCompanyCurrency(): string {
+  const { legalEntity, organisation } = useOrgContext();
+  return legalEntity?.BaseCurrencyCode || organisation?.DefaultCurrencyCode || "INR";
 }

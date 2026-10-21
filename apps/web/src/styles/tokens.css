@@ -99,7 +99,7 @@
   --color-rail-border: #22332c;
   --color-rail-text: #cfe0d7;
   --color-rail-text-muted: #7d998b;
-  --color-rail-text-faint: #5f7a6c;
+  --color-rail-text-faint: #72907f; /* 5.1:1 on --color-rail; was #5f7a6c (3.8:1) */
   --color-rail-active: #29c191;
   --color-rail-active-bg: rgba(41, 193, 145, 0.14);
 

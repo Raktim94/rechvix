@@ -19,12 +19,14 @@ import {
 
 export interface NavItem {
   to: string;
-  label: string;
+  /** i18n key under nav.item.*; `tax` has a `tax_gst` context for India. */
+  labelKey: string;
   icon: ReactNode;
 }
 
 export interface NavGroup {
-  title: string;
+  /** i18n key under nav.group.* */
+  titleKey: string;
   items: NavItem[];
 }
 
@@ -34,49 +36,49 @@ export interface NavGroup {
  * the flat A-Z-ish list this used to be. */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    title: "Overview",
-    items: [{ to: "/", label: "Dashboard", icon: <DashboardIcon /> }],
+    titleKey: "nav.group.overview",
+    items: [{ to: "/", labelKey: "nav.item.dashboard", icon: <DashboardIcon /> }],
   },
   {
-    title: "Billing",
+    titleKey: "nav.group.billing",
     items: [
-      { to: "/sales", label: "Sales", icon: <SalesIcon /> },
-      { to: "/purchases", label: "Purchases", icon: <PurchasesIcon /> },
+      { to: "/sales", labelKey: "nav.item.sales", icon: <SalesIcon /> },
+      { to: "/purchases", labelKey: "nav.item.purchases", icon: <PurchasesIcon /> },
     ],
   },
   {
-    title: "Catalogue",
+    titleKey: "nav.group.catalogue",
     items: [
-      { to: "/inventory", label: "Inventory", icon: <InventoryIcon /> },
-      { to: "/catalogue", label: "Catalogue", icon: <CatalogueIcon /> },
+      { to: "/inventory", labelKey: "nav.item.inventory", icon: <InventoryIcon /> },
+      { to: "/catalogue", labelKey: "nav.item.catalogue", icon: <CatalogueIcon /> },
     ],
   },
   {
-    title: "Relationships",
-    items: [{ to: "/contacts", label: "Contacts", icon: <ContactsIcon /> }],
+    titleKey: "nav.group.relationships",
+    items: [{ to: "/contacts", labelKey: "nav.item.contacts", icon: <ContactsIcon /> }],
   },
   {
-    title: "Finance",
+    titleKey: "nav.group.finance",
     items: [
-      { to: "/accounting", label: "Accounting", icon: <AccountingIcon /> },
-      { to: "/expenses", label: "Expenses", icon: <WalletIcon /> },
-      { to: "/gst", label: "GST / Tax", icon: <GstIcon /> },
-      { to: "/reports", label: "Reports", icon: <ReportsIcon /> },
+      { to: "/accounting", labelKey: "nav.item.accounting", icon: <AccountingIcon /> },
+      { to: "/expenses", labelKey: "nav.item.expenses", icon: <WalletIcon /> },
+      { to: "/gst", labelKey: "nav.item.tax", icon: <GstIcon /> },
+      { to: "/reports", labelKey: "nav.item.reports", icon: <ReportsIcon /> },
     ],
   },
   {
-    title: "Team",
+    titleKey: "nav.group.team",
     items: [
-      { to: "/staff", label: "Staff", icon: <StaffIcon /> },
-      { to: "/calendar", label: "Calendar", icon: <CalendarIcon /> },
+      { to: "/staff", labelKey: "nav.item.staff", icon: <StaffIcon /> },
+      { to: "/calendar", labelKey: "nav.item.calendar", icon: <CalendarIcon /> },
     ],
   },
   {
-    title: "Setup",
+    titleKey: "nav.group.setup",
     items: [
-      { to: "/integrations", label: "Integrations", icon: <IntegrationsIcon /> },
-      { to: "/backup", label: "Backup", icon: <BackupIcon /> },
-      { to: "/settings", label: "Settings", icon: <SettingsIcon /> },
+      { to: "/integrations", labelKey: "nav.item.integrations", icon: <IntegrationsIcon /> },
+      { to: "/backup", labelKey: "nav.item.backup", icon: <BackupIcon /> },
+      { to: "/settings", labelKey: "nav.item.settings", icon: <SettingsIcon /> },
     ],
   },
 ];

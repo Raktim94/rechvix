@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import ReactECharts from "echarts-for-react";
 import styles from "./DashboardPage.module.css";
 import { AlertTriangleIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, BoxIcon, ClockIcon, SalesIcon, WalletIcon } from "../components/icons";
@@ -34,6 +35,7 @@ interface Task {
  * "today's numbers" and "today's people/to-dos" are different questions
  * a shop owner asks at different moments of the day. */
 function TodaySummaryPanel() {
+  const { t } = useTranslation();
   const todayIso = toLocalIsoDate(new Date());
   const staff = useQuery({
     queryKey: ["staff-members"],
@@ -66,29 +68,29 @@ function TodaySummaryPanel() {
 
   return (
     <div className={styles.panel}>
-      <h2>Today</h2>
+      <h2>{t("dashboard.today")}</h2>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
         <div>
           <p className={styles.subtitle} style={{ marginBottom: 8 }}>
-            {activeStaff.length > 0 ? `${activeStaff.length - absentToday.length} of ${activeStaff.length} staff in today` : "No staff added yet"}
+            {activeStaff.length > 0 ? t("dashboard.staffIn", { present: activeStaff.length - absentToday.length, total: activeStaff.length }) : t("dashboard.noStaff")}
           </p>
           {absentToday.length > 0 ? (
-            <p style={{ color: "var(--color-negative)", fontSize: "var(--text-sm)" }}>Absent: {absentToday.map((m) => m.Name).join(", ")}</p>
+            <p style={{ color: "var(--color-negative)", fontSize: "var(--text-sm)" }}>{t("dashboard.absent", { names: absentToday.map((m) => m.Name).join(", ") })}</p>
           ) : null}
           <Link to="/calendar" style={{ fontSize: "var(--text-sm)" }}>
-            Mark attendance →
+            {t("dashboard.markAttendance")}
           </Link>
         </div>
         <div>
           <p className={styles.subtitle} style={{ marginBottom: 8 }}>
-            {pendingTasks.length > 0 ? `${pendingTasks.length} task${pendingTasks.length > 1 ? "s" : ""} due today` : "Nothing due today"}
+            {pendingTasks.length > 0 ? t("dashboard.tasksDue", { count: pendingTasks.length }) : t("dashboard.nothingDue")}
           </p>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--text-sm)" }}>
             {pendingTasks.slice(0, 4).map((t) => (
               <li key={t.ID}>{t.Title}</li>
             ))}
           </ul>
-          {pendingTasks.length > 4 ? <p className={styles.subtitle}>+{pendingTasks.length - 4} more</p> : null}
+          {pendingTasks.length > 4 ? <p className={styles.subtitle}>{t("dashboard.moreTasks", { count: pendingTasks.length - 4 })}</p> : null}
         </div>
       </div>
     </div>
@@ -138,17 +140,19 @@ function useSalesTrend(legalEntityId: string | undefined) {
 }
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const org = useOrgContext();
   const dashboard = useDashboard();
   const trend = useSalesTrend(org.legalEntity?.ID);
   const { theme } = useTheme();
+  const currency = org.legalEntity?.BaseCurrencyCode || org.organisation?.DefaultCurrencyCode || "INR";
 
   return (
     <div className={styles.page}>
       <div className={styles.heading}>
         <div>
-          <h1>Dashboard</h1>
-          <p className={styles.subtitle}>Today's business, at a glance.</p>
+          <h1>{t("dashboard.title")}</h1>
+          <p className={styles.subtitle}>{t("dashboard.subtitle")}</p>
         </div>
       </div>
 
@@ -156,7 +160,7 @@ export function DashboardPage() {
 
       {dashboard.isError ? (
         <div className={styles.errorState} role="alert">
-          Couldn't load today's summary. Check your connection and try again.
+          {t("dashboard.loadSummaryFailed")}
         </div>
       ) : dashboard.isPending ? (
         <div className={styles.cardGrid}>
@@ -166,35 +170,35 @@ export function DashboardPage() {
         </div>
       ) : (
         <div className={styles.cardGrid}>
-          <StatCard label="Today's sales" value={formatMoney(dashboard.data.TodaySales)} icon={<SalesIcon />} />
+          <StatCard label={t("dashboard.todaysSales")} value={formatMoney(dashboard.data.TodaySales)} icon={<SalesIcon />} />
           <StatCard
-            label="Today's collections"
+            label={t("dashboard.todaysCollections")}
             value={formatMoney(dashboard.data.TodayCollections)}
             polarity={isZeroMoney(dashboard.data.TodayCollections) ? "neutral" : "positive"}
             icon={<WalletIcon />}
           />
-          <StatCard label="Today's purchases" value={formatMoney(dashboard.data.TodayPurchases)} icon={<ArrowUpCircleIcon />} />
+          <StatCard label={t("dashboard.todaysPurchases")} value={formatMoney(dashboard.data.TodayPurchases)} icon={<ArrowUpCircleIcon />} />
           <StatCard
-            label="Outstanding receivable"
+            label={t("dashboard.outstandingReceivable")}
             value={formatMoney(dashboard.data.OutstandingReceivable)}
             polarity={isZeroMoney(dashboard.data.OutstandingReceivable) ? "neutral" : "warning"}
             icon={<ArrowDownCircleIcon />}
           />
           <StatCard
-            label="Outstanding payable"
+            label={t("dashboard.outstandingPayable")}
             value={formatMoney(dashboard.data.OutstandingPayable)}
             polarity={isZeroMoney(dashboard.data.OutstandingPayable) ? "neutral" : "warning"}
             icon={<ArrowUpCircleIcon />}
           />
-          <StatCard label="Current stock value" value={formatMoney(dashboard.data.CurrentStockValue)} icon={<BoxIcon />} />
+          <StatCard label={t("dashboard.currentStockValue")} value={formatMoney(dashboard.data.CurrentStockValue)} icon={<BoxIcon />} />
           <StatCard
-            label="Low stock items"
+            label={t("dashboard.lowStockItems")}
             value={String(dashboard.data.LowStockCount)}
             polarity={dashboard.data.LowStockCount > 0 ? "warning" : "neutral"}
             icon={<AlertTriangleIcon />}
           />
           <StatCard
-            label="Overdue receivable"
+            label={t("dashboard.overdueReceivable")}
             value={formatMoney(dashboard.data.OverdueReceivable)}
             polarity={isZeroMoney(dashboard.data.OverdueReceivable) ? "neutral" : "negative"}
             icon={<ClockIcon />}
@@ -204,32 +208,32 @@ export function DashboardPage() {
 
       <div className={styles.panelRow}>
         <div className={styles.panel}>
-          <h2>Sales trend</h2>
+          <h2>{t("dashboard.salesTrend")}</h2>
           {trend.isError ? (
             <div className={styles.errorState} role="alert">
-              Couldn't load the sales trend.
+              {t("dashboard.loadTrendFailed")}
             </div>
           ) : trend.isPending ? (
             <div className={styles.skeleton} style={{ height: 260 }} aria-hidden="true" />
           ) : (trend.data.rows ?? []).length === 0 ? (
             <p className={styles.emptyState}>
-              No sales recorded yet. Once you create and finalize an invoice, its trend will show up here.
+              {t("dashboard.noSalesYet")}
             </p>
           ) : (
-            <SalesTrendChart rows={trend.data.rows ?? []} dark={theme === "dark"} />
+            <SalesTrendChart rows={trend.data.rows ?? []} dark={theme === "dark"} currency={currency} />
           )}
         </div>
 
         <div className={styles.panel}>
-          <h2>Receivable vs payable</h2>
+          <h2>{t("dashboard.receivableVsPayable")}</h2>
           {dashboard.isError ? (
             <div className={styles.errorState} role="alert">
-              Couldn't load outstanding balances.
+              {t("dashboard.loadBalancesFailed")}
             </div>
           ) : dashboard.isPending ? (
             <div className={styles.skeleton} style={{ height: 260 }} aria-hidden="true" />
           ) : isZeroMoney(dashboard.data.OutstandingReceivable) && isZeroMoney(dashboard.data.OutstandingPayable) ? (
-            <p className={styles.emptyState}>Nothing outstanding on either side yet.</p>
+            <p className={styles.emptyState}>{t("dashboard.nothingOutstanding")}</p>
           ) : (
             <ReceivablePayableChart
               receivable={dashboard.data.OutstandingReceivable}
@@ -245,11 +249,11 @@ export function DashboardPage() {
   );
 }
 
-function SalesTrendChart({ rows, dark }: { rows: string[][]; dark: boolean }) {
+function SalesTrendChart({ rows, dark, currency }: { rows: string[][]; dark: boolean; currency: string }) {
   const { accent, text: textColor, grid: gridColor } = chartPalette(dark);
 
   const days = rows.map((r) => r[0] ?? "");
-  const totals = rows.map((r) => moneyToApproxNumber({ amount: r[4] ?? "0", currency: "INR" }));
+  const totals = rows.map((r) => moneyToApproxNumber({ amount: r[4] ?? "0", currency }));
 
   // echarts-for-react renders to a bare <canvas> with no text alternative
   // — a screen-reader user gets nothing from it (WCAG 1.1.1). This table
@@ -269,7 +273,7 @@ function SalesTrendChart({ rows, dark }: { rows: string[][]; dark: boolean }) {
         {rows.map((r, i) => (
           <tr key={r[0] ?? i}>
             <td>{r[0]}</td>
-            <td>{formatMoney({ amount: r[4] ?? "0", currency: "INR" })}</td>
+            <td>{formatMoney({ amount: r[4] ?? "0", currency })}</td>
           </tr>
         ))}
       </tbody>
@@ -373,7 +377,7 @@ function ReceivablePayableChart({ receivable, payable, dark }: { receivable: Mon
           position: "right" as const,
           color: textColor,
           fontFamily: "IBM Plex Mono",
-          formatter: (p: { value: number }) => formatMoney({ amount: String(p.value), currency: "INR" }),
+          formatter: (p: { value: number }) => formatMoney({ amount: String(p.value), currency: receivable.currency }),
         },
       },
     ],

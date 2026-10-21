@@ -213,8 +213,8 @@ func (r *JournalLineRepo) ListByJournal(ctx context.Context, orgID, journalID uu
 		// ADR). INR is the only currency exercised end-to-end so far
 		// (sales/purchases/tax all default to it); this is a placeholder,
 		// not a silent multi-currency claim.
-		l.Debit = money.MustNew(debit, "INR")
-		l.Credit = money.MustNew(credit, "INR")
+		l.Debit = money.MustNew(debit, money.LedgerCurrency(ctx))
+		l.Credit = money.MustNew(credit, money.LedgerCurrency(ctx))
 		out = append(out, &l)
 	}
 	return out, rows.Err()
@@ -238,8 +238,8 @@ func (r *JournalLineRepo) ListByPartyUpTo(ctx context.Context, orgID, partyID uu
 		if err := rows.Scan(&lr.JournalID, &lr.JournalDate, &lr.SourceType, &lr.SourceID, &lr.Description, &debit, &credit); err != nil {
 			return nil, fmt.Errorf("accounting: scanning ledger row: %w", err)
 		}
-		lr.Debit = money.MustNew(debit, "INR")
-		lr.Credit = money.MustNew(credit, "INR")
+		lr.Debit = money.MustNew(debit, money.LedgerCurrency(ctx))
+		lr.Credit = money.MustNew(credit, money.LedgerCurrency(ctx))
 		out = append(out, lr)
 	}
 	return out, rows.Err()
@@ -269,7 +269,7 @@ func (r *JournalLineRepo) ListDebitLinesBySourceType(ctx context.Context, orgID 
 		if err := rows.Scan(&e.JournalID, &e.JournalDate, &e.AccountCode, &e.AccountName, &e.Description, &amount); err != nil {
 			return nil, fmt.Errorf("accounting: scanning expense entry row: %w", err)
 		}
-		e.Amount = money.MustNew(amount, "INR")
+		e.Amount = money.MustNew(amount, money.LedgerCurrency(ctx))
 		out = append(out, e)
 	}
 	return out, rows.Err()
@@ -574,8 +574,8 @@ func (r *ReconciliationRepo) ListByBankAccount(ctx context.Context, orgID, bankA
 			&rec.IsReconciled, &rec.ReconciledAt, &rec.ReconciledBy, &rec.CreatedAt); err != nil {
 			return nil, fmt.Errorf("accounting: scanning reconciliation: %w", err)
 		}
-		rec.OpeningBalance = money.MustNew(opening, "INR")
-		rec.ClosingBalance = money.MustNew(closing, "INR")
+		rec.OpeningBalance = money.MustNew(opening, money.LedgerCurrency(ctx))
+		rec.ClosingBalance = money.MustNew(closing, money.LedgerCurrency(ctx))
 		out = append(out, &rec)
 	}
 	return out, rows.Err()
