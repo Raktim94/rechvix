@@ -42,7 +42,10 @@
       "calendar": "Calendrier",
       "integrations": "Intégrations",
       "backup": "Sauvegarde",
-      "settings": "Paramètres"
+      "settings": "Paramètres",
+      "crm": "CRM",
+      "service": "Service sur site",
+      "sepa": "Prélèvement SEPA"
     }
   },
   "shell": {
@@ -247,5 +250,48 @@
     "adding": "Ajout…",
     "couldNotCreateCustomer": "Impossible de créer ce client.",
     "couldNotCreateDistributor": "Impossible de créer ce distributeur."
+  },
+  "verifactu": {
+    "heading": "VERI*FACTU (Espagne)",
+    "intro": "Chaque facture que vous émettez ou annulez est ajoutée à une chaîne infalsifiable et peut être envoyée à l'administration fiscale espagnole (AEAT). Les factures doivent être en euros. Cela ne dépose aucune déclaration fiscale.",
+    "toDo": "Avant de l'activer ou d'envoyer des enregistrements :",
+    "environment": "Environnement AEAT",
+    "envTest": "Test (portail de tests externes de l'AEAT)",
+    "envProd": "Production",
+    "installation": "Numéro d'installation",
+    "enable": "Activer VERI*FACTU",
+    "disable": "Désactiver",
+    "on": "Activé : les nouvelles factures sont enregistrées.",
+    "saveFailed": "Impossible d'enregistrer ces paramètres.",
+    "certificate": "Certificat électronique",
+    "certOk": "Certificat chargé : {{subject}}, valable jusqu'au {{date}}.",
+    "certNone": "Pas encore de certificat. L'AEAT exige le certificat électronique de l'entreprise (.p12 ou .pfx) pour recevoir les enregistrements.",
+    "certFile": "Fichier du certificat",
+    "certPassword": "Mot de passe du certificat",
+    "upload": "Téléverser le certificat",
+    "uploading": "Téléversement…",
+    "uploadFailed": "Impossible de lire ce certificat.",
+    "register": "Registre de facturation",
+    "registerCount": "{{records}} enregistrements, {{pending}} pas encore acceptés par l'AEAT.",
+    "sendNow": "Envoyer à l'AEAT maintenant",
+    "sending": "Envoi…",
+    "sendFailed": "Impossible d'envoyer à l'AEAT.",
+    "verify": "Vérifier la chaîne",
+    "exportXml": "Télécharger les enregistrements (XML)",
+    "chainOk": "La chaîne de {{records}} enregistrements est intacte.",
+    "chainBroken": "La chaîne est rompue à l'enregistrement {{seq}} : {{message}}",
+    "colType": "Type",
+    "colInvoice": "Facture",
+    "colDate": "Date",
+    "colTotal": "Total",
+    "colStatus": "Statut",
+    "cancel": "Annulation",
+    "status": {
+      "PENDING": "En attente d'envoi",
+      "ACCEPTED": "Accepté par l'AEAT",
+      "ACCEPTED_WITH_ERRORS": "Accepté avec erreurs",
+      "REJECTED": "Rejeté",
+      "ERROR": "Échec de l'envoi, nouvel essai prévu"
+    }
   }
 }

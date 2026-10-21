@@ -121,10 +121,6 @@ type DebitItem struct {
 	SequenceType string // FRST or RCUR
 }
 
-type tx struct {
-	XMLName xml.Name
-}
-
 func esc(s string) string {
 	var b bytes.Buffer
 	_ = xml.EscapeText(&b, []byte(s))

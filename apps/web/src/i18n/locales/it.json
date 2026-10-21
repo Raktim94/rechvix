@@ -42,7 +42,10 @@
       "calendar": "Calendario",
       "integrations": "Integrazioni",
       "backup": "Backup",
-      "settings": "Impostazioni"
+      "settings": "Impostazioni",
+      "crm": "CRM",
+      "service": "Assistenza tecnica",
+      "sepa": "Addebito SEPA"
     }
   },
   "shell": {
@@ -247,5 +250,48 @@
     "adding": "Aggiunta in corso…",
     "couldNotCreateCustomer": "Impossibile creare questo cliente.",
     "couldNotCreateDistributor": "Impossibile creare questo distributore."
+  },
+  "verifactu": {
+    "heading": "VERI*FACTU (Spagna)",
+    "intro": "Ogni fattura che emetti o annulli viene aggiunta a una catena a prova di manomissione e può essere inviata all'Agenzia delle Entrate spagnola (AEAT). Le fatture devono essere in euro. Non presenta dichiarazioni fiscali.",
+    "toDo": "Prima di attivarlo o inviare i record:",
+    "environment": "Ambiente AEAT",
+    "envTest": "Test (portale di test esterni dell'AEAT)",
+    "envProd": "Produzione",
+    "installation": "Numero di installazione",
+    "enable": "Attiva VERI*FACTU",
+    "disable": "Disattiva",
+    "on": "Attivo: le nuove fatture vengono registrate.",
+    "saveFailed": "Impossibile salvare queste impostazioni.",
+    "certificate": "Certificato elettronico",
+    "certOk": "Certificato caricato: {{subject}}, valido fino al {{date}}.",
+    "certNone": "Nessun certificato. L'AEAT richiede il certificato elettronico dell'azienda (.p12 o .pfx) per ricevere i record.",
+    "certFile": "File del certificato",
+    "certPassword": "Password del certificato",
+    "upload": "Carica il certificato",
+    "uploading": "Caricamento…",
+    "uploadFailed": "Impossibile leggere questo certificato.",
+    "register": "Registro di fatturazione",
+    "registerCount": "{{records}} record, {{pending}} non ancora accettati dall'AEAT.",
+    "sendNow": "Invia ora all'AEAT",
+    "sending": "Invio…",
+    "sendFailed": "Impossibile inviare all'AEAT.",
+    "verify": "Verifica la catena",
+    "exportXml": "Scarica i record (XML)",
+    "chainOk": "La catena di {{records}} record è integra.",
+    "chainBroken": "La catena si interrompe al record {{seq}}: {{message}}",
+    "colType": "Tipo",
+    "colInvoice": "Fattura",
+    "colDate": "Data",
+    "colTotal": "Totale",
+    "colStatus": "Stato",
+    "cancel": "Annullamento",
+    "status": {
+      "PENDING": "In attesa di invio",
+      "ACCEPTED": "Accettato dall'AEAT",
+      "ACCEPTED_WITH_ERRORS": "Accettato con errori",
+      "REJECTED": "Rifiutato",
+      "ERROR": "Invio non riuscito, nuovo tentativo previsto"
+    }
   }
 }
