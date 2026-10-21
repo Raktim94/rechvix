@@ -7,6 +7,10 @@ import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
 import { EMPTY_TAX_DETAILS, TaxDetailsFields, taxDetailsReady, type TaxDetails } from "../../components/TaxDetailsFields";
+import { useAuth } from "../../auth/AuthProvider";
+import { invoiceCurrencyKey, readInvoiceCurrency } from "../../lib/invoicePreferences";
+import { LANGUAGES } from "../../i18n";
+import { useCurrencies } from "../../lib/reference";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
@@ -165,6 +169,17 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
   const org = useOrgContext();
   const supplierCountry = org.legalEntity?.CountryCode ?? "IN";
   const isIndia = supplierCountry === "IN";
+  const currencies = useCurrencies();
+  const baseCurrency = org.organisation?.DefaultCurrencyCode || "INR";
+  const [chosenCurrency, setChosenCurrency] = useState("");
+  const { session } = useAuth();
+  const preferenceKey = invoiceCurrencyKey(session?.organisationId ?? "", session?.userId ?? "", org.legalEntity?.ID ?? "");
+  const invoiceCurrency = chosenCurrency || readInvoiceCurrency(preferenceKey, baseCurrency);
+  const [invoiceLanguage, setInvoiceLanguage] = useState("");
+  const [exchangeRate, setExchangeRate] = useState("");
+  const foreignCurrency = invoiceCurrency !== baseCurrency;
+  const validRate = !foreignCurrency || (/^\d+(\.\d{1,12})?$/.test(exchangeRate) && Number(exchangeRate) > 0);
+
 
   const [documentId, setDocumentId] = useState<string | undefined>(resumeDocumentId);
   const [documentType, setDocumentType] = useState<DocumentType>("TAX_INVOICE");
@@ -281,6 +296,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
     const params = new URLSearchParams({ q: query });
     if (org.warehouse) params.set("warehouse_id", org.warehouse.ID);
     if (priceListId) params.set("price_list_id", priceListId);
+    if (documentId) params.set("document_id", documentId);
     const res = await api.get<{ results: BillingLookupResult[] | null }>(`/sales/billing-lookup?${params.toString()}`);
     return res.results ?? [];
   }
@@ -324,9 +340,11 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
               equivalence_surcharge: taxDetails.surcharge,
               customer_tax_registration_id: taxDetails.registrationId || undefined,
             }),
-        currency_code: org.organisation.DefaultCurrencyCode || "INR",
-        base_currency_code: org.organisation.DefaultCurrencyCode || "INR",
-        exchange_rate: "1",
+        currency_code: invoiceCurrency,
+        base_currency_code: baseCurrency,
+        exchange_rate: foreignCurrency ? exchangeRate : "1",
+        invoice_language: invoiceLanguage || org.legalEntity.InvoiceLanguage || "",
+
         pricing_mode: !isIndia && taxDetails.pricesIncludeTax ? "INCLUSIVE" : "EXCLUSIVE",
       });
     },
@@ -646,11 +664,32 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             </div>
           ) : null}
 
+          <div className={ui.field}>
+            <label htmlFor="invoice-language">Invoice language</label>
+            <select id="invoice-language" className={ui.select} disabled={!!documentId} value={doc.data?.document.InvoiceLanguage ?? invoiceLanguage} onChange={e => setInvoiceLanguage(e.target.value)}>
+              <option value="">Company default</option>
+              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
+            </select>
+          </div>
+          <div className={ui.field}>
+            <label htmlFor="invoice-currency">Invoice currency</label>
+            <select id="invoice-currency" className={ui.select} disabled={!!documentId || currencies.isPending || currencies.isError} value={doc.data?.document.CurrencyCode ?? invoiceCurrency} onChange={e => { setChosenCurrency(e.target.value); setExchangeRate(""); }}>
+              <option value={baseCurrency}>{baseCurrency} — book currency</option>
+              {(currencies.data ?? []).filter(c => c.code !== baseCurrency).map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+            </select>
+            {currencies.isError ? <p role="alert">Could not load currencies. <button type="button" onClick={() => void currencies.refetch()}>Retry</button></p> : null}
+          </div>
+          {(doc.data?.document.CurrencyCode ? doc.data.document.CurrencyCode !== baseCurrency : foreignCurrency) ? <div className={ui.field}>
+            <label htmlFor="invoice-rate">Exchange rate: {baseCurrency} per 1 {doc.data?.document.CurrencyCode ?? invoiceCurrency}</label>
+            <input id="invoice-rate" className={ui.input} inputMode="decimal" value={doc.data?.document.ExchangeRate ?? exchangeRate} disabled={!!documentId} onChange={e => setExchangeRate(e.target.value)} aria-describedby="invoice-rate-help" />
+            <p id="invoice-rate-help" className={ui.muted}>Enter the rate agreed for this invoice. Catalogue prices are converted using this rate; books remain in {baseCurrency}.</p>
+          </div> : null}
+
           {!documentId ? (
             <button
               type="button"
               className={ui.btnPrimary}
-              disabled={!customer || (isIndia ? !placeOfSupply : !taxDetailsReady(supplierCountry, taxDetails)) || org.isPending || startSale.isPending}
+              disabled={!validRate || !customer || (isIndia ? !placeOfSupply : !taxDetailsReady(supplierCountry, taxDetails)) || org.isPending || startSale.isPending}
               onClick={() => startSale.mutate()}
             >
               {startSale.isPending ? "Starting…" : "Start sale"}

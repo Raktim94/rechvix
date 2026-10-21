@@ -6,14 +6,14 @@ Added 2026-10-21.
 
 English, Spanish, French, German, Italian, Portuguese, Dutch, Hindi. Files: `apps/web/src/i18n/locales/<code>.json`
 (English is the source of truth and the fallback for any missing key). Switch language from the avatar menu, or
-from the selector on the sign-in and first-run setup screens. The choice is stored in the browser only.
+from Settings → Language and currency, or the selector on the sign-in and first-run setup screens. The choice is stored in the browser only.
 
 **Translation status:** all non-English text was drafted by an AI model and has **not** been reviewed by native speakers.
 Have each reviewed before relying on it, especially tax and accounting wording.
 
 **Coverage:** navigation, command palette, sign-in, first-run setup, dashboard, quick access, and the new tax labels.
 Every other screen (sales, purchases, inventory, contacts, accounting, reports, settings, ...) is still English, and
-printed invoices/PDFs are not translated. Migrate screens by replacing literals with `t("...")` and adding keys.
+invoice labels are separately translated (see below). Migrate screens by replacing literals with `t("...")` and adding keys.
 
 ### Adding a language
 1. Copy `en.json` to `<code>.json` and translate every value (keep `{{placeholders}}`).
@@ -30,7 +30,7 @@ Amounts are formatted by `Intl.NumberFormat` from the ISO 4217 code, so decimals
 
 ## Invoices, fonts and numbering
 * PDF text: Western European text prints with the built-in fonts; other Latin-extended, Greek and Cyrillic text switches
-  the document to an embedded Unicode font; Devanagari, CJK and Arabic cannot be printed (docs/tax-regimes.md).
+  the document to an embedded Unicode font; Devanagari uses browser-print HTML with embedded Noto Sans Devanagari (OFL). CJK and Arabic remain unsupported by the server PDF renderer.
 * Numbers: calendar-year series outside India, April-March series in India.
 * Country and currency names in the UI come from the browser (`Intl.DisplayNames`) in the interface language, and lists are sorted by that language.
 * Codes generated from names (branch, warehouse, SKU) fold accents ("Almacén" -> "ALMACEN") instead of dropping them.
@@ -45,8 +45,7 @@ Amounts are formatted by `Intl.NumberFormat` from the ISO 4217 code, so decimals
 * Served at `GET /api/v1/reference/countries`, `/currencies`, `/tax?country=XX` (public, cacheable).
 * A company's books and reports are denominated in its organisation currency. This was previously hard-wired to INR in
   accounting and reporting (labels and precision); it now follows the organisation (`money.LedgerCurrency`, set by
-  `database.Pool.RunScoped`). Documents keep their own currency; **multi-currency books (foreign-currency invoices with
-  exchange-rate revaluation) are not implemented**: base-currency documents only.
+  `database.Pool.RunScoped`). Documents may use a foreign currency with an explicit agreed exchange rate (company-currency units per invoice-currency unit). The ledger remains in the organisation currency. Automatic rate feeds, exchange-rate revaluation and realised FX gain/loss accounting are not implemented.
 
 ## Tax
 
@@ -58,3 +57,20 @@ See `docs/tax-regimes.md` (India GST, Spain, UK, EU, US state sales tax).
   (WCAG 2.0/2.1/2.2 A+AA and best-practice) on sign-in, setup, dashboard and the open user menu.
 * Existing Playwright suite (`tests/e2e`) passes.
 * Not verified: screen readers, real-device mobile, translations by native speakers.
+
+## Invoice controls and Hindi printing (2026-10-21)
+
+- Settings exposes interface language and a server-stored company invoice language. Hindi is enabled by migration 0048, after 0047.
+- Settings' new-invoice currency is a browser preference scoped to organisation, user and company. It does not alter book currency. Storage failures are reported; it does not follow users to other devices.
+- The invoice screen chooses language, currency and an explicit positive exchange rate before starting the draft. Those fields are then read-only. Catalogue base-currency prices are converted using exact decimal arithmetic and rounded to the invoice currency's minor unit; unsupported cross-rates fail rather than relabel money.
+- The print language selector overrides only that copy. `/sales/documents/{id}/print?lang=hi` automatically returns UTF-8 HTML. `format=html` explicitly requests browser output. The authenticated invoice read/permission path is unchanged.
+- The browser shapes Devanagari and offers Print/Save as PDF. The font and optional logo are embedded, with no font CDN, JavaScript, or network dependency. A stylesheet hash scopes CSP; invoice text is HTML-escaped. Themes remain available for the existing server PDF path; the browser path currently uses one plain invoice style.
+- Devanagari text triggers browser printing even when labels are English. Direct server-PDF generation rejects Devanagari instead of emitting missing glyphs. Existing integrations requiring a server-generated PDF (including PDF share delivery) do not yet gain Hindi attachments; use the authenticated browser-print path.
+- Hindi labels are draft translations and require native review. Untranslated tax explanations use English fallback. This does not change tax treatment or provide return filing.
+
+### Follow-up validation
+- Full Go unit suite, Go vet, staticcheck, frontend build/lint/unit tests and locale parity passed locally. Existing lint warnings remain.
+- Full integration suite passed on disposable local PostgreSQL 18 using the non-owning runtime role; fresh migrations include 0048. Additional targeted coverage checks multi-line product/category summaries and credit-note netting at original FX rates.
+- Five Playwright tests pass: existing sign-in accessibility/keyboard tests plus fixture-backed Settings → invoice preference workflows at 375/768/1440px. Targeted axe checks cover the new invoice controls. These UI fixtures do not claim live server or whole-app accessibility coverage.
+- Screenshots inspected at each width; Hindi HTML rendered in Chromium with the embedded font loaded, and browser PDF output generated. No native-speaker, screen-reader or physical-device review claimed.
+- govulncheck: zero vulnerabilities reached by the application; two advisory findings in required modules were not called.

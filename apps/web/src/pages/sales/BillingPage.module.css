@@ -4,7 +4,7 @@
    into a bare 180px column, which is what was overflowing into neighbours. */
 .headerGrid {
   display: grid;
-  grid-template-columns: 200px minmax(280px, 1fr) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
   align-items: end;
 }
@@ -330,3 +330,5 @@
   font-size: var(--text-sm);
   margin-top: var(--space-2);
 }
+
+.headerGrid select, .headerGrid input, .headerGrid > button {min-height:44px}

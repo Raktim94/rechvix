@@ -5,6 +5,10 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { LanguageSelect } from "../../components/LanguageSelect";
+import { invoiceCurrencyKey, readInvoiceCurrency, saveInvoiceCurrency } from "../../lib/invoicePreferences";
+import { useCurrencies } from "../../lib/reference";
+import { LANGUAGES } from "../../i18n";
 import modal from "../../components/Modal.module.css";
 import { PasswordInput } from "../../components/PasswordInput";
 import ui from "../../components/ui.module.css";
@@ -1162,6 +1166,49 @@ function BranchesPanel({ legalEntityId }: { legalEntityId: string }) {
   );
 }
 
+function InvoiceLanguageForm({ legalEntity }: { legalEntity: LegalEntity }) {
+  const { session } = useAuth();
+  const currencies = useCurrencies();
+  const preferenceKey = invoiceCurrencyKey(session?.organisationId ?? "", session?.userId ?? "", legalEntity.ID);
+  const [currency, setCurrency] = useState(() => readInvoiceCurrency(preferenceKey, legalEntity.BaseCurrencyCode));
+  const [currencyStatus, setCurrencyStatus] = useState("");
+  const queryClient = useQueryClient();
+  const [language, setLanguage] = useState(legalEntity.InvoiceLanguage || "");
+  const save = useMutation({
+    mutationFn: () => api.put(`/legal-entities/${legalEntity.ID}/invoice-language`, { language }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["legal-entities"] }),
+  });
+  return <section className={layout.panel} aria-labelledby="invoice-preferences">
+    <h2 id="invoice-preferences">Language and currency</h2>
+    <LanguageSelect />
+    <div className={ui.field} style={{ marginTop: 16 }}>
+      <label htmlFor="preferred-invoice-currency">New invoice currency (this browser)</label>
+      <select id="preferred-invoice-currency" className={ui.select} value={currency} disabled={currencies.isPending || currencies.isError} onChange={e => {
+        setCurrency(e.target.value);
+        setCurrencyStatus(saveInvoiceCurrency(preferenceKey, e.target.value) ? "Currency preference saved." : "Browser storage is unavailable; this preference could not be saved.");
+      }}>
+        <option value={legalEntity.BaseCurrencyCode}>{legalEntity.BaseCurrencyCode} — book currency</option>
+        {(currencies.data ?? []).filter(c => c.code !== legalEntity.BaseCurrencyCode).map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+      </select>
+      {currencies.isError ? <p role="alert">Could not load currencies. <button type="button" onClick={() => void currencies.refetch()}>Retry</button></p> : null}
+      {currencyStatus ? <p role="status">{currencyStatus}</p> : null}
+    </div>
+    <form onSubmit={(event) => { event.preventDefault(); save.mutate(); }} style={{ marginTop: 16 }}>
+      <div className={ui.field}>
+        <label htmlFor="invoice-language-default">Default invoice language</label>
+        <select id="invoice-language-default" className={ui.select} value={language} onChange={(e) => { setLanguage(e.target.value); save.reset(); }}>
+          <option value="">Company country default</option>
+          {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
+        </select>
+      </div>
+      <p className={ui.muted}>Book currency: {legalEntity.BaseCurrencyCode}. Choose another invoice currency and its exchange rate when starting a sale. Changing print language does not change tax treatment.</p>
+      <button className={ui.btnPrimary} type="submit" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save invoice language"}</button>
+      {save.isSuccess ? <p role="status">Saved.</p> : null}
+      {save.isError ? <p role="alert">{save.error instanceof Error ? save.error.message : "Could not save invoice language."}</p> : null}
+    </form>
+  </section>;
+}
+
 export function SettingsPage() {
   const org = useOrgContext();
 
@@ -1216,6 +1263,8 @@ export function SettingsPage() {
           </>
         )}
       </div>
+
+      {org.legalEntity ? <InvoiceLanguageForm key={org.legalEntity.ID} legalEntity={org.legalEntity} /> : null}
 
       {org.legalEntity ? (
         // Same remount-on-save-success key technique as GSTDetailsForm

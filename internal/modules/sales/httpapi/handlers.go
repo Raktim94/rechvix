@@ -85,7 +85,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrBaseCurrencyMismatch):
 		httpx.WriteError(w, r, httpx.NewBadRequest("BASE_CURRENCY_MISMATCH", "The base currency must be your company's currency."))
 	case errors.Is(err, domain.ErrInvalidInvoiceLanguage):
-		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INVOICE_LANGUAGE", "That invoice language is not supported. Choose English, Spanish, French, German, Italian, Portuguese or Dutch."))
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INVOICE_LANGUAGE", "That invoice language is not supported. Choose English, Spanish, French, German, Italian, Portuguese, Dutch or Hindi (browser print)."))
 	case errors.Is(err, domain.ErrInvalidDocumentType):
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_DOCUMENT_TYPE", "That is not a recognized sales document type."))
 	case errors.Is(err, domain.ErrDocumentNotDraft):
@@ -459,7 +459,7 @@ func (h *Handlers) printDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("lang")))
 	if !orgapp.ValidInvoiceLanguage(lang) {
-		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INVOICE_LANGUAGE", "lang must be one of en, es, fr, de, it, pt, nl."))
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INVOICE_LANGUAGE", "lang must be one of en, es, fr, de, it, pt, nl, hi."))
 		return
 	}
 	data, err := h.svc.BuildInvoiceDataInLanguage(r.Context(), principal(r), id, lang)
@@ -468,6 +468,18 @@ func (h *Handlers) printDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.enrichWithEWayBill(r.Context(), principal(r).OrganisationID, id, data)
+	if r.URL.Query().Get("format") == "html" || printing.NeedsBrowserPrint(*data) {
+		body, err := printing.RenderHTML(tpl, *data)
+		if err != nil {
+			httpx.WriteError(w, r, &httpx.AppError{Status: 500, Code: "RENDER_FAILED", Message: "Could not render the invoice.", Cause: err})
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("Content-Security-Policy", printing.HTMLContentSecurityPolicy(body))
+		_, _ = w.Write(body)
+		return
+	}
 	pdfBytes, err := printing.RenderPDF(tpl, theme, *data)
 	if err != nil {
 		httpx.WriteError(w, r, &httpx.AppError{Status: http.StatusInternalServerError, Code: "RENDER_FAILED", Message: "Could not render the document.", Cause: err})
@@ -529,6 +541,30 @@ func (h *Handlers) billingLookup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
+	}
+	if v := r.URL.Query().Get("document_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "document_id must be a UUID."))
+			return
+		}
+		doc, _, err := h.svc.GetDocument(r.Context(), principal(r), id)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		for i := range results {
+			price := results[i].UnitPrice
+			if price == nil || price.Currency() == doc.CurrencyCode {
+				continue
+			}
+			converted, err := app.BillingPriceInDocumentCurrency(*price, doc)
+			if err != nil {
+				httpx.WriteError(w, r, httpx.NewBadRequest("PRICE_CURRENCY_MISMATCH", err.Error()))
+				return
+			}
+			results[i].UnitPrice = &converted
+		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"results": results})
 }

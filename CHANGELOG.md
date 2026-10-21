@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Invoice language, currency and credit-note follow-up
+- Settings: interface language, company invoice-language default, and scoped browser preference for new-invoice currency.
+- Invoice screen: explicit language/currency/rate controls; exact-decimal conversion of catalogue prices at the invoice rate.
+- Hindi browser-print invoices with embedded Devanagari font, safe HTML and scoped CSP; migration 0048 enables Hindi. Print-copy overrides do not change saved choices.
+- Sales summaries subtract credit notes/returns; product/category grouping no longer repeats document totals.
+- Compliance limits remain explicit; no return filing, VERI*FACTU, UK MTD submission, local US tax/nexus or automatic FX revaluation added.
+
+
 ### Added
 - Tax: Spain (IVA incl. recargo de equivalencia), United Kingdom and all 27 EU member states (VAT, intra-EU B2B reverse charge, exports), and US state sales tax, behind a country dispatcher; India GST is unchanged (docs/tax-regimes.md). Migrations 0044-0046.
 - All 165 ISO 4217 currencies and 250 countries; reference endpoints; first-run setup chooses country, currency and timezone.

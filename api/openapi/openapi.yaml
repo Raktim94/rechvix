@@ -1195,6 +1195,26 @@ paths:
   # Verified against internal/modules/sales/domain/domain.go and
   # internal/modules/sales/app/lookup.go.
   # ============================================================
+  /legal-entities/{id}/invoice-language:
+    put:
+      tags: [Organisation]
+      summary: Set the company invoice language default; requires settings.manage.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [language]
+              properties:
+                language: { type: string, enum: ["", en, es, fr, de, it, pt, nl, hi] }
+      responses:
+        "200": { description: Updated legal entity. }
+        "400": { description: Unsupported language. }
+        "403": { description: Permission denied. }
+
   /sales/documents:
     get:
       tags: [Sales]
@@ -1231,7 +1251,8 @@ paths:
                 price_list_id: { type: string, format: uuid, nullable: true }
                 currency_code: { type: string }
                 base_currency_code: { type: string }
-                exchange_rate: { type: string, default: "1" }
+                exchange_rate: { type: string, description: Positive company-currency units per invoice-currency unit. Required for foreign currency. }
+                invoice_language: { type: string, enum: ["", en, es, fr, de, it, pt, nl, hi] }
                 pricing_mode: { type: string, enum: [INCLUSIVE, EXCLUSIVE] }
                 customer_reference: { type: string }
                 transporter: { type: string }
@@ -1324,17 +1345,21 @@ paths:
   /sales/documents/{id}/print:
     get:
       tags: [Sales]
-      summary: Render a finalized document to PDF.
+      summary: Render a finalized document to PDF or browser-print HTML.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - name: template
           in: query
           schema: { $ref: "#/components/schemas/PrintTemplate" }
           description: Defaults to A4_GST_INVOICE.
+        - { name: lang, in: query, schema: { type: string, enum: [en, es, fr, de, it, pt, nl, hi] }, description: Overrides this printed copy only. Hindi uses browser-print HTML. }
+        - { name: format, in: query, schema: { type: string, enum: [html] }, description: Explicitly request browser-print HTML. Devanagari automatically selects HTML. }
       responses:
         "200":
-          description: PDF bytes.
-          content: { application/pdf: { schema: { type: string, format: binary } } }
+          description: PDF bytes, or escaped self-contained UTF-8 HTML for browser printing.
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+            text/html: { schema: { type: string } }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /sales/billing-lookup:
@@ -1344,6 +1369,7 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string } }
         - { name: warehouse_id, in: query, schema: { type: string, format: uuid }, description: When set, stock quantities are scoped to this warehouse. }
+        - { name: document_id, in: query, schema: { type: string, format: uuid }, description: Authorised invoice whose stored rate converts base-currency catalogue prices to invoice currency. }
         - { name: price_list_id, in: query, schema: { type: string, format: uuid }, description: When set, unit_price resolves against this price list. }
       responses:
         "200":

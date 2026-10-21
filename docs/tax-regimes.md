@@ -23,7 +23,7 @@ test **and** in a real browser run. It does not mean filed: nothing here submits
 
 **Dependencies you must plan for (not implemented):**
 * **India:** e-Invoice (IRP) and e-Way Bill run against the government *sandbox* or the mock provider until real credentials are configured; GST returns are filed on the GST portal, not from here; reverse charge, ITC reversal, ineligible ITC and TCS/TDS are not modelled.
-* **Spain:** invoicing software must comply with **VERI\*FACTU / the Reglamento de sistemas informáticos de facturación** (hash-chained records, QR, submission to the AEAT). Per the Agencia Tributaria (citing RDL 15/2025), systems must be adapted **before 1 January 2027 for companies (Impuesto sobre Sociedades) and before 1 July 2027 for everyone else**. Rechvix does not implement it, so it is acceptable for Spanish invoicing only until then. Modelo 303 / 390, SII, FacturaE/Peppol, Canary Islands (IGIC), Ceuta and Melilla (IPSI) are not implemented.
+* **Spain:** RRSIF/VERI*FACTU is NOT implemented. AEAT's approved-deadline note lists 1 January 2027 for corporate-income-tax taxpayers and 1 July 2027 for the other taxpayers in scope. However, the Ministry's 5 October 2026 notice proposes aligning outstanding obligations to October 2028; it says the alignment is pending approval. Do not treat that proposal as enacted law or describe Rechvix as Spanish-compliant before any deadline. Recheck the official sources before release: [AEAT approved-deadline note](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/nota-informativa-ampliacion-plazo-adaptacion-facturacion.html), [Ministry proposal](https://www.hacienda.gob.es/sgt/gabsehacienda/nota-informativa-verifactu.pdf). RRSIF compliance and VERI*FACTU submission mode are distinct concepts. Modelo 303/390, SII, FacturaE/Peppol, IGIC and IPSI are not implemented.
 * **United Kingdom:** returns for VAT-registered businesses must be submitted through Making Tax Digital compatible software with digital links; this system only prepares the figures. Northern Ireland goods (Windsor Framework), flat-rate and cash-accounting schemes are not implemented.
 * **United States:** no local (city/county/district) tax, no nexus determination, no product-specific taxability by state, no marketplace-facilitator rules, no filing. You choose the states where you collect.
 * **EU (all 27 states):** sales to consumers in another member state (OSS), reverse-charge purchases and import VAT are refused with a clear message.
@@ -101,12 +101,12 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 * **Parties:** the customer's default billing address and tax ID print under "Bill To"; a date of supply prints when it differs from the issue date. Bank details print as IBAN and BIC/SWIFT outside India.
 * **Text:** Windows-1252 text (all Western European languages and the euro sign) uses the built-in fonts and every theme
   looks as before; any other text (for example Polish, Czech, Hungarian, Greek, Cyrillic) switches that document to an
-  embedded Unicode font. Scripts that font lacks (Devanagari, CJK, Arabic) cannot be printed.
+  embedded Unicode font. Devanagari uses an embedded-font browser-print HTML path; CJK and Arabic remain unsupported by the server PDF renderer.
 
 ## Known gaps
 
 * Accounting's tax account is labelled "GST Output Tax Payable" for every country (numerically correct, label is India-specific).
-* The invoice language follows the seller's country; it cannot yet be chosen per customer or per document.
+* Invoice language precedence is one-copy print override → document setting → company setting → seller country. No per-customer language default yet.
 * A Spanish invoice must also carry items this system does not capture (for example the date of the transaction when it
   differs from the issue date, and the customer's address and NIF on full invoices to businesses); review the layout with
   your gestor. SII, VERI*FACTU, FacturaE/Peppol and other electronic-invoicing and real-time reporting regimes are not implemented.
@@ -115,3 +115,9 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 * Rates sourced from two secondary publications for the EU; the Commission's TEDB could not be fetched. Re-verify before filing.
 * The UI covers the sale and set-up path (setup, product tax category, invoice tax details, Settings tax ID and US collection states). Purchases, returns/credit notes, contacts' detail pages and reports are still India-shaped in places (HSN/GST wording).
 * Rate pack updates are code changes (new `RatePackVersion`); there is no admin UI to edit rates.
+
+## Release boundary for language/currency work
+
+No feature in this release files a tax return. UK VAT figures need separate MTD-compatible submission software ([HMRC](https://www.gov.uk/submit-vat-return/how-to-send-vat-return)); Rechvix does not implement that submission. India adapters remain sandbox/mock unless an operator deliberately configures and verifies a supported live provider; this work does not configure credentials or enable live submission. US coverage remains state base rates only, without local taxes or nexus determination.
+
+Foreign-currency invoice posting is available at an explicit stored rate, but automated FX revaluation is not. The sales summary now subtracts credit notes/returns and attributes product/category totals to snapshot lines. It is an operational document summary, not a tax return.

@@ -12,6 +12,7 @@ export interface LegalEntity {
   /** ISO 3166-1 alpha-2; selects the tax regime on the server. */
   CountryCode: string;
   BaseCurrencyCode: string;
+  InvoiceLanguage: string;
   /** US states ("US-CA") where sales tax is collected. */
   USCollectionRegions: string[];
   /** Seller tax ID outside India (NIF, VAT number, EIN); India uses GSTIN. */

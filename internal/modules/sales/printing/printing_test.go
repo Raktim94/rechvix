@@ -215,7 +215,7 @@ func TestEveryLanguageHasACompleteLabelSet(t *testing.T) {
 		// Every Western European label set must be printable with the built-in fonts.
 		everyLabel := []string{l.Description, l.TaxPct, l.GrandTotal, l.Signature, l.SupplyDate, l.BillTo}
 		for _, s := range everyLabel {
-			if !fitsWindows1252(s) {
+			if lang != "hi" && !fitsWindows1252(s) {
 				t.Errorf("%s: label %q has characters the built-in fonts cannot print", lang, s)
 			}
 		}
@@ -253,6 +253,23 @@ func TestSpanishLabelsAndPolishNamePrintTogether(t *testing.T) {
 	for _, want := range []string{"Zażółć Gęślą Jaźń", "FACTURA", "Descripción", "Base imponible:", "Firma autorizada"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q on the Unicode-font path\n%s", want, text)
+		}
+	}
+}
+
+func TestGSTInvoiceLanguageDoesNotChangeTaxColumns(t *testing.T) {
+	d := sampleData()
+	d.GenericTax = false
+	d.Language = "es"
+	d.DocumentTypeLabel = "TAX INVOICE"
+	pdf, err := RenderPDF(TemplateA4GSTInvoice, ThemeClassic, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := pdfText(t, pdf)
+	for _, want := range []string{"FACTURA", "Descripción", "CGST", "SGST", "IGST"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in GST Spanish copy: %s", want, text)
 		}
 	}
 }

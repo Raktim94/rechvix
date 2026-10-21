@@ -434,7 +434,7 @@ func (s *Service) UpdateLegalEntityGST(ctx context.Context, principal permission
 }
 
 // InvoiceLanguages are the languages an invoice can be printed in outside India.
-var InvoiceLanguages = []string{"en", "es", "fr", "de", "it", "pt", "nl"}
+var InvoiceLanguages = []string{"en", "es", "fr", "de", "it", "pt", "nl", "hi"}
 
 // ValidInvoiceLanguage reports whether code is "" (the country's own language) or a supported language.
 func ValidInvoiceLanguage(code string) bool {

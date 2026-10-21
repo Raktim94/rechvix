@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"rechvix/internal/modules/sales/domain"
 
 	"github.com/google/uuid"
 
@@ -101,4 +103,20 @@ func (s *Service) billingLookupResult(
 		}
 	}
 	return result
+}
+
+// BillingPriceInDocumentCurrency converts a catalogue price using the invoice's
+// agreed rate, never guesses a cross-rate, and rounds to the invoice minor unit.
+func BillingPriceInDocumentCurrency(price money.Money, doc *domain.Document) (money.Money, error) {
+	if price.Currency() == doc.CurrencyCode {
+		return price, nil
+	}
+	if price.Currency() != doc.BaseCurrencyCode || !doc.ExchangeRate.IsPositive() {
+		return money.Money{}, fmt.Errorf("catalogue price currency cannot be converted using this invoice rate")
+	}
+	converted, err := money.New(price.Decimal().Div(doc.ExchangeRate), doc.CurrencyCode)
+	if err != nil {
+		return money.Money{}, err
+	}
+	return converted.Round(money.RoundHalfUp), nil
 }

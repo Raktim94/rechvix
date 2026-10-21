@@ -133,6 +133,10 @@ func styleFor(th Theme) style {
 // every amount is already a caller-supplied, pre-rounded string (see
 // data.go's InvoiceData).
 func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
+	if NeedsBrowserPrint(data) {
+		return nil, fmt.Errorf("printing: Devanagari requires the browser-print HTML path")
+	}
+
 	lo := layoutFor(tpl)
 	st := styleFor(th)
 	pdf := fpdf.New("P", "mm", "", "")
@@ -150,12 +154,8 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 		data = forBuiltInFonts(data)
 	}
 
-	// The Indian GST layout keeps its fixed English wording; every other country
-	// prints the labels of its own language (see labels.go).
-	lb := LabelsFor("en")
-	if data.GenericTax {
-		lb = LabelsFor(data.Language)
-	}
+	// Language is independent of tax regime; GST component names stay unchanged.
+	lb := LabelsFor(data.Language)
 	if st.fontFamily != unicodeFamily {
 		lb = labelsForBuiltInFonts(lb)
 	}
@@ -163,9 +163,7 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 	title := lo.titleOverride
 	if title == "" {
 		title = data.DocumentTypeLabel
-		if data.GenericTax {
-			title = lb.DocType(title)
-		}
+		title = lb.DocType(title)
 	}
 
 	drawHeader(pdf, data, lo, st, title, lb)
@@ -340,7 +338,7 @@ func drawItemTable(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Lab
 		return
 	}
 	widths := []float64{8, 55, 18, 15, 15, 18, 18, 18, 18, 18}
-	headers := []string{"#", "Description", "HSN", "Qty", "Rate", "Taxable", "CGST", "SGST", "IGST", "Total"}
+	headers := []string{"#", lb.Description, "HSN", lb.Qty, lb.Rate, lb.Taxable, "CGST", "SGST", "IGST", lb.Total}
 	if data.GenericTax {
 		// VAT / sales tax: one combined Tax % and Tax column instead of CGST/SGST/IGST.
 		widths = []float64{8, 50, 22, 14, 18, 22, 16, 20, 24}
@@ -516,7 +514,7 @@ func drawSignatureBlock(pdf *fpdf.Fpdf, lo layout, st style, signatoryName strin
 	pdf.Ln(8)
 	setFont(pdf, lo, st, "", 9)
 	caption := "For Authorized Signatory"
-	if generic {
+	if generic || lb.Signature != LabelsFor("en").Signature {
 		caption = lb.Signature
 	}
 	pdf.CellFormat(0, 5, caption, "", 1, "R", false, 0, "")

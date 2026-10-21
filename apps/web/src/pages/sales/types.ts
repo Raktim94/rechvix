@@ -29,6 +29,9 @@ export interface SalesDocument {
   IssueDate: string;
   PlaceOfSupplyStateCode: string;
   CurrencyCode: string;
+  BaseCurrencyCode: string;
+  ExchangeRate: string;
+  InvoiceLanguage: string;
   GrandTotalAmount: Money | null;
   CreatedAt: string;
   FinalizedAt: string | null;

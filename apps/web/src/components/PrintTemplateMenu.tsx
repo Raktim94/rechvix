@@ -1,3 +1,4 @@
+import { LANGUAGES } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import styles from "./PrintTemplateMenu.module.css";
 import ui from "./ui.module.css";
@@ -17,6 +18,7 @@ export function PrintTemplateMenu({ documentId }: { documentId: string }) {
   const [open, setOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(getDefaultPrintTemplate);
   const [selectedTheme, setSelectedTheme] = useState(getDefaultPrintTheme);
+  const [language, setLanguage] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,12 +38,18 @@ export function PrintTemplateMenu({ documentId }: { documentId: string }) {
   }, [open]);
 
   const printUrl = (template: string, theme: string) =>
-    `/api/v1/sales/documents/${documentId}/print?template=${encodeURIComponent(template)}&theme=${encodeURIComponent(theme)}`;
+    `/api/v1/sales/documents/${documentId}/print?template=${encodeURIComponent(template)}&theme=${encodeURIComponent(theme)}${language ? `&lang=${encodeURIComponent(language)}` : ""}`;
 
   return (
     <div className={styles.wrap} ref={ref}>
+      <label className={styles.language}>Print language
+        <select aria-label="Print language" value={language} onChange={e => setLanguage(e.target.value)}>
+          <option value="">Invoice default</option>
+          {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
+        </select>
+      </label>
       <a href={printUrl(selectedTemplate, selectedTheme)} target="_blank" rel="noopener noreferrer" className={`${ui.btnSecondary} ${styles.printLink}`}>
-        Print / Download PDF
+        Print / Save PDF
       </a>
       <button type="button" className={`${ui.btnSecondary} ${styles.caret}`} aria-haspopup="menu" aria-expanded={open} aria-label="Choose invoice layout and design" onClick={() => setOpen((v) => !v)}>
         ▾

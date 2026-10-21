@@ -18,6 +18,7 @@ import (
 	reportingdomain "rechvix/internal/modules/reporting/domain"
 	salesapp "rechvix/internal/modules/sales/app"
 	salesdomain "rechvix/internal/modules/sales/domain"
+	"rechvix/internal/modules/sales/printing"
 	taxdomain "rechvix/internal/modules/taxation/domain"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/permissions"
@@ -532,9 +533,24 @@ func TestInvoiceLanguage_PrecedenceAndValidation(t *testing.T) {
 	if got := langOf(plain, ""); got != "es" {
 		t.Errorf("cleared setting: got %q, want es", got)
 	}
+	// Hindi is persisted by the additive migration and uses the browser renderer.
+	if _, err := orgSvc.UpdateLegalEntityInvoiceLanguage(ctx, fx.Principal, fx.LegalEntityID, "hi"); err != nil {
+		t.Fatal(err)
+	}
+	hindi := issue("hi")
+	data, err := salesSvc.BuildInvoiceData(ctx, fx.Principal, hindi.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !printing.NeedsBrowserPrint(*data) {
+		t.Fatal("Hindi invoice must use browser print")
+	}
+	if _, err := printing.RenderHTML(printing.TemplateA4GSTInvoice, *data); err != nil {
+		t.Fatal(err)
+	}
 	// 6. Unsupported values are rejected, never stored.
-	if _, err := orgSvc.UpdateLegalEntityInvoiceLanguage(ctx, fx.Principal, fx.LegalEntityID, "hi"); err == nil {
-		t.Error("Hindi is not a supported PDF invoice language and must be rejected")
+	if _, err := orgSvc.UpdateLegalEntityInvoiceLanguage(ctx, fx.Principal, fx.LegalEntityID, "xx"); err == nil {
+		t.Error("Unsupported invoice language must be rejected")
 	}
 	if _, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
 		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
@@ -625,14 +641,20 @@ func TestForeignCurrency_SpanishCompanyIssuesUSDInvoices(t *testing.T) {
 	wantLedger(t, cj, "4000", "183.66", "0")
 	wantLedger(t, cj, "2100", "38.57", "0")
 
-	// Reports are in company currency, each document at its own rate. NOTE: this report adds credit
-	// notes instead of subtracting them (existing behaviour, tracked as a known issue): 920 + 1111.14 + 222.23.
+	// Reports net credit notes at their original rate: 920 + 1111.14 - 222.23.
 	sum, err := reportingSvc.SalesSummary(ctx, fx.Principal, reportingdomain.Filter{}, reportingdomain.GroupByDay)
 	if err != nil || len(sum) == 0 {
 		t.Fatalf("SalesSummary: %v", err)
 	}
-	if got := sum[0].GrandTotal.StringFixed(0); got != "2253.37" || sum[0].GrandTotal.Currency() != "EUR" {
-		t.Errorf("sales summary total = %s %s, want 2253.37 EUR (documents converted at their own rates)", got, sum[0].GrandTotal.Currency())
+	if got := sum[0].GrandTotal.StringFixed(0); got != "1808.91" || sum[0].GrandTotal.Currency() != "EUR" {
+		t.Errorf("sales summary total = %s %s, want 1808.91 EUR (documents converted at their own rates)", got, sum[0].GrandTotal.Currency())
+	}
+	productSummary, err := reportingSvc.SalesSummary(ctx, fx.Principal, reportingdomain.Filter{}, reportingdomain.GroupByProduct)
+	if err != nil || len(productSummary) != 1 {
+		t.Fatalf("product summary: %+v %v", productSummary, err)
+	}
+	if got := productSummary[0].GrandTotal.StringFixed(0); got != "1808.91" {
+		t.Errorf("product total %s, want 1808.91", got)
 	}
 	tax, err := reportingSvc.TaxSummary(ctx, fx.Principal, reportingdomain.Filter{})
 	if err != nil {
@@ -673,5 +695,41 @@ func TestForeignCurrency_SpanishCompanyIssuesUSDInvoices(t *testing.T) {
 	})
 	if !errors.Is(perr, purchasesdomain.ErrForeignCurrencyUnsupported) {
 		t.Errorf("a USD purchase must be refused, got %v", perr)
+	}
+}
+
+// Two snapshot lines for one product must contribute their own values once.
+// Summing the joined document header would double both taxable and grand totals.
+func TestSalesSummary_ProductDoesNotRepeatDocumentTotals(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, acct, _ := newTestAccountingServices(t)
+	fx := setupRegimeFixture(t, ctx, "ES", "EUR", "STANDARD")
+	if err := acct.EnsureDefaultChartOfAccounts(ctx, fx.Principal, fx.Principal.OrganisationID); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocTaxInvoice, CurrencyCode: "EUR", BaseCurrencyCode: "EUR",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, price := range []string{"100", "50"} {
+		if _, err := salesSvc.AddLine(ctx, fx.Principal, salesapp.AddLineParams{DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS, Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, price)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := salesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID); err != nil {
+		t.Fatal(err)
+	}
+	report := newTestReportingService(t, acct)
+	for _, group := range []reportingdomain.GroupDimension{reportingdomain.GroupByProduct, reportingdomain.GroupByCategory} {
+		rows, err := report.SalesSummary(ctx, fx.Principal, reportingdomain.Filter{}, group)
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("%s: %+v %v", group, rows, err)
+		}
+		if rows[0].GrandTotal.StringFixed(0) != "181.50" || rows[0].TaxableAmount.StringFixed(0) != "150.00" {
+			t.Errorf("%s repeated totals: %+v", group, rows[0])
+		}
 	}
 }

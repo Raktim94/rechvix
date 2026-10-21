@@ -195,14 +195,26 @@ func (r *Repo) SalesSummary(ctx context.Context, f domain.Filter, group domain.G
 		from += join
 	}
 
+	sign := "CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -1 ELSE 1 END"
+	taxable := "td.total_taxable_amount * td.exchange_rate"
+	tax := "td.total_tax_amount * td.exchange_rate"
+	grand := "COALESCE(sd.grand_total_base_amount, sd.grand_total_amount)"
+	if needsLineJoin {
+		// Attribute each tax snapshot line once, rather than repeating the full
+		// document total for every product/category in the invoice.
+		from += " LEFT JOIN tax_lines tl ON tl.tax_document_id = sd.tax_document_id AND tl.line_ref = sdl.line_number::text"
+		taxable = "tl.taxable_amount * td.exchange_rate"
+		tax = "tl.total_tax_amount * td.exchange_rate"
+		grand = "tl.gross_amount * td.exchange_rate"
+	}
 	q := fmt.Sprintf(`
-		SELECT %s AS key, COUNT(DISTINCT sd.id), COALESCE(SUM(td.total_taxable_amount * td.exchange_rate),0),
-		       0::numeric, COALESCE(SUM(td.total_taxable_amount * td.exchange_rate),0), COALESCE(SUM(td.total_tax_amount * td.exchange_rate),0), COALESCE(SUM(COALESCE(sd.grand_total_base_amount, sd.grand_total_amount)),0)
+		SELECT %s AS key, COUNT(DISTINCT sd.id), COALESCE(SUM((%s) * (%s)),0),
+		       0::numeric, COALESCE(SUM((%s) * (%s)),0), COALESCE(SUM((%s) * (%s)),0), COALESCE(SUM((%s) * (%s)),0)
 		FROM %s
 		LEFT JOIN tax_documents td ON td.id = sd.tax_document_id
 		WHERE %s
 		GROUP BY %s
-		ORDER BY %s`, selectExpr, from, w.sql(), groupByExpr, groupByExpr)
+		ORDER BY %s`, selectExpr, sign, taxable, sign, taxable, sign, tax, sign, grand, from, w.sql(), groupByExpr, groupByExpr)
 	return r.scanSummary(ctx, q, w.args)
 }
 

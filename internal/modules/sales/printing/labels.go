@@ -74,6 +74,12 @@ func (l Labels) DocType(english string) string {
 }
 
 var labelSets = map[string]Labels{
+	"hi": {
+		DocTypes: map[string]string{"INVOICE": "बीजक", "TAX INVOICE": "कर बीजक", "CREDIT NOTE": "क्रेडिट नोट", "DEBIT NOTE": "डेबिट नोट", "QUOTATION": "मूल्य प्रस्ताव", "SALES ORDER": "बिक्री आदेश", "DELIVERY CHALLAN": "डिलीवरी चालान", "SALES RETURN": "बिक्री वापसी"},
+		No:       "क्रमांक", Date: "दिनांक", SupplyDate: "आपूर्ति की तारीख", BillTo: "बिल प्राप्तकर्ता", ShipTo: "प्रेषण पता", TaxID: "कर पहचान संख्या",
+		Phone: "फ़ोन", Email: "ईमेल", Web: "वेबसाइट", Description: "विवरण", TaxCategory: "कर श्रेणी", Qty: "मात्रा", Rate: "दर", Taxable: "कर योग्य", TaxPct: "कर %", Tax: "कर", Total: "कुल",
+		TaxableAmount: "कर योग्य राशि", RoundOff: "पूर्णांकन", GrandTotal: "कुल राशि", PrevBalance: "पिछला बकाया", AmountInWords: "राशि शब्दों में", Terms: "नियम और शर्तें", Signature: "अधिकृत हस्ताक्षर", BankDetails: "बैंक विवरण", Bank: "खाता / IBAN", BIC: "IFSC / BIC", ExchangeRate: "विनिमय दर", EquivalentIn: "समतुल्य राशि",
+	},
 	"en": {
 		TaxNames:   map[string]string{"VAT": "VAT", "IVA": "IVA", "RE": "Equivalence surcharge", "STATE_SALES_TAX": "State sales tax"},
 		DocTypes:   map[string]string{"INVOICE": "INVOICE", "TAX INVOICE": "TAX INVOICE", "CREDIT NOTE": "CREDIT NOTE", "DEBIT NOTE": "DEBIT NOTE", "QUOTATION": "QUOTATION", "PROFORMA INVOICE": "PROFORMA INVOICE", "SALES ORDER": "SALES ORDER", "DELIVERY CHALLAN": "DELIVERY NOTE", "SALES RETURN": "SALES RETURN", "RECURRING INVOICE": "RECURRING INVOICE"},
