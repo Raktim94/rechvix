@@ -25,6 +25,7 @@ Desktop captures include the complete contents of long pages. Click an image to 
 17. [Using a phone](#17-using-a-phone)
 18. [Daily checklist and troubleshooting](#18-daily-checklist-and-troubleshooting)
 19. [Page and screenshot coverage](#19-page-and-screenshot-coverage)
+20. [New in 0.15: selling, serving and collecting](#20-new-in-015-selling-serving-and-collecting)
 
 ## 1. First setup and signing in
 
@@ -451,3 +452,43 @@ All **22 concrete application route patterns** in `apps/web/src/router.tsx` were
 | Settings `/settings` | [22](docs/assets/tutorial/22-settings.png), [team 39](docs/assets/tutorial/39-team-member.png), [bank 40](docs/assets/tutorial/40-bank-account.png), [branch 41](docs/assets/tutorial/41-branch.png) |
 
 Additional screenshots document inline customer creation, invoice-linked payments, returns, print controls, Hindi print output and phone layouts. Screen capture does not imply every destructive or external workflow was executed: no production deployment, government filing, customer message, real API credential or database restore was performed. Spain, UK and US accountant ZIP downloads were exercised against the local demo server.
+
+## 20. New in 0.15: selling, serving and collecting
+
+These features have no screenshots in this tutorial yet. Each is opt-in and described honestly: what it does, and what you set up first.
+
+### Email, read receipts and reminders
+Set `SMTP_HOST`, `SMTP_FROM` and `PUBLIC_BASE_URL` on the server (see `docs/operations/deployment.md`). On a finalized document, **Email this document to** sends a secure link; the share-links list then shows *Opened n times* once the customer opens it. **Settings, Overdue reminders** emails customers whose invoices are past due, after the days you choose, repeating at the interval you choose, up to a maximum, in your own words.
+
+### Recurring invoices
+On a finalized tax invoice choose **Repeat this invoice**: weekly, monthly, quarterly or yearly, from a first date, optionally until an end date. Copies are created as drafts for review, or finalized automatically and emailed. Schedules appear under **Sales**, where they can be paused or deleted. A month-end start (31 January) stays on the last day of shorter months.
+
+### Workflow statuses
+**Settings, Workflow statuses** defines your own labels ("Waiting for client", "Ready to ship"). Pick one on a sale; it shows beside the invoice status in the list. It never changes the invoice itself.
+
+### Billing delivery notes together
+In **Sales**, tick finalized delivery notes (same customer, company and currency) and choose **Bill N delivery notes in one invoice**. The invoice does not take the goods out of stock again, because each delivery note already did. Cancelling the invoice frees the notes to be billed again.
+
+### Stock you can promise
+A product's stock panel shows what is promised on open sales orders and expected on open purchase orders, and the projected availability. **Settings, Prices from purchases** can raise (or follow) selling prices from the latest purchase cost plus a markup.
+
+### CRM
+**CRM** is a pipeline: add a lead, move it through stages, log calls, emails, meetings and notes, schedule follow-up tasks, and turn a lead into a customer when it is worth quoting.
+
+### Field service
+**Field service** records the equipment your customers own (with warranty and a map pin), incidents raised on it with priority, status, a work log and minutes spent, and maintenance plans that raise an incident automatically when a service falls due. Use "Use my location" to pin a site from a phone.
+
+### Electronic signature
+On a finalized document choose **Ask for a signature**. The customer opens the link, reads the document, types their name (and may draw their signature), ticks the consent box and signs. You see who signed and when, with a fingerprint of the document they were shown. The signed document prints a "signed by" line. This is a simple electronic signature, not a qualified one.
+
+### Online payments
+**Settings, Online payments**: add Stripe (and a webhook endpoint for `checkout.session.completed`) or PayPal credentials. On an invoice, **Create card payment link** or **Create PayPal link** and send the link. When the provider confirms payment a receipt is recorded on the invoice. Only invoices in the company currency can be paid online.
+
+### SEPA direct debit
+**Direct debit** (euros only): enter your SEPA creditor identifier and IBAN, record each customer's signed mandate, choose invoices and a collection date at least two business days ahead, and download the file for your bank. Mark the batch as sent when you hand it over, then record each collection as collected (a receipt is booked) or rejected.
+
+### Online shop and client area
+**Settings, Online shop and client area**: choose an address, tick the products to publish (they need a price on the default price list) and open the shop. Visitors browse at `/shop/<address>` and send orders, which arrive as draft sales orders. Customers open `/portal/<address>`, ask for a one-time sign-in link by email, and then open their documents, pay invoices and sign quotations.
+
+### Spain: VERI*FACTU
+See `docs/verifactu.md`. It records, prints the AEAT QR and sends to AEAT, but is not certified: it has not been run against AEAT's real test portal and the producer's *declaracion responsable* has not been made.
