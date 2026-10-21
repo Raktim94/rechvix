@@ -1,10 +1,11 @@
 # Rechvix 2.0 — Reuse matrix (Phase 0, preliminary)
 
-**Status: paths below come from the brief and have NOT been verified against the sibling
-repositories** (Mavri and Zulivio were not cloned or license-checked in Phase 0). Every row is
-therefore a *plan*; the decision column is provisional until Phase-N work opens the source,
-checks the license (and transitive deps) and preserves notices in `NOTICE.md`.
-Rechvix is AGPL-3.0; sibling code is only reusable if its license is compatible.
+**Status (2026-10-21): paths verified** against local clones of `Raktim94/mavri` and
+`Raktim94/zulivio` (all listed files/dirs exist). Both are AGPL-3.0, identical to Rechvix, and are
+owned by the same maintainer, so licensing does not block reuse. Still required: keep source
+attribution in `NOTICE.md` for copied files, and review transitive npm/Go dependencies before
+adding any. Decisions below remain provisional until each phase opens the specific source and
+confirms the semantics fit Postgres/Go.
 
 Decision key: Copy (verbatim, notice kept) · Adapt (port idea+UI, rewrite for Postgres/Go) · Reimplement · Do-not-use.
 

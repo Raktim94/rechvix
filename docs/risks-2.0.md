@@ -15,7 +15,7 @@ Severity: H/M/L. Status: Open unless stated. Evidence refers to this audit (2026
 | R-09 | Webhook outbound SSRF defense unverified | M | `modules/webhooks` | Phase 9: allowlist/deny private ranges, test |
 | R-10 | Go 1.27.1 pinned; toolchain download needed on fresh machines; dependabot branch pending | L | go.mod | Document in CONTRIBUTING |
 | R-11 | e-Invoice sandbox creds from env, encrypted table unused | M | TODO Stage 8 | Blocked on credentials; wire table before production |
-| R-12 | Reuse of Mavri/Zulivio code: licenses not yet verified in this audit (repos not read) | M | — | See `reuse-matrix.md`; no code copied until license + source reviewed |
+| R-12 | Reuse of Mavri/Zulivio code: licenses verified (AGPL-3.0, same owner); transitive deps and semantics still to review per phase | L | — | See `reuse-matrix.md`; attribute in NOTICE.md |
 | R-13 | Design contract conflicts with shipped UI (fonts IBM Plex/Space Grotesk vs Inter; token names) | L | `apps/web/package.json` | Phase 1 reconciles; no restyle without tested nav stability |
 | R-14 | Instagram reference unviewable | L | Not accessible | Treated as unverified; DESIGN.md governs |
 | R-15 | Scope: brief spans ~10 products' worth of work | H | — | Phase gates; one feature dossier at a time; no "Coming soon" UIs |
