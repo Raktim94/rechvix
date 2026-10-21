@@ -84,6 +84,7 @@ import (
 	staffapp "rechvix/internal/modules/staff/app"
 	staffhttp "rechvix/internal/modules/staff/httpapi"
 	staffpg "rechvix/internal/modules/staff/pg"
+	"rechvix/internal/modules/stockprojection"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
 	"rechvix/internal/modules/taxregimes"
@@ -625,6 +626,7 @@ func run() error {
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)
+			stockprojection.NewHandlers(stockprojection.NewService(pool, permissionsChecker)).Mount(r)
 			docstatus.NewHandlers(docstatus.NewService(pool, permissionsChecker, auditRecorder)).Mount(r)
 		})
 	})

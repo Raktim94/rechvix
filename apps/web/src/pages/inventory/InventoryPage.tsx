@@ -96,6 +96,11 @@ function StockCard({ product, warehouseId, baseUOMID }: { product: LookupResult;
     },
   });
 
+  const projection = useQuery({
+    queryKey: ["stock-projection", warehouseId, product.ProductVariantID, balance.dataUpdatedAt],
+    queryFn: () => api.get<{ committed_on_sales_orders: string; incoming_on_purchase_orders: string; projected_available: string }>(
+      `/inventory/projection?warehouse_id=${warehouseId}&product_variant_id=${product.ProductVariantID}`),
+  });
   const onHand = Number(balance.data?.QuantityOnHand ?? "0");
   const reserved = Number(balance.data?.QuantityReserved ?? "0");
 
@@ -126,6 +131,22 @@ function StockCard({ product, warehouseId, baseUOMID }: { product: LookupResult;
             <span className={ui.muted}>Available</span>
             <div className="num">{onHand - reserved}</div>
           </div>
+          {projection.data && (Number(projection.data.committed_on_sales_orders) > 0 || Number(projection.data.incoming_on_purchase_orders) > 0) ? (
+            <>
+              <div>
+                <span className={ui.muted}>Promised on sales orders</span>
+                <div className="num">{Number(projection.data.committed_on_sales_orders)}</div>
+              </div>
+              <div>
+                <span className={ui.muted}>Expected on purchase orders</span>
+                <div className="num">{Number(projection.data.incoming_on_purchase_orders)}</div>
+              </div>
+              <div>
+                <span className={ui.muted}>Projected available</span>
+                <div className="num">{Number(projection.data.projected_available)}</div>
+              </div>
+            </>
+          ) : null}
           <div>
             <span className={ui.muted}>Average cost</span>
             <div className="num">{formatMoney({ amount: balance.data?.AverageCost ?? "0", currency })}</div>
