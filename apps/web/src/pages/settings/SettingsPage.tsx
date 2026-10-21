@@ -1,3 +1,4 @@
+import { DocumentStatusSettings } from "../../components/DocumentStatuses";
 import { RemindersPanel } from "../../components/RemindersPanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -1286,6 +1287,8 @@ export function SettingsPage() {
       {org.legalEntity ? <BranchesPanel legalEntityId={org.legalEntity.ID} /> : null}
 
       {org.legalEntity ? <BankAccountsPanel legalEntityId={org.legalEntity.ID} /> : null}
+
+      <DocumentStatusSettings />
 
       <RemindersPanel />
 

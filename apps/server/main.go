@@ -33,6 +33,7 @@ import (
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactshttp "rechvix/internal/modules/contacts/httpapi"
 	contactspg "rechvix/internal/modules/contacts/pg"
+	"rechvix/internal/modules/docstatus"
 	einvoiceapp "rechvix/internal/modules/einvoice/app"
 	einvoicehttp "rechvix/internal/modules/einvoice/httpapi"
 	einvoicepg "rechvix/internal/modules/einvoice/pg"
@@ -624,6 +625,7 @@ func run() error {
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)
+			docstatus.NewHandlers(docstatus.NewService(pool, permissionsChecker, auditRecorder)).Mount(r)
 		})
 	})
 

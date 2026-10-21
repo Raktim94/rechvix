@@ -1,3 +1,4 @@
+import { StatusBadge, useDocAssignments } from "../../components/DocumentStatuses";
 import { RecurringList } from "../../components/RecurringPanel";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -109,6 +110,9 @@ export function SalesListPage() {
     }
     return true;
   });
+
+  const assignments = useDocAssignments(filtered.slice(0, 200).map((d) => d.ID));
+  const workflowByDoc = new Map((assignments.data ?? []).map((a) => [a.document_id, a]));
 
   return (
     <div className={layout.page}>
@@ -241,6 +245,7 @@ export function SalesListPage() {
                       <span className={ui.badge} data-tone={statusTone(d.Status)}>
                         {d.Status}
                       </span>
+                      {workflowByDoc.get(d.ID) ? <> <StatusBadge name={workflowByDoc.get(d.ID)!.name} color={workflowByDoc.get(d.ID)!.color} /></> : null}
                     </td>
                     <td>{new Date(d.IssueDate).toLocaleDateString()}</td>
                     <td className="num">{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
