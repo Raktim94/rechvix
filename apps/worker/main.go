@@ -43,6 +43,8 @@ import (
 	salespg "rechvix/internal/modules/sales/pg"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
+	verifactuapp "rechvix/internal/modules/verifactu/app"
+	verifactupg "rechvix/internal/modules/verifactu/pg"
 	webhooksapp "rechvix/internal/modules/webhooks/app"
 	webhookspg "rechvix/internal/modules/webhooks/pg"
 	"rechvix/internal/platform/audit"
@@ -53,6 +55,7 @@ import (
 	"rechvix/internal/platform/numbering"
 	"rechvix/internal/platform/outbox"
 	"rechvix/internal/platform/permissions"
+	"rechvix/internal/platform/version"
 )
 
 func main() {
@@ -125,6 +128,10 @@ func run() error {
 		inventorySvc, taxationSvc, catalogueSvc, contactsSvc, orgSvc, pricingSvc, numberingSvc, accountingSvc, outboxStore,
 		permissionsChecker, auditRecorder)
 
+	verifactuSvc := verifactuapp.NewService(pool, verifactupg.NewRepo(pool), aead, outboxStore, orgSvc,
+		verifactuapp.ProducerFromEnv(os.Getenv, version.Version), permissionsChecker, auditRecorder, logger)
+	salesSvc.WithVerifactu(verifactuSvc)
+
 	provider, providerName := buildEInvoiceProvider(logger)
 
 	einvoiceSvc := einvoiceapp.NewService(einvoicepg.NewRecordRepo(pool), provider, providerName,
@@ -182,6 +189,7 @@ func run() error {
 	poller.Register("einvoice.failed", webhooksSvc.HandlerForSourceEvent("einvoice.failed"))
 	poller.Register(webhooksapp.EventTypeDelivery, webhooksSvc.DeliverHandler())
 	poller.Register(notificationsapp.EventTypeSend, notificationsSvc.Handler())
+	poller.Register(verifactuapp.EventTypeSubmit, verifactuSvc.Handler())
 
 	logger.Info("worker started", "einvoice_provider", providerName)
 	poller.Run(ctx, 5*time.Second)

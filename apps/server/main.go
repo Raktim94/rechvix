@@ -82,6 +82,9 @@ import (
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
 	"rechvix/internal/modules/taxregimes"
+	verifactuapp "rechvix/internal/modules/verifactu/app"
+	verifactuhttp "rechvix/internal/modules/verifactu/httpapi"
+	verifactupg "rechvix/internal/modules/verifactu/pg"
 	webhooksapp "rechvix/internal/modules/webhooks/app"
 	webhookshttp "rechvix/internal/modules/webhooks/httpapi"
 	webhookspg "rechvix/internal/modules/webhooks/pg"
@@ -96,6 +99,7 @@ import (
 	"rechvix/internal/platform/observability"
 	"rechvix/internal/platform/outbox"
 	"rechvix/internal/platform/permissions"
+	"rechvix/internal/platform/version"
 	"rechvix/migrations"
 )
 
@@ -410,6 +414,10 @@ func run() error {
 		auditRecorder,
 	)
 
+	verifactuSvc := verifactuapp.NewService(pool, verifactupg.NewRepo(pool), aead, outboxStore, orgSvc,
+		verifactuapp.ProducerFromEnv(os.Getenv, version.Version), permissionsChecker, auditRecorder, logger)
+	salesSvc.WithVerifactu(verifactuSvc)
+
 	logisticsSvc := logisticsapp.NewService(
 		pool,
 		logisticspg.NewVehicleRepo(pool),
@@ -601,6 +609,7 @@ func run() error {
 			staffhttp.NewHandlers(staffSvc).Mount(r)
 			ewaybillhttp.NewHandlers(ewaybillSvc, pool, permissionsChecker, govPortalSvc).Mount(r)
 			einvoicehttp.NewHandlers(einvoiceSvc, pool, permissionsChecker).Mount(r)
+			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 		})
 	})
 

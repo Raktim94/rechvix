@@ -179,6 +179,8 @@ type InvoiceData struct {
 	// check, so this is not cosmetic.
 	EWBNumber     string
 	EWBValidUntil *time.Time
+	// Verifactu is the Spanish tax-agency QR block; nil for documents without a VERI*FACTU record.
+	Verifactu *VerifactuQR
 }
 
 // PricingModeLabel is a small display helper — not business logic.

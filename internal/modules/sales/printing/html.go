@@ -31,6 +31,7 @@ type htmlInvoice struct {
 	Labels                                        Labels
 	Title, Date, Due, Supply, Language, PageWidth string
 	Font, Logo                                    template.URL
+	QRSVG                                         template.HTML
 }
 
 // RenderHTML uses escaped text and embedded assets only. The browser supplies
@@ -63,6 +64,13 @@ func RenderHTML(tpl Template, data InvoiceData) ([]byte, error) {
 	if len(data.Seller.LogoPNG) > 0 {
 		v.Logo = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(data.Seller.LogoPNG))
 	}
+	if data.Verifactu != nil {
+		svg, err := qrSVG(data.Verifactu.URL)
+		if err != nil {
+			return nil, err
+		}
+		v.QRSVG = svg
+	}
 	var b bytes.Buffer
 	err := htmlInvoiceTemplate.Execute(&b, v)
 	return b.Bytes(), err
@@ -74,8 +82,9 @@ var htmlInvoiceTemplate = template.Must(template.New("invoice").Funcs(template.F
 <html lang="{{.Language}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Title}} {{.Data.DocumentNumber}}</title>
 <style>
 @font-face{font-family:InvoiceHindi;src:url('{{.Font}}') format('truetype');font-weight:100 900;font-display:block}
-*{box-sizing:border-box}body{margin:0;color:#16252e;background:#edf1f3;font:14px/1.6 Arial,InvoiceHindi,sans-serif}.paper{max-width:{{.PageWidth}};margin:24px auto;padding:24px;background:white}h1{font-size:22px}h2{font-size:16px;margin-bottom:4px}.help{text-align:center;padding:12px}.parties{display:flex;gap:24px;flex-wrap:wrap}.parties>section{flex:1;min-width:180px}p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.logo{max-height:64px;max-width:140px}table{width:100%;border-collapse:collapse;margin:20px 0;table-layout:fixed}th,td{padding:6px;border-bottom:1px solid #cad4d9;text-align:right;vertical-align:top;overflow-wrap:anywhere}th:nth-child(2),td:nth-child(2){text-align:left;width:30%}thead{display:table-header-group}tr{break-inside:avoid}.totals{text-align:right;break-inside:avoid}.grand{font-size:18px;font-weight:bold}.notes{margin-top:20px}footer{margin-top:32px;break-inside:avoid}@page{size:A4;margin:12mm}@media print{body{background:white}.paper{margin:0;padding:0;max-width:none}.help{display:none}thead{display:table-header-group}}@media(max-width:600px){.paper{margin:0;padding:12px}table{font-size:11px}th,td{padding:3px}}
+*{box-sizing:border-box}body{margin:0;color:#16252e;background:#edf1f3;font:14px/1.6 Arial,InvoiceHindi,sans-serif}.paper{max-width:{{.PageWidth}};margin:24px auto;padding:24px;background:white}h1{font-size:22px}h2{font-size:16px;margin-bottom:4px}.help{text-align:center;padding:12px}.aeatqr{text-align:center;margin:0 0 12px}.aeatqr svg{display:block;margin:4px auto}.qrhead,.qrlegend{margin:2px 0;font-size:14px;white-space:normal}.parties{display:flex;gap:24px;flex-wrap:wrap}.parties>section{flex:1;min-width:180px}p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.logo{max-height:64px;max-width:140px}table{width:100%;border-collapse:collapse;margin:20px 0;table-layout:fixed}th,td{padding:6px;border-bottom:1px solid #cad4d9;text-align:right;vertical-align:top;overflow-wrap:anywhere}th:nth-child(2),td:nth-child(2){text-align:left;width:30%}thead{display:table-header-group}tr{break-inside:avoid}.totals{text-align:right;break-inside:avoid}.grand{font-size:18px;font-weight:bold}.notes{margin-top:20px}footer{margin-top:32px;break-inside:avoid}@page{size:A4;margin:12mm}@media print{body{background:white}.paper{margin:0;padding:0;max-width:none}.help{display:none}thead{display:table-header-group}}@media(max-width:600px){.paper{margin:0;padding:12px}table{font-size:11px}th,td{padding:3px}}
 </style></head><body><p class="help">Use your browser’s Print / Save as PDF command. हिन्दी के लिए ब्राउज़र से प्रिंट करें।</p><main class="paper">
+{{if .QRSVG}}<section class="aeatqr"><p class="qrhead">{{.Data.Verifactu.Heading}}</p>{{.QRSVG}}<p class="qrlegend">{{.Data.Verifactu.Legend}}</p><p class="qrlegend"><strong>{{.Data.Verifactu.Short}}</strong></p></section>{{end}}
 <header>{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{end}}<h1>{{.Data.Seller.LegalName}}</h1>{{range .Data.Seller.AddressLines}}<p>{{.}}</p>{{end}}
 {{if .Data.Seller.GSTIN}}<p>GSTIN: {{.Data.Seller.GSTIN}}</p>{{end}}{{if .Data.Seller.TaxID}}<p>{{.Labels.TaxID}}: {{.Data.Seller.TaxID}}</p>{{end}}
 <p>{{.Data.Seller.Phone}} {{.Data.Seller.Email}} {{.Data.Seller.Website}}</p><h2>{{.Title}}</h2><p>{{.Labels.No}}: {{.Data.DocumentNumber}} · {{.Labels.Date}}: {{.Date}}</p>{{if .Due}}<p>Due / देय: {{.Due}}</p>{{end}}{{if .Supply}}<p>{{.Labels.SupplyDate}}: {{.Supply}}</p>{{end}}{{if .Data.PlaceOfSupply}}<p>Place of supply / आपूर्ति स्थान: {{.Data.PlaceOfSupply}}</p>{{end}}{{if .Data.IRN}}<p>IRN: {{.Data.IRN}}</p>{{end}}{{if .Data.EWBNumber}}<p>e-Way Bill: {{.Data.EWBNumber}}{{if .Data.EWBValidUntil}} · {{.Data.EWBValidUntil}}{{end}}</p>{{end}}</header>
