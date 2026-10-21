@@ -44,7 +44,8 @@
       "settings": "Settings",
       "tax_gst": "GST / Tax",
       "crm": "CRM",
-      "service": "Field service"
+      "service": "Field service",
+      "sepa": "Direct debit"
     }
   },
   "shell": {

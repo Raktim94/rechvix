@@ -65,10 +65,10 @@ import (
 	notificationsdomain "rechvix/internal/modules/notifications/domain"
 	notificationshttp "rechvix/internal/modules/notifications/httpapi"
 	notificationspg "rechvix/internal/modules/notifications/pg"
+	"rechvix/internal/modules/onlinepay"
 	orgapp "rechvix/internal/modules/organisation/app"
 	orghttp "rechvix/internal/modules/organisation/httpapi"
 	orgpg "rechvix/internal/modules/organisation/pg"
-	"rechvix/internal/modules/onlinepay"
 	"rechvix/internal/modules/pricerules"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricinghttp "rechvix/internal/modules/pricing/httpapi"
@@ -86,6 +86,7 @@ import (
 	saleshttp "rechvix/internal/modules/sales/httpapi"
 	salespg "rechvix/internal/modules/sales/pg"
 	"rechvix/internal/modules/sales/printing"
+	"rechvix/internal/modules/sepa"
 	staffapp "rechvix/internal/modules/staff/app"
 	staffhttp "rechvix/internal/modules/staff/httpapi"
 	staffpg "rechvix/internal/modules/staff/pg"
@@ -641,6 +642,7 @@ func run() error {
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 			esignhttp.Mount(r)
 			onlinepay.NewHandlers(onlinepaySvc).Mount(r)
+			sepa.NewHandlers(sepa.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)
 			pricerules.NewHandlers(priceRulesSvc).Mount(r)

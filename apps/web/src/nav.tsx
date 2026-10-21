@@ -66,6 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/accounting", labelKey: "nav.item.accounting", icon: <AccountingIcon /> },
       { to: "/expenses", labelKey: "nav.item.expenses", icon: <WalletIcon /> },
+      { to: "/sepa", labelKey: "nav.item.sepa", icon: <WalletIcon /> },
       { to: "/gst", labelKey: "nav.item.tax", icon: <GstIcon /> },
       { to: "/reports", labelKey: "nav.item.reports", icon: <ReportsIcon /> },
     ],

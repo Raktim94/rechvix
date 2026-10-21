@@ -44,7 +44,8 @@
       "backup": "Copia de seguridad",
       "settings": "Ajustes",
       "crm": "CRM",
-      "service": "Servicio técnico"
+      "service": "Servicio técnico",
+      "sepa": "Adeudos SEPA"
     }
   },
   "shell": {
