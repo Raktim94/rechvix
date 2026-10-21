@@ -1,0 +1,68 @@
+# Rechvix 2.0 — DESIGN.md
+
+Version 1.1 · industrial ERP + CRM + Field Service · **design contract, not implementation evidence**
+
+## Revision log
+- 1.1 (2026-10-21, Phase 0): imported v1.0 supplied by the owner. Added §10 conflicts with the shipped UI. The Instagram reel referenced could not be viewed and is treated as unverified.
+
+## 1. North star
+A calm, precise industrial operations cockpit. The operator must answer: What is due? What needs attention? What is in stock? Where is my technician? What comes next? No decorative dashboard theater. Non-negotiables: keyboard-first high-frequency work; dense readable tables; financial and stock truth; mobile field usability; low-connectivity resilience; explicit operational states; accessibility; low-cost self-hosting. Every clickable control has an executable, authorized server outcome.
+
+## 2. Inspirations (patterns, never pixel-copy)
+Linear (navigation, command palette), Stripe Dashboard (transaction legibility, reconciliation), Shopify Polaris (resource tables, empty states), GitHub Primer (accessible forms), Mavri/Zulivio DESIGN.md (document layouts; honest status; role-sensitive UX), the awwwards skill (composition/typography, adapted to productivity), STEL Order (capability inventory only, no layout/content reuse).
+
+## 3. Design language
+Personality: credible, quiet, technically adept, utilitarian. Art direction **Slate & Signal**: neutral surfaces, graphite text, teal action accent, amber for attention. No glow gradients, globes, ornamental charts, stock photos or animation in transactional screens.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| --canvas | #F5F7F8 | #0D151A | page |
+| --surface | #FFFFFF | #142029 | panel |
+| --surface-raised | #EBF1F3 | #1D2C35 | hover/inset |
+| --border | #DCE5E8 | #31424B | dividers |
+| --text | #16252E | #F0F5F6 | primary |
+| --text-muted | #50636F | #AFBEC7 | secondary |
+| --accent | #086B64 | #52D4BD | primary action |
+| --accent-on | #FFFFFF | #092622 | on accent |
+| --accent-soft | #E2F3EF | #123B37 | selection |
+| --warning | #9A570B | #FFCA70 | due soon/review |
+| --danger | #B42318 | #FF918A | failed/destructive |
+| --success | #177245 | #5AE0A0 | confirmed |
+| --info | #2459A8 | #8DB8FF | informational |
+| --focus | #2563EB | #93C5FD | keyboard ring |
+
+Semantic color never appears without text and icon. Red is never a brand accent. Every pairing is contrast-tested in code in both themes.
+
+Typography: Inter (OFL, bundled locally, no CDN); numeric/code mono (system or IBM Plex Mono); Noto Sans Devanagari only when needed. Body 14/1.5 desktop, 15–16 mobile; data rows 13–14; page title 24/1.25; section 17–18; micro ≥12. Tabular numerals; right-aligned money; locale-formatted, timezone-aware. Exact decimals come from the backend; formatted strings are never source values.
+
+Spacing 4px scale (4…48). Sidebar 248/64px, header 56–64px. Borders 1px; radii 12 cards / 8 inputs / 14 dialogs. Touch targets ≥44px mobile; focus ring 2–3px; destructive actions visibly separated. Tooltips are never the sole label.
+
+## 4. Information architecture
+Nav groups (visibility by permission and enabled module): **Home** (Overview, My tasks, Activity, Calendar) · **Sales** (CRM, Quotes, Orders, Delivery notes, Invoices, Returns, Collections, Recurring) · **Operations** (Catalog, Inventory, Transfers, Warehouses, Purchasing, Receipts, Assemblies) · **Service** (Service desk, Work orders, Dispatch board, Maintenance plans, Customer assets, Work notes, Time & expenses) · **Finance** (Expenses, Banking, Reconciliation, Accounting, Tax, Reports) · **Channels** (Portal, Shop, Inbox, Outgoing, Automations) · **Administration** (Teams & permissions, Integrations/API, Company/branch, Settings, Audit, Backup & health).
+No duplicate first-class entries for existing Rechvix domains; keep current navigation stable until replacements are tested. Shell: logo, org/branch switcher, collapsible nav with query-derived badges, header with breadcrumb, search/command palette, notifications, quick-create, help, profile. Phone: compact task-oriented home and bottom actions, not a squeezed sidebar.
+
+## 5. Page blueprints
+- **Overview**: role-aware "Needs attention" list; 4–6 KPIs only with verified definitions and drill-down; charts only to answer a comparison, with timeframe, timezone and freshness shown.
+- **CRM detail**: three columns only on wide screens (identity · timeline · follow-ups/finance/service). One party ID underlies quotes, orders, invoices, assets, tickets, payments, portal.
+- **Quote→Order→Delivery→Invoice**: lists with saved views/filters/bulk safe actions; detail with status, timeline, source→target links, tax, stock effect; composer customer→items→price/tax→shipment→terms→review. Draft/save/issue/cancel are distinct; no silent backdating or edit-after-posting.
+- **Inventory**: on hand / reserved / available / incoming with accessible definitions; item drawer with append-only history; transfers have shipping/receiving stages.
+- **Field service**: dispatch board (day/week + unassigned queue); job card; technician mobile screen with offline pack, checklist, parts, time, signature, photos. Status transitions validate required fields. Geolocation is opt-in, purpose-limited, role-restricted, visible to affected staff, never continuous by default.
+- **Finance**: ledger-centred; persistent warnings where figures are approximate or unreconciled; exports honour filters and authorization; print optimised for paper.
+- **Portal/shop**: distinct security principal; own data only; server-side price/tax/stock checks; no arbitrary HTML/JS branding.
+
+## 6. Interaction contracts
+Primary CTA upper-right (sticky bottom on mobile). Every mutation has preconditions, pending state, result and a compensating path; financial postings are never undone by deletion. Inline field errors plus summary banner; one-step empty states; optimistic UI only for reversible non-financial actions. Autosave drafts only, with visible state and version-conflict handling. Confirm irreversible issuance, posting, bulk sends, write-offs. Never send or charge on preview. Keys: `/` search, `N` new, `Esc` close. Tables: sticky headers, stable cursors, column controls, URL-persisted filters, CSV-injection mitigation. Offline/out-of-sync indicators are never hidden.
+
+## 7. Motion
+150ms hover/press, 220ms panel, ≤300ms dialog; opacity/transform only; `prefers-reduced-motion` removes non-essential motion; no CDN fonts/icons; Lucide (ISC) or equivalent; no WebGL on work screens.
+
+## 8. Accessibility and quality
+WCAG 2.2 AA. Test 360/390/768 and 1280/1440/1920, 200% zoom, screen-reader smoke tests for composer, dispatch, dialogs, tables; print/PDF tested separately.
+
+## 9. Deliverables and acceptance gate
+Per UI phase: route map, roles/journeys, wireframes, permissions matrix, components/tokens, mobile flow, empty/loading/error/offline states; afterwards screenshots, keyboard test, WCAG review, performance check. No dead buttons, fake counters, alert-based CRUD, fake signature/GPS/read-receipt/payment/OCR certainty, or tax/legal claims without configured rules. Sign-off requires a tested end-to-end workflow.
+
+## 10. Known conflicts with the shipped UI (to reconcile in Phase 1)
+- Shipped fonts are IBM Plex Sans / Space Grotesk / IBM Plex Mono (`apps/web/package.json`); this contract specifies Inter. Decide after a visual check; do not restyle during functional phases.
+- Existing tokens live in `apps/web/src/styles/tokens.css` (`--color-surface`, `--color-text-faint`, …); names differ from this table. Migrate by aliasing, with the Stage 11 contrast fixes preserved.
+- Navigation: current shell groups are Rechvix-specific; adopt §4 groups incrementally as modules ship.
