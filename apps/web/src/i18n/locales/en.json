@@ -42,7 +42,8 @@
       "integrations": "Integrations",
       "backup": "Backup",
       "settings": "Settings",
-      "tax_gst": "GST / Tax"
+      "tax_gst": "GST / Tax",
+      "crm": "CRM"
     }
   },
   "shell": {

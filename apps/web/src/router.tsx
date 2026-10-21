@@ -25,6 +25,7 @@ import {
   SalesListPage,
   SettingsPage,
   StaffPage,
+  CrmPage,
 } from "./lazyPages";
 
 /**
@@ -194,6 +195,7 @@ const settingsRoute = realRoute("/settings", SettingsPage);
 const backupRoute = realRoute("/backup", BackupPage);
 const staffRoute = realRoute("/staff", StaffPage);
 const calendarRoute = realRoute("/calendar", CalendarPage);
+const crmRoute = realRoute("/crm", CrmPage);
 
 const notFoundRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -223,6 +225,7 @@ const routeTree = rootRoute.addChildren([
   backupRoute,
   staffRoute,
   calendarRoute,
+  crmRoute,
   settingsRoute,
   notFoundRoute,
 ]);

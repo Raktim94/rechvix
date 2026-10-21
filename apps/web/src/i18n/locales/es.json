@@ -42,7 +42,8 @@
       "calendar": "Calendario",
       "integrations": "Integraciones",
       "backup": "Copia de seguridad",
-      "settings": "Ajustes"
+      "settings": "Ajustes",
+      "crm": "CRM"
     }
   },
   "shell": {

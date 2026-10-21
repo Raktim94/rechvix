@@ -33,6 +33,7 @@ import (
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactshttp "rechvix/internal/modules/contacts/httpapi"
 	contactspg "rechvix/internal/modules/contacts/pg"
+	"rechvix/internal/modules/crm"
 	"rechvix/internal/modules/docstatus"
 	einvoiceapp "rechvix/internal/modules/einvoice/app"
 	einvoicehttp "rechvix/internal/modules/einvoice/httpapi"
@@ -632,6 +633,7 @@ func run() error {
 			recurring.NewHandlers(recurringSvc).Mount(r)
 			pricerules.NewHandlers(priceRulesSvc).Mount(r)
 			stockprojection.NewHandlers(stockprojection.NewService(pool, permissionsChecker)).Mount(r)
+			crm.NewHandlers(crm.NewService(pool, contactsSvc, permissionsChecker, auditRecorder)).Mount(r)
 			docstatus.NewHandlers(docstatus.NewService(pool, permissionsChecker, auditRecorder)).Mount(r)
 		})
 	})
