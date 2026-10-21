@@ -192,6 +192,15 @@ type DocumentRepository interface {
 	// LastExchangeRate is the rate most recently used for a foreign-currency document in this
 	// currency (nil if none), to pre-fill the next one.
 	LastExchangeRate(ctx context.Context, orgID uuid.UUID, currency string) (*decimal.Decimal, error)
+	// LinkSources records that target was built from the given delivery challans. The database refuses a challan that is
+	// already linked to another invoice.
+	LinkSources(ctx context.Context, orgID, target uuid.UUID, sources []uuid.UUID) error
+	// HasSources reports whether the document was built from delivery challans (whose stock effect already happened).
+	HasSources(ctx context.Context, id uuid.UUID) (bool, error)
+	// UnlinkSources releases the challans of a cancelled invoice so they can be billed again.
+	UnlinkSources(ctx context.Context, id uuid.UUID) error
+	// BilledSources returns which of the given documents are already billed by some invoice.
+	BilledSources(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
 type DocumentLineRepository interface {

@@ -166,6 +166,9 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 		title = lb.DocType(title)
 	}
 
+	if err := drawVerifactuQR(pdf, data, lo, st); err != nil {
+		return nil, err
+	}
 	drawHeader(pdf, data, lo, st, title, lb)
 	drawParties(pdf, data, lo, st, lb)
 	drawItemTable(pdf, data, lo, st, lb)
@@ -177,6 +180,11 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 		pdf.Ln(2)
 		setFont(pdf, lo, st, "", 8)
 		pdf.MultiCell(0, 4, lb.Terms+": "+data.TermsAndConditions, "", "L", false)
+	}
+	if data.SignedNote != "" {
+		pdf.Ln(3)
+		setFont(pdf, lo, st, "B", 8)
+		pdf.MultiCell(0, 4, data.SignedNote, "", "L", false)
 	}
 	drawSignatureBlock(pdf, lo, st, data.AuthorizedSignatoryName, lb, data.GenericTax)
 
@@ -522,4 +530,30 @@ func drawSignatureBlock(pdf *fpdf.Fpdf, lo layout, st style, signatoryName strin
 		pdf.Ln(6)
 		pdf.CellFormat(0, 5, signatoryName, "", 1, "R", false, 0, "")
 	}
+}
+
+// drawVerifactuQR places AEAT's QR block first on the page, centred: the heading "QR tributario:" above the code and
+// the verifiable-invoice phrase below it, with the code's required quiet zone kept clear (Orden HAC/1177/2024, art. 20-21).
+func drawVerifactuQR(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) error {
+	if data.Verifactu == nil {
+		return nil
+	}
+	img, err := qrPNG(data.Verifactu.URL)
+	if err != nil {
+		return err
+	}
+	pageW, _ := pdf.GetPageSize()
+	setFont(pdf, lo, st, "", 9)
+	pdf.CellFormat(0, 5, data.Verifactu.Heading, "", 1, "C", false, 0, "")
+	opts := fpdf.ImageOptions{ImageType: "PNG", ReadDpi: false}
+	pdf.RegisterImageOptionsReader("verifactu-qr", opts, bytes.NewReader(img))
+	// The PNG carries a four-module quiet zone, so the drawn square is slightly larger than the code itself.
+	x := (pageW - QRSizeMM) / 2
+	pdf.ImageOptions("verifactu-qr", x, pdf.GetY(), QRSizeMM, QRSizeMM, false, opts, 0, "")
+	pdf.SetY(pdf.GetY() + QRSizeMM)
+	pdf.MultiCell(0, 4.5, data.Verifactu.Legend, "", "C", false)
+	setFont(pdf, lo, st, "B", 9)
+	pdf.CellFormat(0, 5, data.Verifactu.Short, "", 1, "C", false, 0, "")
+	pdf.Ln(2)
+	return nil
 }

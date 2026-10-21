@@ -42,7 +42,10 @@
       "calendar": "Calendário",
       "integrations": "Integrações",
       "backup": "Cópia de segurança",
-      "settings": "Definições"
+      "settings": "Definições",
+      "crm": "CRM",
+      "service": "Assistência técnica",
+      "sepa": "Débito direto SEPA"
     }
   },
   "shell": {
@@ -247,5 +250,48 @@
     "adding": "A adicionar…",
     "couldNotCreateCustomer": "Não foi possível criar este cliente.",
     "couldNotCreateDistributor": "Não foi possível criar este distribuidor."
+  },
+  "verifactu": {
+    "heading": "VERI*FACTU (Espanha)",
+    "intro": "Cada fatura que emite ou anula é acrescentada a uma cadeia à prova de adulteração e pode ser enviada à Agência Tributária espanhola (AEAT). As faturas têm de estar em euros. Isto não entrega declarações fiscais.",
+    "toDo": "Antes de o ativar ou enviar registos:",
+    "environment": "Ambiente da AEAT",
+    "envTest": "Teste (portal de testes externos da AEAT)",
+    "envProd": "Produção",
+    "installation": "Número de instalação",
+    "enable": "Ativar VERI*FACTU",
+    "disable": "Desativar",
+    "on": "Ativado: as novas faturas são registadas.",
+    "saveFailed": "Não foi possível guardar estas definições.",
+    "certificate": "Certificado eletrónico",
+    "certOk": "Certificado carregado: {{subject}}, válido até {{date}}.",
+    "certNone": "Ainda não há certificado. A AEAT exige o certificado eletrónico da empresa (.p12 ou .pfx) para receber os registos.",
+    "certFile": "Ficheiro do certificado",
+    "certPassword": "Palavra-passe do certificado",
+    "upload": "Carregar certificado",
+    "uploading": "A carregar…",
+    "uploadFailed": "Não foi possível ler este certificado.",
+    "register": "Registo de faturação",
+    "registerCount": "{{records}} registos, {{pending}} ainda não aceites pela AEAT.",
+    "sendNow": "Enviar agora para a AEAT",
+    "sending": "A enviar…",
+    "sendFailed": "Não foi possível enviar para a AEAT.",
+    "verify": "Verificar a cadeia",
+    "exportXml": "Descarregar registos (XML)",
+    "chainOk": "A cadeia de {{records}} registos está íntegra.",
+    "chainBroken": "A cadeia está quebrada no registo {{seq}}: {{message}}",
+    "colType": "Tipo",
+    "colInvoice": "Fatura",
+    "colDate": "Data",
+    "colTotal": "Total",
+    "colStatus": "Estado",
+    "cancel": "Anulação",
+    "status": {
+      "PENDING": "A aguardar envio",
+      "ACCEPTED": "Aceite pela AEAT",
+      "ACCEPTED_WITH_ERRORS": "Aceite com erros",
+      "REJECTED": "Rejeitado",
+      "ERROR": "Falha no envio, será repetido"
+    }
   }
 }

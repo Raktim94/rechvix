@@ -33,12 +33,12 @@ func (r *ShareLinkRepo) Create(ctx context.Context, l *domain.ShareLink) error {
 // see migrations/0027_notifications.up.sql.
 func (r *ShareLinkRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*domain.ShareLink, error) {
 	const q = `
-		SELECT id, organisation_id, document_type, document_id, token_hash, expires_at, revoked_at, created_at, created_by
+		SELECT id, organisation_id, document_type, document_id, token_hash, expires_at, revoked_at, created_at, created_by, first_viewed_at, last_viewed_at, view_count
 		FROM share_links WHERE token_hash = $1`
 	row := r.pool.Q(ctx).QueryRow(ctx, q, tokenHash)
 	var l domain.ShareLink
 	if err := row.Scan(&l.ID, &l.OrganisationID, &l.DocumentType, &l.DocumentID, &l.TokenHash,
-		&l.ExpiresAt, &l.RevokedAt, &l.CreatedAt, &l.CreatedBy); err != nil {
+		&l.ExpiresAt, &l.RevokedAt, &l.CreatedAt, &l.CreatedBy, &l.FirstViewedAt, &l.LastViewedAt, &l.ViewCount); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
@@ -58,7 +58,7 @@ func (r *ShareLinkRepo) Revoke(ctx context.Context, id uuid.UUID, at time.Time) 
 
 func (r *ShareLinkRepo) ListForDocument(ctx context.Context, organisationID uuid.UUID, documentType string, documentID uuid.UUID) ([]*domain.ShareLink, error) {
 	const q = `
-		SELECT id, organisation_id, document_type, document_id, token_hash, expires_at, revoked_at, created_at, created_by
+		SELECT id, organisation_id, document_type, document_id, token_hash, expires_at, revoked_at, created_at, created_by, first_viewed_at, last_viewed_at, view_count
 		FROM share_links
 		WHERE organisation_id = $1 AND document_type = $2 AND document_id = $3
 		ORDER BY created_at DESC`
@@ -71,10 +71,20 @@ func (r *ShareLinkRepo) ListForDocument(ctx context.Context, organisationID uuid
 	for rows.Next() {
 		var l domain.ShareLink
 		if err := rows.Scan(&l.ID, &l.OrganisationID, &l.DocumentType, &l.DocumentID, &l.TokenHash,
-			&l.ExpiresAt, &l.RevokedAt, &l.CreatedAt, &l.CreatedBy); err != nil {
+			&l.ExpiresAt, &l.RevokedAt, &l.CreatedAt, &l.CreatedBy, &l.FirstViewedAt, &l.LastViewedAt, &l.ViewCount); err != nil {
 			return nil, fmt.Errorf("notifications: scanning share link row: %w", err)
 		}
 		out = append(out, &l)
 	}
 	return out, rows.Err()
+}
+
+func (r *ShareLinkRepo) RecordView(ctx context.Context, id uuid.UUID, at time.Time) error {
+	_, err := r.pool.Q(ctx).Exec(ctx, `
+		UPDATE share_links SET first_viewed_at = COALESCE(first_viewed_at, $2), last_viewed_at = $2, view_count = view_count + 1
+		WHERE id = $1`, id, at)
+	if err != nil {
+		return fmt.Errorf("notifications: recording share link view: %w", err)
+	}
+	return nil
 }

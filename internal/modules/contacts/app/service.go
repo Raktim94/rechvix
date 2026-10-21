@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,10 +17,11 @@ import (
 	"rechvix/internal/platform/permissions"
 )
 
-// phonePattern is the 10-digit-only phone format enforced on every party
-// (brief follow-up: phone doubles as the sale-counter customer lookup
-// key, so it needs a fixed, predictable shape).
-var phonePattern = regexp.MustCompile(`^\d{10}$`)
+// phonePattern is the phone format enforced on every party: digits only, 7 to 15 of them (ITU E.164 allows at most 15).
+// Phone doubles as the sale-counter customer lookup key, so it keeps a fixed, predictable shape. It was exactly 10 digits
+// (an Indian mobile number) until the app became multi-country; Spanish numbers have 9 digits. Outside India, enter the
+// number with its country code (for example 34600111222) so WhatsApp links work.
+var phonePattern = regexp.MustCompile(`^\d{7,15}$`)
 
 type Service struct {
 	pool             database.Runner
@@ -72,6 +74,17 @@ type CreatePartyParams struct {
 // / ErrLegalNameRequired) instead of a raw driver error. Pure and
 // side-effect free, deliberately exported so it's independently unit
 // testable without a database or fake repositories.
+// NormalizePhone strips the separators people type (spaces, dashes, dots, brackets and a leading +), leaving digits.
+func NormalizePhone(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func ValidateCreateParty(p CreatePartyParams) error {
 	if !domain.ValidPartyType(p.PartyType) {
 		return domain.ErrInvalidPartyType
@@ -89,6 +102,7 @@ func (s *Service) CreateParty(ctx context.Context, principal permissions.Princip
 	if err := s.manage(ctx, principal); err != nil {
 		return nil, err
 	}
+	p.Phone = NormalizePhone(p.Phone)
 	if err := ValidateCreateParty(p); err != nil {
 		return nil, err
 	}

@@ -42,7 +42,10 @@
       "integrations": "Integrations",
       "backup": "Backup",
       "settings": "Settings",
-      "tax_gst": "GST / Tax"
+      "tax_gst": "GST / Tax",
+      "crm": "CRM",
+      "service": "Field service",
+      "sepa": "Direct debit"
     }
   },
   "shell": {
@@ -246,5 +249,48 @@
     "adding": "Adding…",
     "couldNotCreateCustomer": "Could not create this customer.",
     "couldNotCreateDistributor": "Could not create this distributor."
+  },
+  "verifactu": {
+    "heading": "VERI*FACTU (Spain)",
+    "intro": "Every invoice you issue or cancel is added to a tamper-evident chain and can be sent to the Spanish tax agency (AEAT). Invoices must be in euros. This does not file tax returns.",
+    "toDo": "Before you can switch it on or send records:",
+    "environment": "AEAT environment",
+    "envTest": "Test (AEAT external test portal)",
+    "envProd": "Production",
+    "installation": "Installation number",
+    "enable": "Switch on VERI*FACTU",
+    "disable": "Switch off",
+    "on": "Switched on: new invoices are recorded.",
+    "saveFailed": "Could not save these settings.",
+    "certificate": "Electronic certificate",
+    "certOk": "Certificate loaded: {{subject}}, valid until {{date}}.",
+    "certNone": "No certificate yet. AEAT requires the company's electronic certificate (.p12 or .pfx) to receive records.",
+    "certFile": "Certificate file",
+    "certPassword": "Certificate password",
+    "upload": "Upload certificate",
+    "uploading": "Uploading…",
+    "uploadFailed": "Could not read this certificate.",
+    "register": "Record register",
+    "registerCount": "{{records}} records, {{pending}} not yet accepted by AEAT.",
+    "sendNow": "Send to AEAT now",
+    "sending": "Sending…",
+    "sendFailed": "Could not send to AEAT.",
+    "verify": "Verify the chain",
+    "exportXml": "Download records (XML)",
+    "chainOk": "The chain of {{records}} records is intact.",
+    "chainBroken": "The chain is broken at record {{seq}}: {{message}}",
+    "colType": "Type",
+    "colInvoice": "Invoice",
+    "colDate": "Date",
+    "colTotal": "Total",
+    "colStatus": "Status",
+    "cancel": "Cancellation",
+    "status": {
+      "PENDING": "Waiting to send",
+      "ACCEPTED": "Accepted by AEAT",
+      "ACCEPTED_WITH_ERRORS": "Accepted with errors",
+      "REJECTED": "Rejected",
+      "ERROR": "Send failed, will retry"
+    }
   }
 }

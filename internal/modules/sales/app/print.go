@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	contactsdomain "rechvix/internal/modules/contacts/domain"
+	esignapp "rechvix/internal/modules/esign"
 	taxdomain "rechvix/internal/modules/taxation/domain"
+	verifactuapp "rechvix/internal/modules/verifactu/app"
 	"rechvix/internal/platform/geo"
 	"strconv"
 	"strings"
@@ -208,7 +210,7 @@ func (s *Service) BuildInvoiceDataInLanguage(ctx context.Context, principal perm
 		terms = legalEntity.DefaultTermsAndConditions
 	}
 
-	return &printing.InvoiceData{
+	out := &printing.InvoiceData{
 		Seller: printing.SellerInfo{
 			LegalName:    legalEntity.LegalName,
 			GSTIN:        indiaOnly(genericTax, legalEntity.GSTIN),
@@ -256,7 +258,39 @@ func (s *Service) BuildInvoiceDataInLanguage(ctx context.Context, principal perm
 		Notes:                   doc.Notes,
 		TermsAndConditions:      terms,
 		AuthorizedSignatoryName: legalEntity.AuthorizedSignatoryName,
-	}, nil
+	}
+	if s.verifactu != nil {
+		var qr *verifactuapp.QRInfo
+		if err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+			var err error
+			qr, err = s.verifactu.QRForDocument(ctx, doc.ID)
+			return err
+		}); err != nil {
+			return nil, fmt.Errorf("sales: loading the VERI*FACTU QR for print: %w", err)
+		}
+		if qr != nil {
+			out.Verifactu = &printing.VerifactuQR{URL: qr.URL, Heading: qr.Heading, Legend: qr.Legend, Short: qr.Short}
+		}
+	}
+	if s.esign != nil {
+		var note *esignapp.Note
+		if err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+			var err error
+			note, err = s.esign.SignedNote(ctx, doc.ID)
+			return err
+		}); err == nil && note != nil {
+			layout := "02-Jan-2006"
+			if out.DateLayout != "" {
+				layout = out.DateLayout
+			}
+			if out.Language == "es" {
+				out.SignedNote = fmt.Sprintf("Firmado electrónicamente por %s el %s (ref. %s)", note.Name, note.At.Format(layout), note.Ref)
+			} else {
+				out.SignedNote = fmt.Sprintf("Electronically signed by %s on %s (ref %s)", note.Name, note.At.Format(layout), note.Ref)
+			}
+		}
+	}
+	return out, nil
 }
 
 // indiaOnly returns v unless the document uses a non-GST regime, in which case

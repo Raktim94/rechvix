@@ -42,7 +42,10 @@
       "calendar": "Kalender",
       "integrations": "Integrationen",
       "backup": "Datensicherung",
-      "settings": "Einstellungen"
+      "settings": "Einstellungen",
+      "crm": "CRM",
+      "service": "Kundendienst",
+      "sepa": "SEPA-Lastschrift"
     }
   },
   "shell": {
@@ -246,5 +249,48 @@
     "adding": "Wird hinzugefügt…",
     "couldNotCreateCustomer": "Dieser Kunde konnte nicht angelegt werden.",
     "couldNotCreateDistributor": "Dieser Lieferant konnte nicht angelegt werden."
+  },
+  "verifactu": {
+    "heading": "VERI*FACTU (Spanien)",
+    "intro": "Jede Rechnung, die Sie ausstellen oder stornieren, wird einer manipulationssicheren Kette hinzugefügt und kann an die spanische Steuerbehörde (AEAT) gesendet werden. Rechnungen müssen in Euro erstellt sein. Dies reicht keine Steuererklärung ein.",
+    "toDo": "Bevor Sie es aktivieren oder Datensätze senden können:",
+    "environment": "AEAT-Umgebung",
+    "envTest": "Test (externes Testportal der AEAT)",
+    "envProd": "Produktion",
+    "installation": "Installationsnummer",
+    "enable": "VERI*FACTU aktivieren",
+    "disable": "Deaktivieren",
+    "on": "Aktiviert: Neue Rechnungen werden erfasst.",
+    "saveFailed": "Diese Einstellungen konnten nicht gespeichert werden.",
+    "certificate": "Elektronisches Zertifikat",
+    "certOk": "Zertifikat geladen: {{subject}}, gültig bis {{date}}.",
+    "certNone": "Noch kein Zertifikat. Die AEAT verlangt das elektronische Zertifikat des Unternehmens (.p12 oder .pfx), um Datensätze zu empfangen.",
+    "certFile": "Zertifikatsdatei",
+    "certPassword": "Zertifikatspasswort",
+    "upload": "Zertifikat hochladen",
+    "uploading": "Wird hochgeladen…",
+    "uploadFailed": "Dieses Zertifikat konnte nicht gelesen werden.",
+    "register": "Rechnungsregister",
+    "registerCount": "{{records}} Datensätze, {{pending}} noch nicht von der AEAT akzeptiert.",
+    "sendNow": "Jetzt an die AEAT senden",
+    "sending": "Wird gesendet…",
+    "sendFailed": "Senden an die AEAT fehlgeschlagen.",
+    "verify": "Kette prüfen",
+    "exportXml": "Datensätze herunterladen (XML)",
+    "chainOk": "Die Kette aus {{records}} Datensätzen ist intakt.",
+    "chainBroken": "Die Kette ist bei Datensatz {{seq}} unterbrochen: {{message}}",
+    "colType": "Art",
+    "colInvoice": "Rechnung",
+    "colDate": "Datum",
+    "colTotal": "Summe",
+    "colStatus": "Status",
+    "cancel": "Stornierung",
+    "status": {
+      "PENDING": "Wartet auf Versand",
+      "ACCEPTED": "Von der AEAT akzeptiert",
+      "ACCEPTED_WITH_ERRORS": "Mit Fehlern akzeptiert",
+      "REJECTED": "Abgelehnt",
+      "ERROR": "Senden fehlgeschlagen, neuer Versuch folgt"
+    }
   }
 }

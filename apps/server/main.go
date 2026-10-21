@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,16 +33,20 @@ import (
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactshttp "rechvix/internal/modules/contacts/httpapi"
 	contactspg "rechvix/internal/modules/contacts/pg"
+	"rechvix/internal/modules/crm"
+	"rechvix/internal/modules/docstatus"
 	einvoiceapp "rechvix/internal/modules/einvoice/app"
 	einvoicehttp "rechvix/internal/modules/einvoice/httpapi"
 	einvoicepg "rechvix/internal/modules/einvoice/pg"
 	einvoicemock "rechvix/internal/modules/einvoice/v1/mock"
+	esignapp "rechvix/internal/modules/esign"
 	ewaybillapp "rechvix/internal/modules/ewaybill/app"
 	"rechvix/internal/modules/ewaybill/eligibility"
 	"rechvix/internal/modules/ewaybill/govportal"
 	ewaybillhttp "rechvix/internal/modules/ewaybill/httpapi"
 	ewaybillpg "rechvix/internal/modules/ewaybill/pg"
 	portalv1 "rechvix/internal/modules/ewaybill/portal/v1"
+	"rechvix/internal/modules/fieldservice"
 	"rechvix/internal/modules/gstindia"
 	gstindiaapp "rechvix/internal/modules/gstindia/app"
 	gstindiadomain "rechvix/internal/modules/gstindia/domain"
@@ -57,18 +62,23 @@ import (
 	logisticshttp "rechvix/internal/modules/logistics/httpapi"
 	logisticspg "rechvix/internal/modules/logistics/pg"
 	notificationsapp "rechvix/internal/modules/notifications/app"
+	notificationsdomain "rechvix/internal/modules/notifications/domain"
 	notificationshttp "rechvix/internal/modules/notifications/httpapi"
 	notificationspg "rechvix/internal/modules/notifications/pg"
+	"rechvix/internal/modules/onlinepay"
 	orgapp "rechvix/internal/modules/organisation/app"
 	orghttp "rechvix/internal/modules/organisation/httpapi"
 	orgpg "rechvix/internal/modules/organisation/pg"
+	"rechvix/internal/modules/pricerules"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricinghttp "rechvix/internal/modules/pricing/httpapi"
 	pricingpg "rechvix/internal/modules/pricing/pg"
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchaseshttp "rechvix/internal/modules/purchases/httpapi"
 	purchasespg "rechvix/internal/modules/purchases/pg"
+	"rechvix/internal/modules/recurring"
 	referencehttp "rechvix/internal/modules/reference/httpapi"
+	"rechvix/internal/modules/reminders"
 	reportingapp "rechvix/internal/modules/reporting/app"
 	reportinghttp "rechvix/internal/modules/reporting/httpapi"
 	reportingpg "rechvix/internal/modules/reporting/pg"
@@ -76,12 +86,18 @@ import (
 	saleshttp "rechvix/internal/modules/sales/httpapi"
 	salespg "rechvix/internal/modules/sales/pg"
 	"rechvix/internal/modules/sales/printing"
+	"rechvix/internal/modules/sepa"
+	"rechvix/internal/modules/shop"
 	staffapp "rechvix/internal/modules/staff/app"
 	staffhttp "rechvix/internal/modules/staff/httpapi"
 	staffpg "rechvix/internal/modules/staff/pg"
+	"rechvix/internal/modules/stockprojection"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
 	"rechvix/internal/modules/taxregimes"
+	verifactuapp "rechvix/internal/modules/verifactu/app"
+	verifactuhttp "rechvix/internal/modules/verifactu/httpapi"
+	verifactupg "rechvix/internal/modules/verifactu/pg"
 	webhooksapp "rechvix/internal/modules/webhooks/app"
 	webhookshttp "rechvix/internal/modules/webhooks/httpapi"
 	webhookspg "rechvix/internal/modules/webhooks/pg"
@@ -91,11 +107,13 @@ import (
 	"rechvix/internal/platform/database"
 	httpx "rechvix/internal/platform/http"
 	"rechvix/internal/platform/logging"
+	"rechvix/internal/platform/mail"
 	"rechvix/internal/platform/money"
 	"rechvix/internal/platform/numbering"
 	"rechvix/internal/platform/observability"
 	"rechvix/internal/platform/outbox"
 	"rechvix/internal/platform/permissions"
+	"rechvix/internal/platform/version"
 	"rechvix/migrations"
 )
 
@@ -393,6 +411,9 @@ func run() error {
 		auditRecorder,
 	)
 
+	priceRulesSvc := pricerules.NewService(pool, permissionsChecker, auditRecorder)
+	purchasesSvc.WithPriceUpdater(priceRulesSvc)
+
 	salesSvc := salesapp.NewService(
 		pool,
 		salespg.NewDocumentRepo(pool),
@@ -409,6 +430,10 @@ func run() error {
 		permissionsChecker,
 		auditRecorder,
 	)
+
+	verifactuSvc := verifactuapp.NewService(pool, verifactupg.NewRepo(pool), aead, outboxStore, orgSvc,
+		verifactuapp.ProducerFromEnv(os.Getenv, version.Version), permissionsChecker, auditRecorder, logger)
+	salesSvc.WithVerifactu(verifactuSvc)
 
 	logisticsSvc := logisticsapp.NewService(
 		pool,
@@ -488,14 +513,25 @@ func run() error {
 	// explicitly forbids a WhatsApp Web-scraping stand-in). QueueSend
 	// correctly returns a permanent per-channel failure until an operator
 	// configures one; see internal/modules/notifications/app/service.go.
+	emailProvider, err := buildEmailProvider(logger)
+	if err != nil {
+		return err
+	}
 	notificationsSvc := notificationsapp.NewService(
 		pool,
 		notificationspg.NewShareLinkRepo(pool),
 		outboxStore,
 		permissionsChecker,
 		auditRecorder,
-		nil, nil, nil,
+		emailProvider, nil, nil,
 	)
+
+	recurringSvc := recurring.NewService(pool, salesSvc, notificationsSvc, permissionsChecker, auditRecorder, logger, func() string { return strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) })
+	esignSvc := esignapp.NewService(pool, salesDocRenderer{sales: salesSvc}, notificationsMailer{svc: notificationsSvc}, permissionsChecker, auditRecorder)
+	salesSvc.WithESign(esignSvc)
+	onlinepaySvc := onlinepay.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)
+	shopSvc := shop.NewService(pool, salesSvc, catalogueSvc, contactsSvc, notificationsSvc, onlinepaySvc, esignSvc, salesDocRenderer{sales: salesSvc}, permissionsChecker, auditRecorder)
+	remindersSvc := reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger)
 
 	router := httpx.NewRouter(httpx.RouterConfig{AllowedOrigins: cfg.Server.AllowedOrigins, Logger: logger})
 	httpx.MountReady(router, pool)
@@ -581,6 +617,11 @@ func run() error {
 			}).
 			MountPublic(r)
 
+		esignhttp := esignapp.NewHandlers(esignSvc)
+		esignhttp.MountPublic(r)
+		onlinepay.NewHandlers(onlinepaySvc).MountPublic(r)
+		shop.NewHandlers(shopSvc).MountPublic(r)
+
 		r.Group(func(r chi.Router) {
 			r.Use(identityhttp.RequireAuthOrAPIKey(identitySvc, cfg.Session.CookieName))
 			identityHandlers.MountAPIKeys(r)
@@ -601,6 +642,18 @@ func run() error {
 			staffhttp.NewHandlers(staffSvc).Mount(r)
 			ewaybillhttp.NewHandlers(ewaybillSvc, pool, permissionsChecker, govPortalSvc).Mount(r)
 			einvoicehttp.NewHandlers(einvoiceSvc, pool, permissionsChecker).Mount(r)
+			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
+			esignhttp.Mount(r)
+			onlinepay.NewHandlers(onlinepaySvc).Mount(r)
+			shop.NewHandlers(shopSvc).Mount(r)
+			sepa.NewHandlers(sepa.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)).Mount(r)
+			reminders.NewHandlers(remindersSvc).Mount(r)
+			recurring.NewHandlers(recurringSvc).Mount(r)
+			pricerules.NewHandlers(priceRulesSvc).Mount(r)
+			stockprojection.NewHandlers(stockprojection.NewService(pool, permissionsChecker)).Mount(r)
+			fieldservice.NewHandlers(fieldservice.NewService(pool, permissionsChecker, auditRecorder, logger)).Mount(r)
+			crm.NewHandlers(crm.NewService(pool, contactsSvc, permissionsChecker, auditRecorder)).Mount(r)
+			docstatus.NewHandlers(docstatus.NewService(pool, permissionsChecker, auditRecorder)).Mount(r)
 		})
 	})
 
@@ -635,4 +688,18 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 	return server.Shutdown(shutdownCtx)
+}
+
+// buildEmailProvider returns the SMTP transport when SMTP_HOST is set, and nil otherwise (queued emails then fail with
+// a clear "no email provider configured" instead of disappearing).
+func buildEmailProvider(logger *slog.Logger) (notificationsdomain.EmailProvider, error) {
+	cfg, err := mail.FromEnv(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+	logger.Info("email delivery enabled", "smtp_host", cfg.Host, "smtp_port", cfg.Port, "tls", cfg.TLS)
+	return mail.NewSMTP(*cfg), nil
 }

@@ -25,6 +25,12 @@ import {
   SalesListPage,
   SettingsPage,
   StaffPage,
+  CrmPage,
+  SignPage,
+  ShopPage,
+  PortalPage,
+  ServicePage,
+  SepaPage,
 } from "./lazyPages";
 
 /**
@@ -95,6 +101,23 @@ const bootstrapRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/setup",
   component: BootstrapPage,
+});
+
+const signRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sign/$token",
+  component: () => <SignPage token={signRoute.useParams().token} />,
+});
+
+const shopRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/shop/$slug",
+  component: () => <ShopPage slug={shopRoute.useParams().slug} />,
+});
+const portalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/$slug",
+  component: () => <PortalPage slug={portalRoute.useParams().slug} />,
 });
 
 const forgotPasswordRoute = createRoute({
@@ -194,6 +217,9 @@ const settingsRoute = realRoute("/settings", SettingsPage);
 const backupRoute = realRoute("/backup", BackupPage);
 const staffRoute = realRoute("/staff", StaffPage);
 const calendarRoute = realRoute("/calendar", CalendarPage);
+const crmRoute = realRoute("/crm", CrmPage);
+const serviceRoute = realRoute("/service", ServicePage);
+const sepaRoute = realRoute("/sepa", SepaPage);
 
 const notFoundRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -206,6 +232,9 @@ const routeTree = rootRoute.addChildren([
   bootstrapRoute,
   forgotPasswordRoute,
   resetPasswordRoute,
+  signRoute,
+  shopRoute,
+  portalRoute,
   dashboardRoute,
   salesListRoute,
   salesNewRoute,
@@ -223,6 +252,9 @@ const routeTree = rootRoute.addChildren([
   backupRoute,
   staffRoute,
   calendarRoute,
+  crmRoute,
+  serviceRoute,
+  sepaRoute,
   settingsRoute,
   notFoundRoute,
 ]);

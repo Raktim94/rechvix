@@ -98,3 +98,60 @@ func TestInvoiceNumberRules(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildBreakdownGroupsByRateAndSignsCredits(t *testing.T) {
+	d := decimal.RequireFromString
+	lines := []TaxLine{
+		{Classification: "STANDARD", Taxable: d("100.00"), Components: []TaxComponent{{Type: "IVA", Rate: d("21"), Amount: d("21.00")}}},
+		{Classification: "STANDARD", Taxable: d("50.00"), Components: []TaxComponent{{Type: "IVA", Rate: d("21"), Amount: d("10.50")}}},
+		{Classification: "REDUCED", Taxable: d("40.00"), Components: []TaxComponent{{Type: "IVA", Rate: d("10"), Amount: d("4.00")}}},
+		{Classification: "EXEMPT", Taxable: d("10.00")},
+	}
+	b, tax, err := BuildBreakdown(lines, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) != 3 {
+		t.Fatalf("want 3 groups, got %d", len(b))
+	}
+	if !tax.Equal(d("35.50")) {
+		t.Fatalf("tax total %s", tax)
+	}
+	if !b[0].Base.Equal(d("150.00")) && !b[1].Base.Equal(d("150.00")) && !b[2].Base.Equal(d("150.00")) {
+		t.Fatal("the two 21% lines must merge into one 150.00 base")
+	}
+	neg, negTax, err := BuildBreakdown(lines, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !negTax.Equal(d("-35.50")) || neg[0].Base.Sign() > 0 && neg[1].Base.Sign() > 0 {
+		t.Fatalf("credit amounts must be negative: %s", negTax)
+	}
+}
+
+func TestBuildBreakdownSurchargeAndSpecialClasses(t *testing.T) {
+	d := decimal.RequireFromString
+	b, tax, err := BuildBreakdown([]TaxLine{
+		{Classification: "STANDARD", Taxable: d("100.00"), Components: []TaxComponent{{Type: "IVA", Rate: d("21"), Amount: d("21.00")}, {Type: "RE", Rate: d("5.2"), Amount: d("5.20")}}},
+		{Classification: "EXPORT", Taxable: d("30.00")},
+		{Classification: "REVERSE_CHARGE", Taxable: d("20.00")},
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tax.Equal(d("26.20")) || len(b) != 3 {
+		t.Fatalf("tax %s groups %d", tax, len(b))
+	}
+	var sawSurcharge, sawE2, sawS2 bool
+	for _, x := range b {
+		sawSurcharge = sawSurcharge || (x.Regime == "18" && x.SurchargeQuota != nil)
+		sawE2 = sawE2 || x.Exempt == "E2"
+		sawS2 = sawS2 || x.Qualification == "S2"
+	}
+	if !sawSurcharge || !sawE2 || !sawS2 {
+		t.Fatalf("missing special groups: %+v", b)
+	}
+	if _, _, err := BuildBreakdown([]TaxLine{{Classification: "STANDARD", Taxable: d("1")}}, 1); err == nil {
+		t.Fatal("a taxable line without an IVA component must be rejected")
+	}
+}

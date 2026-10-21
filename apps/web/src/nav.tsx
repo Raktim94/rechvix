@@ -55,13 +55,18 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     titleKey: "nav.group.relationships",
-    items: [{ to: "/contacts", labelKey: "nav.item.contacts", icon: <ContactsIcon /> }],
+    items: [
+      { to: "/contacts", labelKey: "nav.item.contacts", icon: <ContactsIcon /> },
+      { to: "/crm", labelKey: "nav.item.crm", icon: <ContactsIcon /> },
+      { to: "/service", labelKey: "nav.item.service", icon: <SettingsIcon /> },
+    ],
   },
   {
     titleKey: "nav.group.finance",
     items: [
       { to: "/accounting", labelKey: "nav.item.accounting", icon: <AccountingIcon /> },
       { to: "/expenses", labelKey: "nav.item.expenses", icon: <WalletIcon /> },
+      { to: "/sepa", labelKey: "nav.item.sepa", icon: <WalletIcon /> },
       { to: "/gst", labelKey: "nav.item.tax", icon: <GstIcon /> },
       { to: "/reports", labelKey: "nav.item.reports", icon: <ReportsIcon /> },
     ],

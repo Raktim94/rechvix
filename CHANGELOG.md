@@ -1,6 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.15.0
+
+### Spain: VERI*FACTU record chain (not yet certified)
+- Every invoice or credit note finalized for a Spanish company with VERI*FACTU switched on appends a record to an append-only, SHA-256 hash-chained log, in the same transaction; cancelling appends an anulacion record. The database refuses updates, deletes, truncation and a record that does not continue the chain (migration 0049). Fingerprints reproduce AEAT's three published examples; generated XML validates against AEAT's schema.
+- The AEAT verification QR and its legend are printed on A4, compact and 58/80 mm thermal layouts. Records are sent to AEAT by the worker over mutual TLS with the company's certificate, honouring AEAT's wait interval; results are shown per record. Records can be exported as XML and the chain re-verified from Settings, Tax.
+- NOT claimed: compliance, the declaracion responsable (only the producer can make it), or any run against AEAT's real test portal. See docs/verifactu.md.
+
+### Customer communication
+- Server-side email (SMTP): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS`. Email a document as a secure link; opens are recorded as a read receipt on the invoice (migration 0050).
+- Automatic overdue-invoice reminders (days after due, repeat interval, maximum, your own wording).
+- Electronic signature requests with a public signing page, typed or drawn signature, consent text and evidence (document fingerprint, time, address, browser); signed documents carry a "signed by" line (migration 0057). A simple electronic signature, not a qualified one.
+- Online card and PayPal payment links (Stripe Checkout and PayPal orders); a confirmed payment records a receipt automatically; secrets encrypted at rest (migration 0058). Tested against local fakes of both providers, not against the live services.
+
+### Sales and stock
+- Recurring invoices: schedules clone a finalized invoice weekly, monthly, quarterly or yearly, as drafts or finalized and emailed, with catch-up and pause (migration 0051).
+- Custom workflow statuses on sales documents (migration 0052).
+- Bill several delivery notes in one invoice (migration 0053). Fixed: billing a delivery note took its goods out of stock a second time; the invoice no longer posts stock for notes that already did, and cancelling it releases the notes.
+- Projected stock availability from open sales and purchase orders; optional automatic selling-price updates from purchase costs (migration 0054).
+- Phone numbers accept 7 to 15 digits (they had to be exactly 10, which rejected Spanish numbers) and ignore separators.
+
+### New modules
+- CRM: pipeline stages, opportunities, activities, follow-up tasks, lead to customer (migration 0055).
+- Field service: customer equipment, incidents with a work log and time spent, maintenance plans that raise incidents on schedule, site locations (migrations 0056, 0061).
+- SEPA Core direct debit: customer mandates (IBAN encrypted), ISO 20022 pain.008.001.02 collection files validated against the ISO schema, collection results recorded as receipts (migration 0059). The file is for your bank; sending it is up to you.
+- Online shop, client area and public catalogue: publish products, take orders as draft sales orders, one-time emailed sign-in links for customers to open, pay and sign documents (migration 0060).
+
+### Operations
+- New environment variables: `PUBLIC_BASE_URL`, `SMTP_*`, `VERIFACTU_PRODUCER_NAME`, `VERIFACTU_PRODUCER_COUNTRY`, `VERIFACTU_PRODUCER_ID_TYPE`, `VERIFACTU_PRODUCER_ID`, `VERIFACTU_SYSTEM_ID`. Everything is off until configured. See docs/operations/deployment.md.
+- Migrations 0049 to 0061 are additive.
+
+## 0.14.24 and earlier changes
 
 ### Accountant handoff packages
 - India, Spain, UK and US tax workpapers, source registers, review checks and downloadable ZIP/XLSX; scoped permissions and reconciliation.

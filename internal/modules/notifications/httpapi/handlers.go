@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -57,6 +59,8 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/share-links", h.list)
 	r.Delete("/share-links/{id}", h.revoke)
 	r.Post("/notifications/send", h.send)
+	r.Post("/notifications/email-document", h.emailDocument)
+	r.Get("/notifications/email-status", h.emailStatus)
 }
 
 func (h *Handlers) MountPublic(r chi.Router) {
@@ -151,6 +155,7 @@ func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
+	h.svc.RecordView(r.Context(), link)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"document_type": link.DocumentType, "document_id": link.DocumentID})
 }
 
@@ -178,6 +183,7 @@ func (h *Handlers) redeemPDF(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, httpx.NewNotFound("NOT_AVAILABLE", "This link can't be opened right now."))
 		return
 	}
+	h.svc.RecordView(r.Context(), link)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `inline; filename="`+filename+`"`)
 	w.Write(data)
@@ -212,4 +218,49 @@ func (h *Handlers) send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+type emailDocumentRequest struct {
+	DocumentType string    `json:"document_type"`
+	DocumentID   uuid.UUID `json:"document_id"`
+	To           string    `json:"to"`
+	Subject      string    `json:"subject"`
+	Message      string    `json:"message"`
+}
+
+// publicBase is the address recipients will open: PUBLIC_BASE_URL when set, otherwise this request's own scheme and host.
+func publicBase(r *http.Request) string {
+	if v := strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")); v != "" {
+		return v
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func (h *Handlers) emailDocument(w http.ResponseWriter, r *http.Request) {
+	principal, _ := httpx.PrincipalFromContext(r.Context())
+	req, err := decodeJSON[emailDocumentRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	if err := h.svc.EmailDocument(r.Context(), principal, publicBase(r), req.DocumentType, req.DocumentID, req.To, req.Subject, req.Message); err != nil {
+		switch {
+		case errors.Is(err, domain.ErrEmailNotConfigured):
+			httpx.WriteError(w, r, httpx.NewBadRequest("EMAIL_NOT_CONFIGURED", err.Error()))
+		case errors.Is(err, domain.ErrInvalidRecipient):
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_RECIPIENT", err.Error()))
+		default:
+			writeServiceError(w, r, err)
+		}
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+func (h *Handlers) emailStatus(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"configured": h.svc.EmailConfigured()})
 }

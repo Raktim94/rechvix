@@ -164,6 +164,37 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
   );
 }
 
+interface Loc { address_id: string; latitude: string; longitude: string }
+
+/** A map point for an address: shows a map link when saved, and can save the current device location or clear it. */
+function AddressLocationControl({ partyId, addressId }: { partyId: string; addressId: string }) {
+  const queryClient = useQueryClient();
+  const locs = useQuery({ queryKey: ["address-locations", partyId], queryFn: () => api.getListField<Loc>(`/service/address-locations?party_id=${partyId}`, "locations") });
+  const [msg, setMsg] = useState("");
+  const save = useMutation({
+    mutationFn: (v: { latitude: string; longitude: string }) => api.put(`/service/address-locations/${addressId}`, v),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["address-locations", partyId] }),
+  });
+  const loc = locs.data?.find((l) => l.address_id === addressId);
+  const here = () => {
+    setMsg("");
+    if (!navigator.geolocation) { setMsg("This browser cannot share a location."); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => save.mutate({ latitude: p.coords.latitude.toFixed(6), longitude: p.coords.longitude.toFixed(6) }),
+      () => setMsg("Location was not shared."),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+  return (
+    <span>
+      {loc ? <a href={`https://www.openstreetmap.org/?mlat=${loc.latitude}&mlon=${loc.longitude}#map=17/${loc.latitude}/${loc.longitude}`} target="_blank" rel="noreferrer">Map<span className="srOnly"> (opens in a new tab)</span></a> : null}{" "}
+      <button type="button" className={ui.btnGhost} onClick={here} disabled={save.isPending}>{loc ? "Update location" : "Pin my location"}</button>
+      {loc ? <button type="button" className={ui.btnGhost} onClick={() => save.mutate({ latitude: "", longitude: "" })}>Remove pin</button> : null}
+      {msg ? <span role="alert"> {msg}</span> : null}
+    </span>
+  );
+}
+
 function AddressesPanel({ partyId }: { partyId: string }) {
   const isIndia = (useOrgContext().legalEntity?.CountryCode ?? "IN") === "IN";
   const queryClient = useQueryClient();
@@ -219,7 +250,10 @@ function AddressesPanel({ partyId }: { partyId: string }) {
                 <tr key={a.ID}>
                   <td>{ADDRESS_TYPE_LABELS[a.AddressType]}</td>
                   <td>{[a.Line1, a.Line2, a.City, a.State, a.PostalCode].filter(Boolean).join(", ")}</td>
-                  <td>{a.IsDefault ? <span className={ui.badge} data-tone="positive">default</span> : null}</td>
+                  <td>
+                    {a.IsDefault ? <span className={ui.badge} data-tone="positive">default</span> : null}{" "}
+                    <AddressLocationControl partyId={partyId} addressId={a.ID} />
+                  </td>
                 </tr>
               ))}
             </tbody>

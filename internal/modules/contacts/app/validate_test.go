@@ -66,3 +66,19 @@ func TestValidAddressType(t *testing.T) {
 		t.Error("expected an unrecognized address type to be invalid")
 	}
 }
+
+func TestPhoneAcceptsInternationalNumbers(t *testing.T) {
+	for _, p := range []string{"9876543210", "600111222", "34600111222", "442071838750"} {
+		if err := ValidateCreateParty(CreatePartyParams{PartyType: domain.PartyCustomer, LegalName: "X", Phone: p}); err != nil {
+			t.Errorf("%q should be valid: %v", p, err)
+		}
+	}
+	for _, p := range []string{"12345", "1234567890123456", "abc1234567"} {
+		if err := ValidateCreateParty(CreatePartyParams{PartyType: domain.PartyCustomer, LegalName: "X", Phone: p}); err == nil {
+			t.Errorf("%q must be rejected", p)
+		}
+	}
+	if got := NormalizePhone("+34 600-111 (222)"); got != "34600111222" {
+		t.Errorf("normalized: %q", got)
+	}
+}

@@ -77,6 +77,18 @@ explicitly enable: `EINVOICE_PROVIDER=sandbox` (government e-Invoice
 sandbox, Stage 8), or a real WhatsApp/email provider once configured
 (Stage 9). Everything defaults to off/mock.
 
+### Optional features that need configuration
+
+All default to off. Set them on the `app` and `worker` services.
+
+| Variable | Needed for | Notes |
+|---|---|---|
+| `PUBLIC_BASE_URL` | Links in emails and reminders, payment return pages, the client-area sign-in link | The public address people reach the app at, for example `https://billing.example.com`. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS` | Emailed documents, reminders, signing and sign-in links | `SMTP_TLS` is `starttls` (default), `tls` or `none` (a trusted local relay only). Without `SMTP_HOST` no email is sent and the screens say so. |
+| `VERIFACTU_PRODUCER_NAME`, `VERIFACTU_PRODUCER_COUNTRY`, `VERIFACTU_PRODUCER_ID_TYPE`, `VERIFACTU_PRODUCER_ID`, `VERIFACTU_SYSTEM_ID` | Spanish VERI*FACTU records | Identify the software producer in each record. The identifier has no default and VERI*FACTU cannot be switched on without it. See docs/verifactu.md. |
+
+Online payments (Stripe, PayPal), SEPA creditor details, the online shop and the AEAT certificate are configured in Settings, not through the environment; their secrets are stored encrypted with `AEAD_ENCRYPTION_KEY`. Keep that key: losing it makes the stored certificate and payment keys unreadable.
+
 ### Optional Compose profiles
 
 None of these start with a plain `docker compose up -d`:

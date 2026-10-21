@@ -22,3 +22,10 @@ export const ReportsPage = lazy(() => import("./pages/reports/ReportsPage").then
 export const SettingsPage = lazy(() => import("./pages/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 export const StaffPage = lazy(() => import("./pages/staff/StaffPage").then((m) => ({ default: m.StaffPage })));
 export const CalendarPage = lazy(() => import("./pages/staff/CalendarPage").then((m) => ({ default: m.CalendarPage })));
+
+export const CrmPage = lazy(() => import("./pages/crm/CrmPage").then((m) => ({ default: m.CrmPage })));
+export const ServicePage = lazy(() => import("./pages/service/ServicePage").then((m) => ({ default: m.ServicePage })));
+export const SignPage = lazy(() => import("./pages/sign/SignPage").then((m) => ({ default: m.SignPage })));
+export const SepaPage = lazy(() => import("./pages/sepa/SepaPage").then((m) => ({ default: m.SepaPage })));
+export const ShopPage = lazy(() => import("./pages/shop/ShopPage").then((m) => ({ default: m.ShopPage })));
+export const PortalPage = lazy(() => import("./pages/shop/PortalPage").then((m) => ({ default: m.PortalPage })));

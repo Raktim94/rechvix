@@ -15,6 +15,7 @@ import (
 	backupapp "rechvix/internal/modules/backup/app"
 	"rechvix/internal/modules/taxregimes"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,20 +30,26 @@ import (
 	einvoicepg "rechvix/internal/modules/einvoice/pg"
 	mockprovider "rechvix/internal/modules/einvoice/v1/mock"
 	sandboxprovider "rechvix/internal/modules/einvoice/v1/sandbox"
+	"rechvix/internal/modules/fieldservice"
 	"rechvix/internal/modules/gstindia"
 	gstindiapg "rechvix/internal/modules/gstindia/pg"
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	inventorypg "rechvix/internal/modules/inventory/pg"
 	notificationsapp "rechvix/internal/modules/notifications/app"
+	notificationsdomain "rechvix/internal/modules/notifications/domain"
 	notificationspg "rechvix/internal/modules/notifications/pg"
 	orgapp "rechvix/internal/modules/organisation/app"
 	orgpg "rechvix/internal/modules/organisation/pg"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricingpg "rechvix/internal/modules/pricing/pg"
+	"rechvix/internal/modules/recurring"
+	"rechvix/internal/modules/reminders"
 	salesapp "rechvix/internal/modules/sales/app"
 	salespg "rechvix/internal/modules/sales/pg"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
+	verifactuapp "rechvix/internal/modules/verifactu/app"
+	verifactupg "rechvix/internal/modules/verifactu/pg"
 	webhooksapp "rechvix/internal/modules/webhooks/app"
 	webhookspg "rechvix/internal/modules/webhooks/pg"
 	"rechvix/internal/platform/audit"
@@ -50,9 +57,11 @@ import (
 	appcrypto "rechvix/internal/platform/crypto"
 	"rechvix/internal/platform/database"
 	"rechvix/internal/platform/logging"
+	"rechvix/internal/platform/mail"
 	"rechvix/internal/platform/numbering"
 	"rechvix/internal/platform/outbox"
 	"rechvix/internal/platform/permissions"
+	"rechvix/internal/platform/version"
 )
 
 func main() {
@@ -125,6 +134,10 @@ func run() error {
 		inventorySvc, taxationSvc, catalogueSvc, contactsSvc, orgSvc, pricingSvc, numberingSvc, accountingSvc, outboxStore,
 		permissionsChecker, auditRecorder)
 
+	verifactuSvc := verifactuapp.NewService(pool, verifactupg.NewRepo(pool), aead, outboxStore, orgSvc,
+		verifactuapp.ProducerFromEnv(os.Getenv, version.Version), permissionsChecker, auditRecorder, logger)
+	salesSvc.WithVerifactu(verifactuSvc)
+
 	provider, providerName := buildEInvoiceProvider(logger)
 
 	einvoiceSvc := einvoiceapp.NewService(einvoicepg.NewRecordRepo(pool), provider, providerName,
@@ -137,8 +150,12 @@ func run() error {
 	// either (apps/server/main.go's doc comment explains why) — this
 	// worker still correctly drains queued sends into a documented
 	// per-channel permanent failure rather than silently dropping them.
+	emailProvider, err := buildEmailProvider(logger)
+	if err != nil {
+		return err
+	}
 	notificationsSvc := notificationsapp.NewService(pool, notificationspg.NewShareLinkRepo(pool), outboxStore,
-		permissionsChecker, auditRecorder, nil, nil, nil)
+		permissionsChecker, auditRecorder, emailProvider, nil, nil)
 
 	// Scheduled encrypted backups: off unless BACKUP_SCHEDULE_INTERVAL is set
 	// (e.g. "24h"). Needs BACKUP_DATABASE_DSN (RLS-bypassing role, same as
@@ -166,6 +183,10 @@ func run() error {
 		logger.Info("scheduled backups enabled", "interval", interval.String(), "dir", dir, "keep", keep)
 	}
 
+	go fieldservice.NewService(pool, permissionsChecker, auditRecorder, logger).Loop(ctx, time.Hour)
+	go recurring.NewService(pool, salesSvc, notificationsSvc, permissionsChecker, auditRecorder, logger, func() string { return strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) }).Loop(ctx, time.Hour)
+	go reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger).Loop(ctx, time.Hour)
+
 	poller := outbox.NewPoller(pool, outboxStore, logger)
 	poller.Register(einvoiceapp.EventTypeGenerate, einvoiceSvc.Handler())
 	// Webhook fan-out (docs/adr/0005): one handler per brief §38 source
@@ -182,6 +203,7 @@ func run() error {
 	poller.Register("einvoice.failed", webhooksSvc.HandlerForSourceEvent("einvoice.failed"))
 	poller.Register(webhooksapp.EventTypeDelivery, webhooksSvc.DeliverHandler())
 	poller.Register(notificationsapp.EventTypeSend, notificationsSvc.Handler())
+	poller.Register(verifactuapp.EventTypeSubmit, verifactuSvc.Handler())
 
 	logger.Info("worker started", "einvoice_provider", providerName)
 	poller.Run(ctx, 5*time.Second)
@@ -220,4 +242,17 @@ func buildEInvoiceProvider(logger *slog.Logger) (einvoicedomain.EInvoiceProvider
 	logger.Warn("using the REAL NIC sandbox e-Invoice provider — this makes actual network calls; " +
 		"never enable this in an automated test run")
 	return sandboxprovider.New(baseURL, creds, nil), "nic-sandbox-v1"
+}
+
+// buildEmailProvider returns the SMTP transport when SMTP_HOST is set (same variables as apps/server), else nil.
+func buildEmailProvider(logger *slog.Logger) (notificationsdomain.EmailProvider, error) {
+	cfg, err := mail.FromEnv(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+	logger.Info("email delivery enabled", "smtp_host", cfg.Host, "smtp_port", cfg.Port, "tls", cfg.TLS)
+	return mail.NewSMTP(*cfg), nil
 }

@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { StatusBadge, useDocAssignments } from "../../components/DocumentStatuses";
+import { RecurringList } from "../../components/RecurringPanel";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { WhatsAppIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
-import { api } from "../../lib/api-client";
+import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
@@ -78,6 +80,17 @@ export function SalesListPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const org = useOrgContext();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const billNotes = useMutation({
+    mutationFn: () => api.post<{ document: { ID: string } }>("/sales/documents/bill-delivery-notes", { document_ids: [...picked] }),
+    onSuccess: (r) => {
+      setPicked(new Set());
+      void queryClient.invalidateQueries({ queryKey: ["sales-documents"] });
+      void navigate({ to: "/sales/new", search: { resume: r.document.ID } });
+    },
+  });
 
   const documents = useQuery({
     queryKey: ["sales-documents", org.legalEntity?.ID],
@@ -108,6 +121,9 @@ export function SalesListPage() {
     }
     return true;
   });
+
+  const assignments = useDocAssignments(filtered.slice(0, 200).map((d) => d.ID));
+  const workflowByDoc = new Map((assignments.data ?? []).map((a) => [a.document_id, a]));
 
   return (
     <div className={layout.page}>
@@ -208,10 +224,21 @@ export function SalesListPage() {
             {documents.data.length === 0 ? "No sales yet — start your first sale above." : "No sales match these filters."}
           </p>
         ) : (
+          <div>
+            {picked.size > 0 ? (
+              <div className={ui.formActions} style={{ justifyContent: "flex-start", margin: "8px 0" }}>
+                <button type="button" className={ui.btnPrimary} disabled={billNotes.isPending} onClick={() => billNotes.mutate()}>
+                  {billNotes.isPending ? "Creating…" : `Bill ${picked.size} delivery note${picked.size === 1 ? "" : "s"} in one invoice`}
+                </button>
+                <button type="button" className={ui.btnSecondary} onClick={() => setPicked(new Set())}>Clear</button>
+              </div>
+            ) : null}
+            {billNotes.isError ? <p role="alert">{billNotes.error instanceof ApiError ? billNotes.error.message : "Could not create the invoice."}</p> : null}
           <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>
               <thead>
                 <tr>
+                  <th scope="col"><span className="srOnly">Select delivery notes to bill</span></th>
                   <th scope="col">Number</th>
                   <th scope="col">Customer</th>
                   <th scope="col">Type</th>
@@ -224,6 +251,21 @@ export function SalesListPage() {
               <tbody>
                 {filtered.map((d) => (
                   <tr key={d.ID}>
+                    <td>
+                      {d.DocumentType === "DELIVERY_CHALLAN" && d.Status === "FINALIZED" ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`Bill delivery note ${d.DocumentNumber}`}
+                          checked={picked.has(d.ID)}
+                          onChange={(e) => {
+                            const next = new Set(picked);
+                            if (e.target.checked) next.add(d.ID);
+                            else next.delete(d.ID);
+                            setPicked(next);
+                          }}
+                        />
+                      ) : null}
+                    </td>
                     <td>
                       <Link
                         to={d.Status === "DRAFT" ? "/sales/new" : "/sales/$id"}
@@ -240,6 +282,7 @@ export function SalesListPage() {
                       <span className={ui.badge} data-tone={statusTone(d.Status)}>
                         {d.Status}
                       </span>
+                      {workflowByDoc.get(d.ID) ? <> <StatusBadge name={workflowByDoc.get(d.ID)!.name} color={workflowByDoc.get(d.ID)!.color} /></> : null}
                     </td>
                     <td>{new Date(d.IssueDate).toLocaleDateString()}</td>
                     <td className="num">{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
@@ -256,8 +299,10 @@ export function SalesListPage() {
               </tbody>
             </table>
           </div>
+          </div>
         )}
       </div>
+      <RecurringList />
     </div>
   );
 }

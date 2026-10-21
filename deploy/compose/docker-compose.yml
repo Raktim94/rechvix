@@ -92,6 +92,15 @@ services:
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-}"
       LOG_LEVEL: "${LOG_LEVEL:-info}"
       ENABLE_BOOTSTRAP: "${ENABLE_BOOTSTRAP:-true}"
+      # Optional: email, public links and Spanish VERI*FACTU (see docs/operations/deployment.md). All empty = off.
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USERNAME: "${SMTP_USERNAME:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      SMTP_TLS: "${SMTP_TLS:-starttls}"
+      VERIFACTU_PRODUCER_ID: "${VERIFACTU_PRODUCER_ID:-}"
     ports:
       - "${HTTP_PORT:-8080}:8080"
 
@@ -113,6 +122,15 @@ services:
       # compose file; production credentials belong in a deployment's own
       # secret manager, not a committed file.
       EINVOICE_PROVIDER: "${EINVOICE_PROVIDER:-mock}"
+      # Optional: email, public links and Spanish VERI*FACTU (see docs/operations/deployment.md). All empty = off.
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USERNAME: "${SMTP_USERNAME:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      SMTP_TLS: "${SMTP_TLS:-starttls}"
+      VERIFACTU_PRODUCER_ID: "${VERIFACTU_PRODUCER_ID:-}"
 
   # --- optional profiles, off by default ---
 

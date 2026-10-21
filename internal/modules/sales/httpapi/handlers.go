@@ -59,6 +59,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Delete("/sales/documents/{id}/lines/{lineId}", h.deleteLine)
 	r.Post("/sales/documents/{id}/finalize", h.finalizeDocument)
 	r.Post("/sales/documents/{id}/convert", h.convertDocument)
+	r.Post("/sales/documents/bill-delivery-notes", h.billDeliveryNotes)
 	r.Post("/sales/documents/{id}/cancel", h.cancelDocument)
 	r.Get("/sales/documents/{id}/print", h.printDocument)
 	r.Get("/sales/billing-lookup", h.billingLookup)
@@ -567,4 +568,30 @@ func (h *Handlers) billingLookup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+type billDeliveryNotesRequest struct {
+	DocumentIDs []uuid.UUID `json:"document_ids"`
+}
+
+// billDeliveryNotes creates one draft invoice covering several finalized delivery notes.
+func (h *Handlers) billDeliveryNotes(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSON[billDeliveryNotesRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	target, err := h.svc.ConvertDeliveryNotes(r.Context(), principal(r), req.DocumentIDs)
+	switch {
+	case errors.Is(err, domain.ErrDeliveryNoteAlreadyBilled):
+		httpx.WriteError(w, r, httpx.NewConflict("ALREADY_BILLED", err.Error()))
+		return
+	case errors.Is(err, domain.ErrMixedDeliveryNotes):
+		httpx.WriteError(w, r, httpx.NewBadRequest("CANNOT_COMBINE", err.Error()))
+		return
+	case err != nil:
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"document": target})
 }

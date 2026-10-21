@@ -42,7 +42,10 @@
       "calendar": "Agenda",
       "integrations": "Koppelingen",
       "backup": "Back-up",
-      "settings": "Instellingen"
+      "settings": "Instellingen",
+      "crm": "CRM",
+      "service": "Servicedienst",
+      "sepa": "SEPA-incasso"
     }
   },
   "shell": {
@@ -246,5 +249,48 @@
     "adding": "Toevoegen…",
     "couldNotCreateCustomer": "Deze klant kon niet worden aangemaakt.",
     "couldNotCreateDistributor": "Deze leverancier kon niet worden aangemaakt."
+  },
+  "verifactu": {
+    "heading": "VERI*FACTU (Spanje)",
+    "intro": "Elke factuur die je uitgeeft of annuleert, wordt toegevoegd aan een manipulatiebestendige keten en kan naar de Spaanse belastingdienst (AEAT) worden gestuurd. Facturen moeten in euro zijn. Dit dient geen belastingaangifte in.",
+    "toDo": "Voordat je het kunt inschakelen of records kunt verzenden:",
+    "environment": "AEAT-omgeving",
+    "envTest": "Test (extern testportaal van de AEAT)",
+    "envProd": "Productie",
+    "installation": "Installatienummer",
+    "enable": "VERI*FACTU inschakelen",
+    "disable": "Uitschakelen",
+    "on": "Ingeschakeld: nieuwe facturen worden vastgelegd.",
+    "saveFailed": "Deze instellingen konden niet worden opgeslagen.",
+    "certificate": "Elektronisch certificaat",
+    "certOk": "Certificaat geladen: {{subject}}, geldig tot {{date}}.",
+    "certNone": "Nog geen certificaat. De AEAT vereist het elektronische certificaat van het bedrijf (.p12 of .pfx) om records te ontvangen.",
+    "certFile": "Certificaatbestand",
+    "certPassword": "Certificaatwachtwoord",
+    "upload": "Certificaat uploaden",
+    "uploading": "Uploaden…",
+    "uploadFailed": "Dit certificaat kon niet worden gelezen.",
+    "register": "Factuurregister",
+    "registerCount": "{{records}} records, {{pending}} nog niet geaccepteerd door de AEAT.",
+    "sendNow": "Nu naar de AEAT sturen",
+    "sending": "Verzenden…",
+    "sendFailed": "Verzenden naar de AEAT mislukt.",
+    "verify": "Keten controleren",
+    "exportXml": "Records downloaden (XML)",
+    "chainOk": "De keten van {{records}} records is intact.",
+    "chainBroken": "De keten is verbroken bij record {{seq}}: {{message}}",
+    "colType": "Type",
+    "colInvoice": "Factuur",
+    "colDate": "Datum",
+    "colTotal": "Totaal",
+    "colStatus": "Status",
+    "cancel": "Annulering",
+    "status": {
+      "PENDING": "Wacht op verzending",
+      "ACCEPTED": "Geaccepteerd door de AEAT",
+      "ACCEPTED_WITH_ERRORS": "Geaccepteerd met fouten",
+      "REJECTED": "Afgewezen",
+      "ERROR": "Verzenden mislukt, nieuwe poging volgt"
+    }
   }
 }

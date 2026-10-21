@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -309,4 +310,45 @@ func scanLine(row scannable) (*domain.DocumentLine, error) {
 	l.LineDiscountAmount = discount
 	l.LineTotal = lineTotal
 	return &l, nil
+}
+
+func (r *DocumentRepo) LinkSources(ctx context.Context, orgID, target uuid.UUID, sources []uuid.UUID) error {
+	for _, src := range sources {
+		if _, err := r.pool.Q(ctx).Exec(ctx,
+			`INSERT INTO sales_document_sources (target_document_id, source_document_id, organisation_id) VALUES ($1, $2, $3)`, target, src, orgID); err != nil {
+			if strings.Contains(err.Error(), "23505") {
+				return domain.ErrDeliveryNoteAlreadyBilled
+			}
+			return fmt.Errorf("sales: linking delivery note: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *DocumentRepo) HasSources(ctx context.Context, id uuid.UUID) (bool, error) {
+	var n int
+	err := r.pool.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM sales_document_sources WHERE target_document_id = $1`, id).Scan(&n)
+	return n > 0, err
+}
+
+func (r *DocumentRepo) UnlinkSources(ctx context.Context, id uuid.UUID) error {
+	_, err := r.pool.Q(ctx).Exec(ctx, `DELETE FROM sales_document_sources WHERE target_document_id = $1`, id)
+	return err
+}
+
+func (r *DocumentRepo) BilledSources(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]bool, error) {
+	out := map[uuid.UUID]bool{}
+	rows, err := r.pool.Q(ctx).Query(ctx, `SELECT source_document_id FROM sales_document_sources WHERE source_document_id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
