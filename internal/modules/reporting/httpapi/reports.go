@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"github.com/shopspring/decimal"
 	"net/http"
 	"strconv"
 	"time"
@@ -348,6 +349,37 @@ func (h *Handlers) gstr3b(w http.ResponseWriter, r *http.Request) {
 		Headers: []string{"Section", "Taxable", "IGST", "CGST", "SGST", "CESS"}}
 	for _, g := range rows {
 		t.Rows = append(t.Rows, []string{g.Label, g.TaxableAmount.StringFixed(fixed), g.IGST.StringFixed(fixed), g.CGST.StringFixed(fixed), g.SGST.StringFixed(fixed), g.CESS.StringFixed(fixed)})
+	}
+	writeTable(w, r, t)
+}
+
+// taxSummary is the generic tax summary for VAT/sales-tax countries: tax collected,
+// tax paid, and the net, by tax and rate. Preparation data, not a filed return.
+func (h *Handlers) taxSummary(w http.ResponseWriter, r *http.Request) {
+	f, err := parseFilter(r)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	rows, err := h.svc.TaxSummary(r.Context(), principal(r), f)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	t := export.Table{Title: "Tax summary (preparation data, NOT a filed return)",
+		Headers: []string{"Direction", "Tax", "Rate %", "Region", "Documents", "Taxable", "Tax amount"}}
+	var out, in decimal.Decimal
+	for _, g := range rows {
+		t.Rows = append(t.Rows, []string{g.Direction, g.TaxName, g.Rate, g.Region, strconv.Itoa(g.DocumentCount), g.TaxableAmount.StringFixed(fixed), g.TaxAmount.StringFixed(fixed)})
+		if g.Direction == "OUTPUT" {
+			out = out.Add(g.TaxAmount.Decimal())
+		} else {
+			in = in.Add(g.TaxAmount.Decimal())
+		}
+	}
+	if len(rows) > 0 {
+		net, _ := money.New(out.Sub(in), rows[0].TaxAmount.Currency())
+		t.Rows = append(t.Rows, []string{"NET", "output tax - input tax", "", "", "", "", net.StringFixed(fixed)})
 	}
 	writeTable(w, r, t)
 }

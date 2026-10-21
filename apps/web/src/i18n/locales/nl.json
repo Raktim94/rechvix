@@ -127,7 +127,20 @@
     "saveTaxDetails": "Belastinggegevens opslaan",
     "saved": "Opgeslagen.",
     "saveFailed": "De belastinggegevens konden niet worden opgeslagen.",
-    "sectionHelp": "De tarieven zijn voor dit land ingebouwd (stand {{version}}). Controleer ze bij uw belastingdienst voordat u aangifte doet."
+    "sectionHelp": "De tarieven zijn voor dit land ingebouwd (stand {{version}}). Controleer ze bij uw belastingdienst voordat u aangifte doet.",
+    "summaryTitle": "Belastingoverzicht",
+    "summaryHelp": "Op verkopen geheven en op inkopen betaalde belasting, per belasting en tarief, na aftrek van creditnota's en retouren. Dit zijn voorbereidingsgegevens voor uw aangifte; het is geen ingediende aangifte.",
+    "from": "Van",
+    "to": "Tot",
+    "ratesTitle": "Tarieven in dit systeem",
+    "ratesHelp": "Standaard- en verlaagde tarieven zijn ingebouwd (stand {{version}}). Regels met nultarief, vrijgesteld, verlegd of export staan zonder belasting in het overzicht.",
+    "usNote": "Amerikaanse bedrijven berekenen alleen belasting in de staten die in Instellingen zijn gekozen.",
+    "emptySummary": "Geen afgeronde facturen of inkopen met belasting in deze periode.",
+    "settingsLink": "Belastinggegevens in Instellingen",
+    "pageSubtitle": "Tarieven en belastingoverzicht voor {{company}}.",
+    "colCategory": "Categorie",
+    "colRate": "Tarief",
+    "colKind": "Soort"
   },
   "region": {
     "heading": "Taal en regio",

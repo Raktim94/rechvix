@@ -39,11 +39,11 @@ func sampleData() InvoiceData {
 		Currency:          "EUR",
 		Lines: []LineItem{
 			{SNo: 1, Description: "Compresor industrial", HSNSAC: "STANDARD", Quantity: "2", Rate: "100.00", TaxableValue: "200.00", TaxRate: "21%", TaxValue: "42.00", LineTotal: "242.00"},
-			{SNo: 2, Description: "Manual", HSNSAC: "RATE:4", Quantity: "1", Rate: "50.00", TaxableValue: "50.00", TaxRate: "4%", TaxValue: "2.00", LineTotal: "52.00"},
+			{SNo: 2, Description: "Manual", HSNSAC: "REDUCED", Quantity: "1", Rate: "50.00", TaxableValue: "50.00", TaxRate: "4%", TaxValue: "2.00", LineTotal: "52.00"},
 		},
 		SubtotalTaxable: "250.00",
 		TaxTotals:       []TaxTotal{{"IVA", "21", "42.00"}, {"IVA", "4", "2.00"}},
-		TaxNotes:        []string{"Reverse charge: the customer accounts for the VAT."},
+		TaxNotes:        []string{"REVERSE_CHARGE"},
 		GrandTotal:      "294.00",
 	}
 }
@@ -155,5 +155,90 @@ func TestIndianInvoiceKeepsGSTLayout(t *testing.T) {
 	}
 	if strings.Contains(text, "Tax category") {
 		t.Error("India must keep the HSN/GST columns")
+	}
+}
+
+func TestRenderedInvoiceUsesTheCountrysLanguageAndDateFormat(t *testing.T) {
+	supply := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		lang, layout string
+		want         []string
+		notWant      []string
+	}{
+		{"es", "02/01/2006", []string{"FACTURA", "Cliente:", "NIF / IVA: B12345678", "Base imponible:", "IVA 21%:", "Total (EUR):", "Fecha: 21/10/2026", "Fecha de la operación: 15/10/2026", "Inversión del sujeto pasivo", "Firma autorizada", "Categoría", "General"}, []string{"Bill To", "Grand Total", "Authorised"}},
+		{"de", "02.01.2006", []string{"RECHNUNG", "USt-IdNr.: B12345678", "Nettobetrag:", "Gesamtbetrag (EUR):", "Datum: 21.10.2026", "Leistungsdatum: 15.10.2026", "Steuerschuldnerschaft"}, []string{"Bill To", "Taxable Amount"}},
+		{"fr", "02/01/2006", []string{"FACTURE", "Client:", "N° de TVA: B12345678", "Total TTC (EUR):", "Date: 21/10/2026", "Autoliquidation"}, []string{"Bill To"}},
+		{"en", "01/02/2006", []string{"INVOICE", "Bill To:", "Tax ID: B12345678", "Grand Total (EUR):", "Date: 10/21/2026", "Reverse charge"}, []string{"FACTURA", "Cliente"}},
+	}
+	for _, c := range cases {
+		d := sampleData()
+		d.Language, d.DateLayout, d.SupplyDate = c.lang, c.layout, &supply
+		pdf, err := RenderPDF(TemplateA4GSTInvoice, ThemeClassic, d)
+		if err != nil {
+			t.Fatalf("%s: %v", c.lang, err)
+		}
+		text := pdfText(t, pdf)
+		for _, w := range c.want {
+			if !strings.Contains(text, w) {
+				t.Errorf("%s: PDF is missing %q\n%s", c.lang, w, text)
+			}
+		}
+		for _, bad := range c.notWant {
+			if strings.Contains(text, bad) {
+				t.Errorf("%s: PDF must not contain English %q", c.lang, bad)
+			}
+		}
+	}
+}
+
+func TestEveryLanguageHasACompleteLabelSet(t *testing.T) {
+	en := LabelsFor("en")
+	for lang := range labelSets {
+		l := LabelsFor(lang)
+		for name, v := range map[string]string{"No": l.No, "Date": l.Date, "BillTo": l.BillTo, "TaxID": l.TaxID, "Description": l.Description, "TaxCategory": l.TaxCategory,
+			"Qty": l.Qty, "Rate": l.Rate, "Taxable": l.Taxable, "TaxPct": l.TaxPct, "Tax": l.Tax, "Total": l.Total, "TaxableAmount": l.TaxableAmount,
+			"GrandTotal": l.GrandTotal, "Signature": l.Signature, "Terms": l.Terms, "SupplyDate": l.SupplyDate} {
+			if strings.TrimSpace(v) == "" {
+				t.Errorf("%s: label %s is empty", lang, name)
+			}
+		}
+		for code := range en.Notes {
+			if _, ok := l.Notes[code]; !ok {
+				t.Errorf("%s: no wording for tax note %s (English fallback should fill it)", lang, code)
+			}
+		}
+		for kind := range en.Categories {
+			if l.Categories[kind] == "" {
+				t.Errorf("%s: no wording for tax category %s", lang, kind)
+			}
+		}
+		// Every Western European label set must be printable with the built-in fonts.
+		everyLabel := []string{l.Description, l.TaxPct, l.GrandTotal, l.Signature, l.SupplyDate, l.BillTo}
+		for _, s := range everyLabel {
+			if !fitsWindows1252(s) {
+				t.Errorf("%s: label %q has characters the built-in fonts cannot print", lang, s)
+			}
+		}
+	}
+	for country, lang := range map[string]string{"ES": "es", "FR": "fr", "DE": "de", "AT": "de", "IT": "it", "PT": "pt", "NL": "nl", "GB": "en", "US": "en", "IE": "en", "PL": "en", "": "en"} {
+		if got := LanguageFor(country); got != lang {
+			t.Errorf("LanguageFor(%q) = %q, want %q", country, got, lang)
+		}
+	}
+}
+
+func TestSpanishLabelsAndPolishNamePrintTogether(t *testing.T) {
+	d := sampleData()
+	d.Language = "es"
+	d.BillTo.Name = "Zażółć Gęślą Jaźń sp. z o.o."
+	pdf, err := RenderPDF(TemplateA4GSTInvoice, ThemeBold, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := pdfText(t, pdf)
+	for _, want := range []string{"Zażółć Gęślą Jaźń", "FACTURA", "Descripción", "Base imponible:", "Firma autorizada"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q on the Unicode-font path\n%s", want, text)
+		}
 	}
 }

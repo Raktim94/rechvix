@@ -356,7 +356,7 @@ func TestPrint_SpanishInvoice_ItemisesIVAAndCarriesTaxIDs(t *testing.T) {
 	if len(data.TaxTotals) != 1 || data.TaxTotals[0].Label != "IVA" || data.TaxTotals[0].Rate != "21" || data.TaxTotals[0].Amount != "42.00" {
 		t.Fatalf("tax totals = %+v, want one IVA 21%% line of 42.00", data.TaxTotals)
 	}
-	if l := data.Lines[0]; l.TaxRate != "21%" || l.TaxValue != "42.00" || l.TaxableValue != "200.00" || l.LineTotal != "242.00" || l.HSNSAC != "Standard" {
+	if l := data.Lines[0]; l.TaxRate != "21%" || l.TaxValue != "42.00" || l.TaxableValue != "200.00" || l.LineTotal != "242.00" || l.HSNSAC != "STANDARD" {
 		t.Errorf("line = %+v", l)
 	}
 	if data.GrandTotal != "242.00" || data.SubtotalTaxable != "200.00" {

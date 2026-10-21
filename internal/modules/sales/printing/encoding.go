@@ -130,3 +130,24 @@ func needsUnicode(data InvoiceData) bool {
 func forBuiltInFonts(data InvoiceData) InvoiceData {
 	return mapStrings(reflect.ValueOf(data), toWindows1252).Interface().(InvoiceData)
 }
+
+// labelsForBuiltInFonts converts a label set to Windows-1252, like forBuiltInFonts
+// does for the document data, so "Désignation" and "Catégorie" print correctly. Every
+// shipped label set fits Windows-1252 (a test enforces it).
+func labelsForBuiltInFonts(l Labels) Labels {
+	v := reflect.ValueOf(l)
+	out := reflect.New(v.Type()).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		switch f := v.Field(i); f.Kind() {
+		case reflect.String:
+			out.Field(i).SetString(toWindows1252(f.String()))
+		case reflect.Map:
+			m := reflect.MakeMapWithSize(f.Type(), f.Len())
+			for _, k := range f.MapKeys() {
+				m.SetMapIndex(k, reflect.ValueOf(toWindows1252(f.MapIndex(k).String())))
+			}
+			out.Field(i).Set(m)
+		}
+	}
+	return out.Interface().(Labels)
+}

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ImportPanel } from "../../components/ImportPanel";
 import { ReportTable } from "../../components/ReportTable";
+import { TaxPage } from "./TaxPage";
 import ui from "../../components/ui.module.css";
 import { api, apiUrl, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
@@ -647,7 +648,7 @@ function BulkEwayBillPanel({ legalEntityId }: { legalEntityId: string | undefine
   );
 }
 
-export function GstPage() {
+function IndiaGstPage() {
   const org = useOrgContext();
   const legalEntityId = org.legalEntity?.ID;
 
@@ -703,4 +704,12 @@ export function GstPage() {
       </div>
     </div>
   );
+}
+
+/** India keeps the GST / e-Way Bill page; every other country gets the generic tax page. */
+export function GstPage() {
+  const org = useOrgContext();
+  const le = org.legalEntity;
+  if (le && le.CountryCode && le.CountryCode !== "IN") return <TaxPage legalEntity={le} />;
+  return <IndiaGstPage />;
 }

@@ -1,7 +1,6 @@
 package taxregimes
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -13,19 +12,21 @@ import (
 
 var (
 	// ErrRegimeNotSupported means no engine exists for the supplier's country.
-	ErrRegimeNotSupported = errors.New("taxregimes: no tax pack for this supplier country")
+	ErrRegimeNotSupported = &taxdomain.TaxCaseError{Kind: taxdomain.ErrUnsupportedTaxCase, Msg: "Tax for this supplier country is not set up"}
 	// ErrRatesNotVerifiedForDate means the document predates the verified rate tables.
-	ErrRatesNotVerifiedForDate = errors.New("taxregimes: rates are only verified for documents dated on or after " + "2026-01-01")
+	ErrRatesNotVerifiedForDate = &taxdomain.TaxCaseError{Kind: taxdomain.ErrUnsupportedTaxCase, Msg: "rates are only verified for documents dated on or after 1 January 2026"}
 	// ErrTaxCodeRequired means a line has no tax category.
-	ErrTaxCodeRequired = errors.New("taxregimes: line has no tax category")
+	ErrTaxCodeRequired = &taxdomain.TaxCaseError{Kind: taxdomain.ErrInvalidTaxInput, Msg: "an item has no tax category; set one on the product"}
 	// ErrTaxCodeInvalid means the line's tax category is not in the verified rate table.
-	ErrTaxCodeInvalid = errors.New("taxregimes: tax category is not a verified rate for this country")
+	ErrTaxCodeInvalid = &taxdomain.TaxCaseError{Kind: taxdomain.ErrInvalidTaxInput, Msg: "an item's tax category is not a verified rate for this country"}
 	// ErrRegionNotSupported means the supply region follows tax rules this pack does not implement.
-	ErrRegionNotSupported = errors.New("taxregimes: tax rules for this region are not implemented")
+	ErrRegionNotSupported = &taxdomain.TaxCaseError{Kind: taxdomain.ErrUnsupportedTaxCase, Msg: "tax rules for this region are not implemented"}
 	// ErrCrossBorderB2CUnsupported means an EU cross-border sale to a consumer needs OSS destination-rate VAT.
-	ErrCrossBorderB2CUnsupported = errors.New("taxregimes: EU cross-border consumer sales (OSS destination VAT) are not implemented")
+	ErrCrossBorderB2CUnsupported = &taxdomain.TaxCaseError{Kind: taxdomain.ErrUnsupportedTaxCase, Msg: "EU sales to consumers in another member state (OSS destination VAT) are not implemented"}
 	// ErrRegionRequired means the destination state/region is required but missing.
-	ErrRegionRequired = errors.New("taxregimes: destination region is required")
+	ErrRegionRequired = &taxdomain.TaxCaseError{Kind: taxdomain.ErrInvalidTaxInput, Msg: "the destination state is required"}
+	// ErrCrossBorderPurchaseUnsupported means a purchase from a supplier in another country (reverse charge or import VAT) is not implemented.
+	ErrCrossBorderPurchaseUnsupported = &taxdomain.TaxCaseError{Kind: taxdomain.ErrUnsupportedTaxCase, Msg: "purchases from a supplier in another country (reverse charge, import VAT) are not implemented"}
 )
 
 var hundred = decimal.NewFromInt(100)

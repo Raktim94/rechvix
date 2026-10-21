@@ -127,9 +127,15 @@ type InvoiceData struct {
 	GenericTax bool
 	Currency   string
 	TaxTotals  []TaxTotal
-	// TaxNotes are statements the law requires on some invoices, for example
-	// reverse charge or export zero-rating; one per distinct treatment.
-	TaxNotes        []string
+	// TaxNotes are the tax classifications present on the document that need a
+	// printed statement (REVERSE_CHARGE, EXPORT, ...); the renderer turns each code
+	// into the sentence for the document language. One per distinct treatment.
+	TaxNotes []string
+	// Language selects the label set for the generic layout ("es", "fr", ...);
+	// DateLayout is the Go time layout used for dates ("" = 02-Jan-2006).
+	Language        string
+	DateLayout      string
+	SupplyDate      *time.Time
 	SubtotalTaxable string
 	TotalCGST       string
 	TotalSGST       string

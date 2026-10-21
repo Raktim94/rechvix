@@ -127,7 +127,20 @@
     "saveTaxDetails": "Guardar datos fiscales",
     "saved": "Guardado.",
     "saveFailed": "No se pudieron guardar los datos fiscales.",
-    "sectionHelp": "Los tipos están integrados para este país y datan de {{version}}. Compruébalos con tu administración tributaria antes de presentar declaraciones."
+    "sectionHelp": "Los tipos están integrados para este país y datan de {{version}}. Compruébalos con tu administración tributaria antes de presentar declaraciones.",
+    "summaryTitle": "Resumen de impuestos",
+    "summaryHelp": "Impuesto repercutido en ventas y soportado en compras, por impuesto y tipo, restando abonos y devoluciones. Son datos de apoyo para preparar tu declaración; no es una declaración presentada.",
+    "from": "Desde",
+    "to": "Hasta",
+    "ratesTitle": "Tipos en este sistema",
+    "ratesHelp": "Los tipos general y reducidos están integrados y datan de {{version}}. Las líneas con tipo cero, exentas, con inversión del sujeto pasivo y exportaciones aparecen en el resumen sin impuesto.",
+    "usNote": "Las empresas de EE. UU. cobran impuesto solo en los estados elegidos en Ajustes.",
+    "emptySummary": "No hay facturas ni compras finalizadas con impuesto en este periodo.",
+    "settingsLink": "Datos fiscales en Ajustes",
+    "pageSubtitle": "Tipos y resumen de impuestos de {{company}}.",
+    "colCategory": "Categoría",
+    "colRate": "Tipo",
+    "colKind": "Clase"
   },
   "region": {
     "heading": "Idioma y región",

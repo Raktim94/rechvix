@@ -44,3 +44,10 @@ func Supported() []string {
 	}
 	return out
 }
+
+// IsVATCountry reports whether country is served by the VAT engine (Spain, the
+// United Kingdom and the EU member states).
+func IsVATCountry(country string) bool {
+	_, ok := vatTable[strings.ToUpper(strings.TrimSpace(country))]
+	return ok
+}

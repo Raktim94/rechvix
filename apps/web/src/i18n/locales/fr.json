@@ -127,7 +127,20 @@
     "saveTaxDetails": "Enregistrer les informations fiscales",
     "saved": "Enregistré.",
     "saveFailed": "Impossible d'enregistrer les informations fiscales.",
-    "sectionHelp": "Les taux sont intégrés pour ce pays et datent du {{version}}. Vérifiez-les auprès de votre administration fiscale avant toute déclaration."
+    "sectionHelp": "Les taux sont intégrés pour ce pays et datent du {{version}}. Vérifiez-les auprès de votre administration fiscale avant toute déclaration.",
+    "summaryTitle": "Récapitulatif des taxes",
+    "summaryHelp": "Taxe collectée sur les ventes et payée sur les achats, par taxe et par taux, avoirs et retours déduits. Ce sont des données de préparation pour compléter votre déclaration ; ce n'est pas une déclaration déposée.",
+    "from": "Du",
+    "to": "Au",
+    "ratesTitle": "Taux dans ce système",
+    "ratesHelp": "Les taux normal et réduits sont intégrés et datent du {{version}}. Les lignes à taux zéro, exonérées, en autoliquidation et à l'export apparaissent dans le récapitulatif sans taxe.",
+    "usNote": "Les entreprises américaines ne facturent la taxe que dans les États choisis dans les paramètres.",
+    "emptySummary": "Aucune facture ni aucun achat validé avec taxe sur cette période.",
+    "settingsLink": "Informations fiscales dans les paramètres",
+    "pageSubtitle": "Taux et récapitulatif des taxes pour {{company}}.",
+    "colCategory": "Catégorie",
+    "colRate": "Taux",
+    "colKind": "Type"
   },
   "region": {
     "heading": "Langue et région",

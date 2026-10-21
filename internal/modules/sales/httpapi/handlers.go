@@ -84,11 +84,15 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrEmptyDocument):
 		httpx.WriteError(w, r, httpx.NewConflict("EMPTY_DOCUMENT", "A document needs at least one line before it can be finalized."))
 	case errors.Is(err, domain.ErrZeroValueDocument):
-		httpx.WriteError(w, r, httpx.NewConflict("ZERO_VALUE_DOCUMENT", "This document's total is ₹0.00. Check that every item has a price, then try again."))
+		httpx.WriteError(w, r, httpx.NewConflict("ZERO_VALUE_DOCUMENT", "This document's total is zero. Check that every item has a price, then try again."))
 	case errors.Is(err, domain.ErrDuplicateNumber):
 		httpx.WriteError(w, r, httpx.NewConflict("DUPLICATE_NUMBER", "That document number is already in use."))
 	case errors.Is(err, domain.ErrReturnQuantityExceedsSource):
 		httpx.WriteError(w, r, httpx.NewBadRequest("RETURN_QUANTITY_EXCEEDS_SOURCE", "You can't return more of an item than was on the original document."))
+	case errors.Is(err, taxdomain.ErrUnsupportedTaxCase):
+		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_CASE_NOT_SUPPORTED", "This sale can't be taxed yet: "+taxdomain.UserMessage(err)+"."))
+	case errors.Is(err, taxdomain.ErrInvalidTaxInput):
+		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_DETAILS_INVALID", "The tax details need attention: "+taxdomain.UserMessage(err)+"."))
 	case errors.Is(err, taxdomain.ErrRateNotConfigured):
 		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_RATE_NOT_CONFIGURED", "One or more items on this document don't have a GST rate set up for their HSN/SAC code yet. Add a tax rate for it under GST / Tax, then try again."))
 	case errors.Is(err, inventorydomain.ErrInsufficientStock):

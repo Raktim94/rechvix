@@ -150,24 +150,37 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 		data = forBuiltInFonts(data)
 	}
 
+	// The Indian GST layout keeps its fixed English wording; every other country
+	// prints the labels of its own language (see labels.go).
+	lb := LabelsFor("en")
+	if data.GenericTax {
+		lb = LabelsFor(data.Language)
+	}
+	if st.fontFamily != unicodeFamily {
+		lb = labelsForBuiltInFonts(lb)
+	}
+
 	title := lo.titleOverride
 	if title == "" {
 		title = data.DocumentTypeLabel
+		if data.GenericTax {
+			title = lb.DocType(title)
+		}
 	}
 
-	drawHeader(pdf, data, lo, st, title)
-	drawParties(pdf, data, lo, st)
-	drawItemTable(pdf, data, lo, st)
-	drawTotals(pdf, data, lo, st)
-	if lo.showBankBlock && (data.Seller.BankAccount != "" || data.Seller.UPIID != "") {
-		drawBankBlock(pdf, data, st)
+	drawHeader(pdf, data, lo, st, title, lb)
+	drawParties(pdf, data, lo, st, lb)
+	drawItemTable(pdf, data, lo, st, lb)
+	drawTotals(pdf, data, lo, st, lb)
+	if lo.showBankBlock && (data.Seller.BankAccount != "" || (!data.GenericTax && data.Seller.UPIID != "")) {
+		drawBankBlock(pdf, data, st, lb)
 	}
 	if lo.showTerms && data.TermsAndConditions != "" {
 		pdf.Ln(2)
 		setFont(pdf, lo, st, "", 8)
-		pdf.MultiCell(0, 4, "Terms & Conditions: "+data.TermsAndConditions, "", "L", false)
+		pdf.MultiCell(0, 4, lb.Terms+": "+data.TermsAndConditions, "", "L", false)
 	}
-	drawSignatureBlock(pdf, lo, st, data.AuthorizedSignatoryName)
+	drawSignatureBlock(pdf, lo, st, data.AuthorizedSignatoryName, lb, data.GenericTax)
 
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
@@ -202,7 +215,7 @@ func drawLogo(pdf *fpdf.Fpdf, data InvoiceData, lo layout) {
 	pdf.ImageOptions("seller-logo", 8, 8, 18, 0, false, opts, 0, "")
 }
 
-func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, title string) {
+func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, title string, lb Labels) {
 	drawLogo(pdf, data, lo)
 	setFont(pdf, lo, st, "B", 14)
 	pdf.CellFormat(0, 7, data.Seller.LegalName, "", 1, "C", false, 0, "")
@@ -210,14 +223,14 @@ func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, title str
 	for _, line := range data.Seller.AddressLines {
 		pdf.CellFormat(0, 5, line, "", 1, "C", false, 0, "")
 	}
-	if contact := sellerContactLine(data.Seller); contact != "" {
+	if contact := sellerContactLine(data.Seller, lb); contact != "" {
 		pdf.CellFormat(0, 5, contact, "", 1, "C", false, 0, "")
 	}
 	if data.Seller.GSTIN != "" {
 		pdf.CellFormat(0, 5, "GSTIN: "+data.Seller.GSTIN, "", 1, "C", false, 0, "")
 	}
 	if data.Seller.TaxID != "" {
-		pdf.CellFormat(0, 5, labelOr(data.Seller.TaxIDLabel, "Tax ID")+": "+data.Seller.TaxID, "", 1, "C", false, 0, "")
+		pdf.CellFormat(0, 5, lb.TaxID+": "+data.Seller.TaxID, "", 1, "C", false, 0, "")
 	}
 	pdf.Ln(2)
 
@@ -237,7 +250,14 @@ func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, title str
 	}
 
 	setFont(pdf, lo, st, "", 9)
-	pdf.CellFormat(0, 5, fmt.Sprintf("No: %s   Date: %s", data.DocumentNumber, data.IssueDate.Format("02-Jan-2006")), "", 1, "L", false, 0, "")
+	layoutDate := data.DateLayout
+	if layoutDate == "" {
+		layoutDate = "02-Jan-2006"
+	}
+	pdf.CellFormat(0, 5, fmt.Sprintf("%s: %s   %s: %s", lb.No, data.DocumentNumber, lb.Date, data.IssueDate.Format(layoutDate)), "", 1, "L", false, 0, "")
+	if data.GenericTax && data.SupplyDate != nil && !data.SupplyDate.Equal(data.IssueDate) {
+		pdf.CellFormat(0, 5, lb.SupplyDate+": "+data.SupplyDate.Format(layoutDate), "", 1, "L", false, 0, "")
+	}
 	if data.PlaceOfSupply != "" {
 		pdf.CellFormat(0, 5, "Place of Supply: "+data.PlaceOfSupply, "", 1, "L", false, 0, "")
 	}
@@ -257,23 +277,23 @@ func drawHeader(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, title str
 // sellerContactLine joins whichever of phone/email/website are actually
 // set into one "Phone: ... | Email: ... | Web: ..." line — blank pieces
 // are simply omitted rather than rendering "Phone:  | Email: ...".
-func sellerContactLine(s SellerInfo) string {
+func sellerContactLine(s SellerInfo, lb Labels) string {
 	var parts []string
 	if s.Phone != "" {
-		parts = append(parts, "Phone: "+s.Phone)
+		parts = append(parts, lb.Phone+": "+s.Phone)
 	}
 	if s.Email != "" {
-		parts = append(parts, "Email: "+s.Email)
+		parts = append(parts, lb.Email+": "+s.Email)
 	}
 	if s.Website != "" {
-		parts = append(parts, "Web: "+s.Website)
+		parts = append(parts, lb.Web+": "+s.Website)
 	}
 	return strings.Join(parts, "  |  ")
 }
 
-func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
+func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Labels) {
 	setFont(pdf, lo, st, "B", 9)
-	pdf.CellFormat(0, 5, "Bill To:", "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 5, lb.BillTo+":", "", 1, "L", false, 0, "")
 	setFont(pdf, lo, st, "", 9)
 	pdf.CellFormat(0, 5, data.BillTo.Name, "", 1, "L", false, 0, "")
 	for _, line := range data.BillTo.AddressLines {
@@ -283,12 +303,12 @@ func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 		pdf.CellFormat(0, 5, "GSTIN: "+data.BillTo.GSTIN, "", 1, "L", false, 0, "")
 	}
 	if data.BillTo.TaxID != "" {
-		pdf.CellFormat(0, 5, labelOr(data.BillTo.TaxIDLabel, "Tax ID")+": "+data.BillTo.TaxID, "", 1, "L", false, 0, "")
+		pdf.CellFormat(0, 5, lb.TaxID+": "+data.BillTo.TaxID, "", 1, "L", false, 0, "")
 	}
 	if len(data.ShipTo.AddressLines) > 0 && !lo.narrow {
 		pdf.Ln(1)
 		setFont(pdf, lo, st, "B", 9)
-		pdf.CellFormat(0, 5, "Ship To:", "", 1, "L", false, 0, "")
+		pdf.CellFormat(0, 5, lb.ShipTo+":", "", 1, "L", false, 0, "")
 		setFont(pdf, lo, st, "", 9)
 		for _, line := range data.ShipTo.AddressLines {
 			pdf.CellFormat(0, 4.5, line, "", 1, "L", false, 0, "")
@@ -297,7 +317,7 @@ func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 	pdf.Ln(1)
 }
 
-func drawItemTable(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
+func drawItemTable(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Labels) {
 	setFont(pdf, lo, st, "B", 8)
 	if lo.narrow {
 		// Thermal: one stacked block per line (name + qty*rate=total),
@@ -318,7 +338,7 @@ func drawItemTable(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 	if data.GenericTax {
 		// VAT / sales tax: one combined Tax % and Tax column instead of CGST/SGST/IGST.
 		widths = []float64{8, 50, 22, 14, 18, 22, 16, 20, 24}
-		headers = []string{"#", "Description", "Tax category", "Qty", "Rate", "Taxable", "Tax %", "Tax", "Total"}
+		headers = []string{"#", lb.Description, lb.TaxCategory, lb.Qty, lb.Rate, lb.Taxable, lb.TaxPct, lb.Tax, lb.Total}
 	}
 	headerBorder := "1"
 	if !st.boxedTable {
@@ -356,7 +376,11 @@ func drawItemTable(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 			if tax == "" {
 				tax = "0"
 			}
-			row = []string{fmt.Sprintf("%d", l.SNo), l.Description, l.HSNSAC, l.Quantity, l.Rate, l.TaxableValue, rate, tax, l.LineTotal}
+			category := l.HSNSAC
+			if v, ok := lb.Categories[category]; ok {
+				category = v
+			}
+			row = []string{fmt.Sprintf("%d", l.SNo), l.Description, category, l.Quantity, l.Rate, l.TaxableValue, rate, tax, l.LineTotal}
 		}
 		for i, v := range row {
 			align := "L"
@@ -377,7 +401,7 @@ func taxCell(rate, value string) string {
 	return fmt.Sprintf("%s%%/%s", rate, value)
 }
 
-func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
+func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Labels) {
 	setFont(pdf, lo, st, "", 9)
 	row := func(label, value string) {
 		if value == "" {
@@ -385,7 +409,7 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 		}
 		pdf.CellFormat(0, 5, fmt.Sprintf("%-30s %s", label, value), "", 1, "R", false, 0, "")
 	}
-	row("Taxable Amount:", data.SubtotalTaxable)
+	row(lb.TaxableAmount+":", data.SubtotalTaxable)
 	if data.GenericTax {
 		// One line per tax and rate, e.g. "IVA 21%:", so the tax is visible, not implied.
 		for _, t := range data.TaxTotals {
@@ -397,9 +421,9 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 		row("IGST:", data.TotalIGST)
 		row("Cess:", data.TotalCess)
 	}
-	row("Round Off:", data.RoundOff)
+	row(lb.RoundOff+":", data.RoundOff)
 	if data.PreviousBalance != nil {
-		row("Previous Balance:", data.PreviousBalance.StringFixed(0))
+		row(lb.PrevBalance+":", data.PreviousBalance.StringFixed(0))
 	}
 
 	// Grand Total always gets the theme's strongest visual treatment — a
@@ -417,9 +441,9 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 		resetDrawColor(pdf)
 		pdf.Ln(1)
 	}
-	grandLabel := "Grand Total:"
+	grandLabel := lb.GrandTotal + ":"
 	if data.GenericTax && data.Currency != "" {
-		grandLabel = "Grand Total (" + data.Currency + "):"
+		grandLabel = lb.GrandTotal + " (" + data.Currency + "):"
 	}
 	setFont(pdf, lo, st, "B", 10)
 	if st.headerFill {
@@ -436,43 +460,50 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style) {
 	if len(data.TaxNotes) > 0 {
 		setFont(pdf, lo, st, "", 8)
 		pdf.Ln(1)
-		for _, n := range data.TaxNotes {
-			pdf.MultiCell(0, 4, n, "", "L", false)
+		for _, code := range data.TaxNotes {
+			if text, ok := lb.Notes[code]; ok {
+				pdf.MultiCell(0, 4, text, "", "L", false)
+			}
 		}
 	}
 	if data.AmountInWords != "" {
 		setFont(pdf, lo, st, "", 8)
-		pdf.MultiCell(0, 4, "Amount in words: "+data.AmountInWords, "", "L", false)
+		pdf.MultiCell(0, 4, lb.AmountInWords+": "+data.AmountInWords, "", "L", false)
 	}
 	pdf.Ln(1)
 }
 
-func drawBankBlock(pdf *fpdf.Fpdf, data InvoiceData, st style) {
+func drawBankBlock(pdf *fpdf.Fpdf, data InvoiceData, st style, lb Labels) {
 	if data.Seller.BankAccount != "" {
 		pdf.SetFont(st.fontFamily, "B", 8)
-		pdf.CellFormat(0, 5, "Bank Details:", "", 1, "L", false, 0, "")
+		pdf.CellFormat(0, 5, lb.BankDetails+":", "", 1, "L", false, 0, "")
 		pdf.SetFont(st.fontFamily, "", 8)
-		pdf.CellFormat(0, 4.5, strings.TrimSpace(fmt.Sprintf("%s, A/c: %s, IFSC: %s", data.Seller.BankName, data.Seller.BankAccount, data.Seller.BankIFSC)), "", 1, "L", false, 0, "")
+		line := fmt.Sprintf("%s, A/c: %s, IFSC: %s", data.Seller.BankName, data.Seller.BankAccount, data.Seller.BankIFSC)
+		if data.GenericTax {
+			// Outside India the stored account number is an IBAN and the second field a BIC/SWIFT code.
+			line = fmt.Sprintf("%s, %s: %s", data.Seller.BankName, lb.Bank, data.Seller.BankAccount)
+			if data.Seller.BankIFSC != "" {
+				line += fmt.Sprintf(", %s: %s", lb.BIC, data.Seller.BankIFSC)
+			}
+		}
+		pdf.CellFormat(0, 4.5, strings.TrimSpace(line), "", 1, "L", false, 0, "")
 	}
-	if data.Seller.UPIID != "" {
+	if data.Seller.UPIID != "" && !data.GenericTax {
 		pdf.SetFont(st.fontFamily, "B", 8)
 		pdf.CellFormat(0, 5, "UPI: "+data.Seller.UPIID, "", 1, "L", false, 0, "")
 	}
 }
 
-func drawSignatureBlock(pdf *fpdf.Fpdf, lo layout, st style, signatoryName string) {
+func drawSignatureBlock(pdf *fpdf.Fpdf, lo layout, st style, signatoryName string, lb Labels, generic bool) {
 	pdf.Ln(8)
 	setFont(pdf, lo, st, "", 9)
-	pdf.CellFormat(0, 5, "For Authorized Signatory", "", 1, "R", false, 0, "")
+	caption := "For Authorized Signatory"
+	if generic {
+		caption = lb.Signature
+	}
+	pdf.CellFormat(0, 5, caption, "", 1, "R", false, 0, "")
 	if signatoryName != "" {
 		pdf.Ln(6)
 		pdf.CellFormat(0, 5, signatoryName, "", 1, "R", false, 0, "")
 	}
-}
-
-func labelOr(label, fallback string) string {
-	if label != "" {
-		return label
-	}
-	return fallback
 }

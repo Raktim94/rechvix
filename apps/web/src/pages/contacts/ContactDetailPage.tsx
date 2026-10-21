@@ -4,7 +4,10 @@ import { useState } from "react";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
-import { formatMoney, type Money } from "../../lib/money";
+import { currencySymbol, formatMoney, type Money } from "../../lib/money";
+import { countryName, sortByName } from "../../lib/names";
+import { useCountries } from "../../lib/reference";
+import { useCompanyCurrency, useOrgContext } from "../../lib/useOrgContext";
 import type { Party } from "../../lib/partyTypes";
 import layout from "../DashboardPage.module.css";
 
@@ -23,6 +26,7 @@ interface Address {
 /** Mirrors internal/modules/contacts/domain.TaxRegistration. */
 interface TaxRegistration {
   ID: string;
+  CountryCode: string;
   RegistrationNumber: string;
   StateCode: string;
   IsPrimary: boolean;
@@ -57,6 +61,11 @@ const ADDRESS_TYPE_LABELS: Record<Address["AddressType"], string> = {
 
 function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
   const queryClient = useQueryClient();
+  // India: GSTIN + GST state. Elsewhere: a tax ID (VAT number, NIF, EIN) and the country it was issued in.
+  const companyCountry = useOrgContext().legalEntity?.CountryCode ?? "IN";
+  const isIndia = companyCountry === "IN";
+  const countries = useCountries();
+  const [country, setCountry] = useState(companyCountry);
   const [stateCode, setStateCode] = useState("");
   const [number, setNumber] = useState("");
 
@@ -68,9 +77,9 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
   const add = useMutation({
     mutationFn: () =>
       api.post(`/contacts/parties/${partyId}/tax-registrations`, {
-        country_code: "IN",
-        registration_number: number,
-        state_code: stateCode,
+        country_code: isIndia ? "IN" : country,
+        registration_number: number.trim().toUpperCase(),
+        state_code: isIndia ? stateCode : "",
         is_primary: (regs.data?.length ?? 0) === 0,
       }),
     onSuccess: () => {
@@ -82,14 +91,14 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
 
   return (
     <div className={layout.panel}>
-      <h2>GST / tax registration</h2>
+      <h2>{isIndia ? "GST / tax registration" : "Tax registration"}</h2>
       {regs.data?.length ? (
         <div className={ui.tableScroll} tabIndex={0} style={{ marginTop: 8, marginBottom: 16 }}>
           <table className={ui.table}>
             <thead>
               <tr>
-                <th scope="col">GSTIN</th>
-                <th scope="col">State</th>
+                <th scope="col">{isIndia ? "GSTIN" : "Tax ID"}</th>
+                <th scope="col">{isIndia ? "State" : "Country"}</th>
                 <th scope="col"><span className="srOnly">Actions</span></th>
               </tr>
             </thead>
@@ -97,7 +106,7 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
               {regs.data.map((r) => (
                 <tr key={r.ID}>
                   <td>{r.RegistrationNumber}</td>
-                  <td>{r.StateCode}</td>
+                  <td>{isIndia ? r.StateCode : countryName(r.CountryCode, r.CountryCode)}</td>
                   <td>{r.IsPrimary ? <span className={ui.badge} data-tone="positive">primary</span> : null}</td>
                 </tr>
               ))}
@@ -106,29 +115,44 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
         </div>
       ) : (
         <p className={layout.emptyState} style={{ marginBottom: 16 }}>
-          No GSTIN on file — add one below to place this contact's state for GST purposes.
+          {isIndia
+            ? "No GSTIN on file — add one below to place this contact's state for GST purposes."
+            : "No tax ID on file — add one below to invoice this contact as a business (needed for EU cross-border sales without VAT)."}
         </p>
       )}
       <div className={ui.formGrid}>
-        <div className={ui.field}>
-          <label htmlFor="party-tax-state">State</label>
-          <select id="party-tax-state" className={ui.select} value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
-            <option value="" disabled>
-              Select a state…
-            </option>
-            {GST_STATE_CODES.map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.name}
+        {isIndia ? (
+          <div className={ui.field}>
+            <label htmlFor="party-tax-state">State</label>
+            <select id="party-tax-state" className={ui.select} value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
+              <option value="" disabled>
+                Select a state…
               </option>
-            ))}
-          </select>
-        </div>
+              {GST_STATE_CODES.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className={ui.field}>
+            <label htmlFor="party-tax-country">Country</label>
+            <select id="party-tax-country" className={ui.select} value={country} onChange={(e) => setCountry(e.target.value)}>
+              {sortByName<{ code: string; name: string }>(countries.data ?? [{ code: country, name: country }], (c) => countryName(c.code, c.name)).map((c) => (
+                <option key={c.code} value={c.code}>
+                  {countryName(c.code, c.name)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className={ui.field}>
-          <label htmlFor="party-tax-number">GSTIN</label>
+          <label htmlFor="party-tax-number">{isIndia ? "GSTIN" : "Tax ID"}</label>
           <input id="party-tax-number" className={ui.input} value={number} onChange={(e) => setNumber(e.target.value)} />
         </div>
-        <button type="button" className={ui.btnPrimary} disabled={!stateCode || !number || add.isPending} onClick={() => add.mutate()}>
-          {add.isPending ? "Adding…" : "Add GSTIN"}
+        <button type="button" className={ui.btnPrimary} disabled={(isIndia && !stateCode) || !number || add.isPending} onClick={() => add.mutate()}>
+          {add.isPending ? "Adding…" : isIndia ? "Add GSTIN" : "Add tax ID"}
         </button>
       </div>
       {add.isError ? (
@@ -141,6 +165,7 @@ function TaxRegistrationsPanel({ partyId }: { partyId: string }) {
 }
 
 function AddressesPanel({ partyId }: { partyId: string }) {
+  const isIndia = (useOrgContext().legalEntity?.CountryCode ?? "IN") === "IN";
   const queryClient = useQueryClient();
   const [type, setType] = useState<Address["AddressType"]>("BILLING");
   const [line1, setLine1] = useState("");
@@ -229,11 +254,11 @@ function AddressesPanel({ partyId }: { partyId: string }) {
           <input id="addr-city" className={ui.input} value={city} onChange={(e) => setCity(e.target.value)} />
         </div>
         <div className={ui.field}>
-          <label htmlFor="addr-state">State</label>
+          <label htmlFor="addr-state">{isIndia ? "State" : "State / region"}</label>
           <input id="addr-state" className={ui.input} value={state} onChange={(e) => setState(e.target.value)} />
         </div>
         <div className={ui.field}>
-          <label htmlFor="addr-postal">PIN code</label>
+          <label htmlFor="addr-postal">{isIndia ? "PIN code" : "Postal code"}</label>
           <input id="addr-postal" className={ui.input} value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
         </div>
       </div>
@@ -258,6 +283,7 @@ function AddressesPanel({ partyId }: { partyId: string }) {
  * now. A BOTH-type party can go either direction; CUSTOMER/SUPPLIER only
  * offer the one direction that makes sense for them. */
 function RecordPaymentPanel({ party }: { party: Party }) {
+  const currency = useCompanyCurrency();
   const queryClient = useQueryClient();
   const canReceive = party.PartyType === "CUSTOMER" || party.PartyType === "BOTH";
   const canPay = party.PartyType === "SUPPLIER" || party.PartyType === "BOTH";
@@ -314,7 +340,7 @@ function RecordPaymentPanel({ party }: { party: Party }) {
           </div>
         ) : null}
         <div className={ui.field}>
-          <label htmlFor="pay-amount">Amount (₹)</label>
+          <label htmlFor="pay-amount">Amount ({currencySymbol(currency)})</label>
           <input id="pay-amount" className={ui.input} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
         </div>
         <div className={ui.field}>

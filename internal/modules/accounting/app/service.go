@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"rechvix/internal/platform/geo"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -109,6 +111,29 @@ var defaultChart = []seedAccount{
 	{domain.CodeGeneralExpenses, "General Expenses", domain.AccountExpense, domain.BalanceDebit},
 }
 
+func isIndia(country string) bool { return country == "" || country == "IN" }
+
+// taxAccountNames are the display names of the input-tax (asset) and output-tax
+// (liability) accounts for a company in country. The account codes (1400, 2100)
+// are the same everywhere; only the wording changes.
+func taxAccountNames(country string) (input, output string) {
+	switch strings.ToUpper(strings.TrimSpace(country)) {
+	case "", "IN":
+		return "GST Input Tax Credit", "GST Output Tax Payable"
+	case "ES":
+		return "IVA soportado (Input VAT)", "IVA repercutido (Output VAT)"
+	case "US":
+		return "Sales Tax Paid", "Sales Tax Payable"
+	case "GB":
+		return "Input VAT", "Output VAT"
+	default:
+		if geo.IsEUMember(country) {
+			return "Input VAT", "Output VAT"
+		}
+		return "Input Tax", "Output Tax"
+	}
+}
+
 // EnsureDefaultChartOfAccounts idempotently seeds orgID's chart of accounts
 // with the brief §14 default set, if it doesn't already have one (a
 // second call is a silent no-op, not an error — callers don't need to
@@ -122,15 +147,39 @@ func (s *Service) EnsureDefaultChartOfAccounts(ctx context.Context, principal pe
 		return err
 	}
 	return s.pool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+		country, err := s.accounts.CompanyCountry(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		country = strings.ToUpper(strings.TrimSpace(country))
+		inputName, outputName := taxAccountNames(country)
 		n, err := s.accounts.CountByOrganisation(ctx, orgID)
 		if err != nil {
 			return err
 		}
 		if n > 0 {
+			// An existing chart keeps its accounts; only the two tax accounts still carrying
+			// the stock Indian GST names are renamed, for a company outside India.
+			if !isIndia(country) {
+				for code, rename := range map[string][2]string{
+					domain.CodeGSTInputTaxCredit:   {"GST Input Tax Credit", inputName},
+					domain.CodeGSTOutputTaxPayable: {"GST Output Tax Payable", outputName},
+				} {
+					if err := s.accounts.RenameIfNamed(ctx, orgID, code, rename[0], rename[1]); err != nil {
+						return fmt.Errorf("accounting: renaming tax account %s: %w", code, err)
+					}
+				}
+			}
 			return nil
 		}
 		now := s.now()
 		for _, sa := range defaultChart {
+			switch sa.code {
+			case domain.CodeGSTInputTaxCredit:
+				sa.name = inputName
+			case domain.CodeGSTOutputTaxPayable:
+				sa.name = outputName
+			}
 			id, err := uuid.NewV7()
 			if err != nil {
 				return fmt.Errorf("accounting: generating account id: %w", err)

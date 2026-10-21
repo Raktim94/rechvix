@@ -127,7 +127,20 @@
     "saveTaxDetails": "Salva dati fiscali",
     "saved": "Salvato.",
     "saveFailed": "Impossibile salvare i dati fiscali.",
-    "sectionHelp": "Le aliquote sono integrate per questo Paese e aggiornate al {{version}}. Verificale con la tua amministrazione fiscale prima di presentare dichiarazioni."
+    "sectionHelp": "Le aliquote sono integrate per questo Paese e aggiornate al {{version}}. Verificale con la tua amministrazione fiscale prima di presentare dichiarazioni.",
+    "summaryTitle": "Riepilogo imposte",
+    "summaryHelp": "Imposta riscossa sulle vendite e pagata sugli acquisti, per imposta e aliquota, al netto di note di credito e resi. Sono dati di supporto per preparare la dichiarazione; non è una dichiarazione presentata.",
+    "from": "Dal",
+    "to": "Al",
+    "ratesTitle": "Aliquote in questo sistema",
+    "ratesHelp": "Le aliquote ordinaria e ridotte sono integrate e aggiornate al {{version}}. Le righe a aliquota zero, esenti, in inversione contabile e le esportazioni compaiono nel riepilogo senza imposta.",
+    "usNote": "Le aziende USA applicano l'imposta solo negli Stati scelti nelle Impostazioni.",
+    "emptySummary": "Nessuna fattura o acquisto finalizzato con imposta in questo periodo.",
+    "settingsLink": "Dati fiscali nelle Impostazioni",
+    "pageSubtitle": "Aliquote e riepilogo imposte per {{company}}.",
+    "colCategory": "Categoria",
+    "colRate": "Aliquota",
+    "colKind": "Tipo"
   },
   "region": {
     "heading": "Lingua e area geografica",

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { ReportTable } from "../../components/ReportTable";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
-import { useOrgContext } from "../../lib/useOrgContext";
+import { formatMoney } from "../../lib/money";
+import { useCompanyCurrency, useOrgContext } from "../../lib/useOrgContext";
 import { withLegalEntity } from "../../lib/useReportTable";
 import layout from "../DashboardPage.module.css";
 
@@ -59,6 +60,8 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
  * caller before this — the whole module was reachable only via two
  * report tables (low-stock, valuation), never a real per-product view. */
 function StockCard({ product, warehouseId, baseUOMID }: { product: LookupResult; warehouseId: string; baseUOMID: string }) {
+  const currency = useCompanyCurrency();
+  const isIndia = (useOrgContext().legalEntity?.CountryCode ?? "IN") === "IN";
   const queryClient = useQueryClient();
   const [adjQty, setAdjQty] = useState("");
   const [adjType, setAdjType] = useState("ADJUSTMENT_IN");
@@ -101,7 +104,9 @@ function StockCard({ product, warehouseId, baseUOMID }: { product: LookupResult;
       <h2>
         {product.ProductName} <span className={ui.muted}>· {product.SKUCode}</span>
       </h2>
-      <p className={layout.subtitle} style={{ marginBottom: 16 }}>HSN/SAC: {product.HSNSACCode || "—"}</p>
+      <p className={layout.subtitle} style={{ marginBottom: 16 }}>
+        {isIndia ? "HSN/SAC" : "Tax category"}: {product.HSNSACCode || "—"}
+      </p>
 
       {balance.isPending ? (
         <div className={layout.skeleton} style={{ height: 60 }} aria-hidden="true" />
@@ -123,7 +128,7 @@ function StockCard({ product, warehouseId, baseUOMID }: { product: LookupResult;
           </div>
           <div>
             <span className={ui.muted}>Average cost</span>
-            <div className="num">₹{Number(balance.data?.AverageCost ?? "0").toFixed(2)}</div>
+            <div className="num">{formatMoney({ amount: balance.data?.AverageCost ?? "0", currency })}</div>
           </div>
         </div>
       )}

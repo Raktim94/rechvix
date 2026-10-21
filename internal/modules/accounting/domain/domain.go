@@ -229,6 +229,10 @@ type AccountRepository interface {
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Account, error)
 	ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]*Account, error)
 	CountByOrganisation(ctx context.Context, orgID uuid.UUID) (int, error)
+	// CompanyCountry is the country of the organisation's first legal entity ("" if none).
+	CompanyCountry(ctx context.Context, orgID uuid.UUID) (string, error)
+	// RenameIfNamed renames an account only while it still has the given name.
+	RenameIfNamed(ctx context.Context, orgID uuid.UUID, code, from, to string) error
 }
 
 type JournalRepository interface {

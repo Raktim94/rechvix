@@ -509,6 +509,8 @@ function invoiceBrandingFieldsFrom(le: LegalEntity): InvoiceBrandingFields {
  * it (migrations/0034). */
 function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
   const queryClient = useQueryClient();
+  // India prints GSTIN/IFSC/UPI/PIN; elsewhere the bank block is an IBAN and BIC/SWIFT.
+  const brandingIsIndia = !legalEntity.CountryCode || legalEntity.CountryCode === "IN";
   const [fields, setFields] = useState<InvoiceBrandingFields>(() => invoiceBrandingFieldsFrom(legalEntity));
   const [logoFile, setLogoFile] = useState<{ base64: string; previewUrl: string } | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
@@ -648,6 +650,7 @@ function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
             placeholder="Shown under your business name on every printed document"
           />
         </div>
+        {brandingIsIndia ? (
         <div className={ui.field}>
           <label htmlFor="ib-pincode">PIN code</label>
           <input
@@ -664,22 +667,25 @@ function InvoiceBrandingForm({ legalEntity }: { legalEntity: LegalEntity }) {
             your business's PIN code.
           </p>
         </div>
+        ) : null}
         <div className={ui.field}>
           <label htmlFor="ib-bank-name">Bank name</label>
           <input id="ib-bank-name" className={ui.input} value={fields.bankName} onChange={setField("bankName")} />
         </div>
         <div className={ui.field}>
-          <label htmlFor="ib-bank-account">Account number</label>
+          <label htmlFor="ib-bank-account">{brandingIsIndia ? "Account number" : "IBAN"}</label>
           <input id="ib-bank-account" className={ui.input} value={fields.bankAccountNumber} onChange={setField("bankAccountNumber")} />
         </div>
         <div className={ui.field}>
-          <label htmlFor="ib-bank-ifsc">IFSC</label>
+          <label htmlFor="ib-bank-ifsc">{brandingIsIndia ? "IFSC" : "BIC / SWIFT"}</label>
           <input id="ib-bank-ifsc" className={ui.input} value={fields.bankIfsc} onChange={setField("bankIfsc")} />
         </div>
-        <div className={ui.field}>
-          <label htmlFor="ib-upi">UPI ID</label>
-          <input id="ib-upi" className={ui.input} placeholder="yourshop@bank" value={fields.upiId} onChange={setField("upiId")} />
-        </div>
+        {brandingIsIndia ? (
+          <div className={ui.field}>
+            <label htmlFor="ib-upi">UPI ID</label>
+            <input id="ib-upi" className={ui.input} placeholder="yourshop@bank" value={fields.upiId} onChange={setField("upiId")} />
+          </div>
+        ) : null}
         <div className={ui.field}>
           <label htmlFor="ib-signatory">Authorized signatory name</label>
           <input id="ib-signatory" className={ui.input} value={fields.authorizedSignatoryName} onChange={setField("authorizedSignatoryName")} />

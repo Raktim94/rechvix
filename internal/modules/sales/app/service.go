@@ -10,6 +10,7 @@ package app
 import (
 	"context"
 	"fmt"
+	contactsdomain "rechvix/internal/modules/contacts/domain"
 	"strings"
 	"time"
 
@@ -244,7 +245,7 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 		ID: id, OrganisationID: principal.OrganisationID, LegalEntityID: p.LegalEntityID, BranchID: p.BranchID,
 		WarehouseID: p.WarehouseID, CustomerPartyID: p.CustomerPartyID, DocumentType: p.DocumentType,
 		ReferenceDocumentID: p.ReferenceDocumentID, Status: domain.StatusDraft, IssueDate: issueDate,
-		DueDate: p.DueDate, SupplyDate: p.SupplyDate, BillingAddressID: p.BillingAddressID, ShippingAddressID: p.ShippingAddressID,
+		DueDate: p.DueDate, SupplyDate: p.SupplyDate, BillingAddressID: s.billingAddressFor(ctx, principal, p.CustomerPartyID, p.BillingAddressID), ShippingAddressID: p.ShippingAddressID,
 		CustomerTaxRegistrationID: p.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: p.PlaceOfSupplyStateCode,
 		CustomerCountry: strings.ToUpper(strings.TrimSpace(p.CustomerCountry)), SupplyRegion: strings.ToUpper(strings.TrimSpace(p.SupplyRegion)),
 		CustomerTaxExempt: p.CustomerTaxExempt, EquivalenceSurcharge: p.EquivalenceSurcharge,
@@ -943,4 +944,35 @@ func (s *Service) CancelDocument(ctx context.Context, principal permissions.Prin
 		return nil, err
 	}
 	return doc, nil
+}
+
+// billingAddressFor returns the address to print under "Bill To": the one the caller
+// chose, otherwise the customer's default billing address (then any billing address,
+// then the default address). nil when the customer has none; a failure to look it up
+// never blocks creating the document.
+func (s *Service) billingAddressFor(ctx context.Context, principal permissions.Principal, customerID uuid.UUID, chosen *uuid.UUID) *uuid.UUID {
+	if chosen != nil {
+		return chosen
+	}
+	addrs, err := s.contacts.ListAddresses(ctx, principal, customerID)
+	if err != nil {
+		return nil
+	}
+	var anyBilling, anyDefault *uuid.UUID
+	for _, a := range addrs {
+		id := a.ID
+		isBilling := a.AddressType == contactsdomain.AddressBilling
+		switch {
+		case isBilling && a.IsDefault:
+			return &id
+		case isBilling && anyBilling == nil:
+			anyBilling = &id
+		case a.IsDefault && anyDefault == nil:
+			anyDefault = &id
+		}
+	}
+	if anyBilling != nil {
+		return anyBilling
+	}
+	return anyDefault
 }

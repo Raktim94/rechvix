@@ -471,6 +471,25 @@ func (s *Service) GSTR3B(ctx context.Context, principal permissions.Principal, f
 	return out, err
 }
 
+// TaxSummary is the generic (non-GST) tax summary; same export permission and
+// company scoping as GSTR3B, whose role it plays outside India.
+func (s *Service) TaxSummary(ctx context.Context, principal permissions.Principal, f domain.Filter) ([]domain.TaxSummaryRow, error) {
+	if err := s.export(ctx, principal); err != nil {
+		return nil, err
+	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
+	var out []domain.TaxSummaryRow
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.repo.TaxSummary(ctx, scoped(principal, f))
+		return err
+	})
+	return out, err
+}
+
 func (s *Service) Dashboard(ctx context.Context, principal permissions.Principal) (domain.DashboardSummary, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return domain.DashboardSummary{}, err

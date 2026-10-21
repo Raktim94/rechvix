@@ -127,7 +127,20 @@
     "saveTaxDetails": "Steuerdaten speichern",
     "saved": "Gespeichert.",
     "saveFailed": "Die Steuerdaten konnten nicht gespeichert werden.",
-    "sectionHelp": "Die Steuersätze sind für dieses Land hinterlegt (Stand {{version}}). Prüfen Sie sie vor einer Meldung bei Ihrer Steuerbehörde."
+    "sectionHelp": "Die Steuersätze sind für dieses Land hinterlegt (Stand {{version}}). Prüfen Sie sie vor einer Meldung bei Ihrer Steuerbehörde.",
+    "summaryTitle": "Steuerübersicht",
+    "summaryHelp": "Auf Verkäufe erhobene und auf Einkäufe gezahlte Steuer nach Steuerart und Satz, abzüglich Gutschriften und Retouren. Dies sind Vorbereitungsdaten für Ihre Erklärung; es ist keine eingereichte Erklärung.",
+    "from": "Von",
+    "to": "Bis",
+    "ratesTitle": "Sätze in diesem System",
+    "ratesHelp": "Regel- und ermäßigte Sätze sind hinterlegt (Stand {{version}}). Nullsatz-, steuerfreie, Reverse-Charge- und Exportzeilen erscheinen in der Übersicht ohne Steuer.",
+    "usNote": "US-Unternehmen berechnen Steuer nur in den in den Einstellungen gewählten Bundesstaaten.",
+    "emptySummary": "Keine abgeschlossenen Rechnungen oder Einkäufe mit Steuer in diesem Zeitraum.",
+    "settingsLink": "Steuerdaten in den Einstellungen",
+    "pageSubtitle": "Sätze und Steuerübersicht für {{company}}.",
+    "colCategory": "Kategorie",
+    "colRate": "Satz",
+    "colKind": "Art"
   },
   "region": {
     "heading": "Sprache und Region",

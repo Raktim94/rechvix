@@ -360,6 +360,76 @@ func (r *Repo) GrossProfit(ctx context.Context, f domain.Filter) ([]domain.Gross
 	return out, nil
 }
 
+// TaxSummary aggregates the tax snapshots of finalized sales (output) and
+// purchases (input) in the period. Credit notes, sales returns, purchase returns
+// and debit notes enter with a negative sign. It only reads amounts the tax
+// engine already computed and stored; nothing is recalculated here.
+func (r *Repo) TaxSummary(ctx context.Context, f domain.Filter) ([]domain.TaxSummaryRow, error) {
+	args := []any{f.OrganisationID}
+	next := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
+	salesRange, purchRange, salesEntity, purchEntity := "", "", "", ""
+	if f.From != nil {
+		p := next(*f.From)
+		salesRange += " AND sd.issue_date >= " + p
+		purchRange += " AND pd.document_date >= " + p
+	}
+	if f.To != nil {
+		p := next(*f.To)
+		salesRange += " AND sd.issue_date <= " + p
+		purchRange += " AND pd.document_date <= " + p
+	}
+	if f.LegalEntityIDs != nil {
+		p := next(f.LegalEntityIDs)
+		salesEntity = " AND sd.legal_entity_id = ANY(" + p + ")"
+		purchEntity = " AND b.legal_entity_id = ANY(" + p + ")"
+	}
+	q := `
+		WITH docs AS (
+			SELECT 'OUTPUT' AS dir, td.id AS tax_doc_id,
+			       CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -1 ELSE 1 END AS sign,
+			       COALESCE(td.supply_region, '') AS region
+			FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
+			WHERE sd.organisation_id = $1 AND sd.status = 'FINALIZED'
+			  AND sd.document_type IN ('TAX_INVOICE','POS_INVOICE','RECURRING_INVOICE','DEBIT_NOTE','CREDIT_NOTE','SALES_RETURN')` + salesRange + salesEntity + `
+			UNION ALL
+			SELECT 'INPUT', td.id,
+			       CASE WHEN pd.document_type IN ('PURCHASE_RETURN','DEBIT_NOTE') THEN -1 ELSE 1 END,
+			       ''
+			FROM purchase_documents pd
+			JOIN tax_documents td ON td.id = pd.tax_document_id
+			JOIN branches b ON b.id = pd.branch_id
+			WHERE pd.organisation_id = $1 AND pd.status = 'FINALIZED'
+			  AND pd.document_type IN ('PURCHASE_INVOICE','PURCHASE_RETURN','DEBIT_NOTE')` + purchRange + purchEntity + `
+		)
+		SELECT d.dir, COALESCE(tc.component_type, tl.classification), COALESCE(tc.rate, 0)::text, d.region,
+		       COUNT(DISTINCT d.tax_doc_id),
+		       COALESCE(SUM(d.sign * tl.taxable_amount), 0),
+		       COALESCE(SUM(d.sign * tc.amount), 0)
+		FROM docs d
+		JOIN tax_lines tl ON tl.tax_document_id = d.tax_doc_id
+		LEFT JOIN tax_components tc ON tc.tax_line_id = tl.id
+		GROUP BY d.dir, COALESCE(tc.component_type, tl.classification), COALESCE(tc.rate, 0), d.region
+		ORDER BY d.dir DESC, 2, COALESCE(tc.rate, 0) DESC, d.region`
+	rows, err := r.pool.Q(ctx).Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("reporting: tax summary query: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.TaxSummaryRow
+	for rows.Next() {
+		var row domain.TaxSummaryRow
+		var rate string
+		var taxable, tax decimal.Decimal
+		if err := rows.Scan(&row.Direction, &row.TaxName, &rate, &row.Region, &row.DocumentCount, &taxable, &tax); err != nil {
+			return nil, fmt.Errorf("reporting: scanning tax summary row: %w", err)
+		}
+		row.Rate = decimal.RequireFromString(rate).String()
+		row.TaxableAmount, row.TaxAmount = ledgerMoney(ctx, taxable), ledgerMoney(ctx, tax)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // --- Purchases ---
 
 func (r *Repo) PurchaseSummary(ctx context.Context, f domain.Filter, group domain.GroupDimension) ([]domain.SummaryRow, error) {

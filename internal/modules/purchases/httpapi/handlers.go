@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	taxdomain "rechvix/internal/modules/taxation/domain"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -52,6 +53,10 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, httpx.NewConflict("EMPTY_DOCUMENT", "A document needs at least one line before it can be finalized."))
 	case errors.Is(err, domain.ErrDocumentNotFinalized):
 		httpx.WriteError(w, r, httpx.NewConflict("DOCUMENT_NOT_FINALIZED", "Only a FINALIZED document can be cancelled."))
+	case errors.Is(err, taxdomain.ErrUnsupportedTaxCase):
+		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_CASE_NOT_SUPPORTED", "This purchase can't be taxed yet: "+taxdomain.UserMessage(err)+"."))
+	case errors.Is(err, taxdomain.ErrInvalidTaxInput):
+		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_DETAILS_INVALID", "The tax details need attention: "+taxdomain.UserMessage(err)+"."))
 	case errors.Is(err, domain.ErrDuplicateNumber):
 		httpx.WriteError(w, r, httpx.NewConflict("DUPLICATE_NUMBER", "That document number is already in use."))
 	case errors.As(err, &forbidden):

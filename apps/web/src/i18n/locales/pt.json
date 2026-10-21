@@ -127,7 +127,20 @@
     "saveTaxDetails": "Guardar dados fiscais",
     "saved": "Guardado.",
     "saveFailed": "Não foi possível guardar os dados fiscais.",
-    "sectionHelp": "As taxas estão integradas para este país e datam de {{version}}. Confirme-as com a sua autoridade tributária antes de submeter declarações."
+    "sectionHelp": "As taxas estão integradas para este país e datam de {{version}}. Confirme-as com a sua autoridade tributária antes de submeter declarações.",
+    "summaryTitle": "Resumo de impostos",
+    "summaryHelp": "Imposto cobrado nas vendas e pago nas compras, por imposto e taxa, deduzidas notas de crédito e devoluções. São dados de apoio para preparar a declaração; não é uma declaração submetida.",
+    "from": "De",
+    "to": "Até",
+    "ratesTitle": "Taxas neste sistema",
+    "ratesHelp": "As taxas normal e reduzidas estão integradas e datam de {{version}}. As linhas à taxa zero, isentas, com autoliquidação e exportações aparecem no resumo sem imposto.",
+    "usNote": "As empresas dos EUA cobram imposto apenas nos estados escolhidos nas Definições.",
+    "emptySummary": "Não há faturas nem compras finalizadas com imposto neste período.",
+    "settingsLink": "Dados fiscais nas Definições",
+    "pageSubtitle": "Taxas e resumo de impostos de {{company}}.",
+    "colCategory": "Categoria",
+    "colRate": "Taxa",
+    "colKind": "Tipo"
   },
   "region": {
     "heading": "Idioma e região",

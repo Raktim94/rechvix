@@ -127,7 +127,20 @@
     "saveTaxDetails": "Save tax details",
     "saved": "Saved.",
     "saveFailed": "Could not save tax details.",
-    "sectionHelp": "Rates are built in for this country and dated {{version}}. Check them against your tax authority before filing."
+    "sectionHelp": "Rates are built in for this country and dated {{version}}. Check them against your tax authority before filing.",
+    "summaryTitle": "Tax summary",
+    "summaryHelp": "Tax collected on sales and paid on purchases, by tax and rate, with credit notes and returns subtracted. This is preparation data to help you complete your return; it is not a filed return.",
+    "from": "From",
+    "to": "To",
+    "ratesTitle": "Rates in this system",
+    "ratesHelp": "Standard and reduced rates are built in and dated {{version}}. Zero-rated, exempt, reverse-charge and export lines appear in the summary with no tax.",
+    "usNote": "US companies charge tax only in the states chosen in Settings.",
+    "emptySummary": "No finalized invoices or purchases with tax in this period.",
+    "settingsLink": "Tax details in Settings",
+    "pageSubtitle": "Rates and tax summary for {{company}}.",
+    "colCategory": "Category",
+    "colRate": "Rate",
+    "colKind": "Type"
   },
   "region": {
     "heading": "Language and region",

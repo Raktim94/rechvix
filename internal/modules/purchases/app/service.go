@@ -10,6 +10,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"rechvix/internal/modules/taxregimes"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -424,7 +426,39 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 			if supplierStateCode == "" && len(regs) > 0 {
 				supplierStateCode = regs[0].StateCode
 			}
-			if supplierStateCode != "" {
+			country := strings.ToUpper(strings.TrimSpace(legalEntity.CountryCode))
+			switch {
+			case country == "" || country == "IN":
+				if supplierStateCode != "" {
+					taxLines := make([]taxdomain.TaxableLine, 0, len(lines))
+					for _, l := range lines {
+						taxLines = append(taxLines, taxdomain.TaxableLine{
+							LineRef: fmt.Sprintf("%d", l.LineNumber), HSNSACCode: l.HSNSACCode,
+							Amount: l.LineTotal, PricingMode: taxdomain.PricingExclusive,
+						})
+					}
+					taxDoc, _, _, err = s.taxation.CalculateAndSnapshotTx(ctx, taxationapp.SnapshotRequest{
+						ReferenceType: "purchase_document", ReferenceID: &doc.ID,
+						Input: taxdomain.TaxCalculationInput{
+							OrganisationID: principal.OrganisationID, Lines: taxLines,
+							SupplierStateCode: supplierStateCode, SupplyPlace: taxdomain.PlaceOfSupply{StateCode: legalEntity.GSTStateCode},
+							DocumentDate: doc.DocumentDate, SupplyType: taxdomain.SupplyB2B, CurrencyCode: doc.CurrencyCode,
+						},
+					})
+					if err != nil {
+						return fmt.Errorf("purchases: calculating input tax: %w", err)
+					}
+				}
+			case taxregimes.IsVATCountry(country):
+				// Input VAT (IVA soportado) on a domestic purchase: the supplier charged the
+				// VAT of our own country, at the tax category on each line. A supplier whose
+				// registration is in another country needs reverse charge or import VAT,
+				// which is not implemented: refuse rather than silently drop the VAT.
+				for _, r := range regs {
+					if c := strings.ToUpper(strings.TrimSpace(r.CountryCode)); c != "" && c != country {
+						return fmt.Errorf("purchases: supplier is registered in %s: %w", c, taxregimes.ErrCrossBorderPurchaseUnsupported)
+					}
+				}
 				taxLines := make([]taxdomain.TaxableLine, 0, len(lines))
 				for _, l := range lines {
 					taxLines = append(taxLines, taxdomain.TaxableLine{
@@ -435,14 +469,18 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 				taxDoc, _, _, err = s.taxation.CalculateAndSnapshotTx(ctx, taxationapp.SnapshotRequest{
 					ReferenceType: "purchase_document", ReferenceID: &doc.ID,
 					Input: taxdomain.TaxCalculationInput{
-						OrganisationID: principal.OrganisationID, Lines: taxLines,
-						SupplierStateCode: supplierStateCode, SupplyPlace: taxdomain.PlaceOfSupply{StateCode: legalEntity.GSTStateCode},
-						DocumentDate: doc.DocumentDate, SupplyType: taxdomain.SupplyB2B, CurrencyCode: doc.CurrencyCode,
+						OrganisationID: principal.OrganisationID, Lines: taxLines, DocumentDate: doc.DocumentDate,
+						SupplyType: taxdomain.SupplyB2B, CurrencyCode: doc.CurrencyCode,
+						SupplierCountry: country, CustomerCountry: country,
 					},
 				})
 				if err != nil {
 					return fmt.Errorf("purchases: calculating input tax: %w", err)
 				}
+			default:
+				// United States and every other country: sales tax paid on a purchase is part
+				// of its cost and is not reclaimed, so no tax is split out; the amounts are
+				// booked as entered.
 			}
 		}
 

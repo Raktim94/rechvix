@@ -106,6 +106,20 @@ func (r *AccountRepo) CountByOrganisation(ctx context.Context, orgID uuid.UUID) 
 	return n, err
 }
 
+func (r *AccountRepo) CompanyCountry(ctx context.Context, orgID uuid.UUID) (string, error) {
+	var c string
+	err := r.pool.Q(ctx).QueryRow(ctx, `SELECT country_code FROM legal_entities WHERE organisation_id = $1 ORDER BY created_at LIMIT 1`, orgID).Scan(&c)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return c, err
+}
+
+func (r *AccountRepo) RenameIfNamed(ctx context.Context, orgID uuid.UUID, code, from, to string) error {
+	_, err := r.pool.Q(ctx).Exec(ctx, `UPDATE accounts SET name = $4 WHERE organisation_id = $1 AND code = $2 AND name = $3`, orgID, code, from, to)
+	return err
+}
+
 // --- journals / journal_lines ---
 
 type JournalRepo struct{ pool *database.Pool }

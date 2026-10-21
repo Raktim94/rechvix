@@ -62,3 +62,14 @@ export function isNegativeMoney(m: Money): boolean {
 export function moneyToApproxNumber(m: Money): number {
   return Number(m.amount);
 }
+
+/** The symbol for a currency in the active format locale ("€", "$", "₹"), or its code when the
+ * runtime has none. For form labels such as "Amount (€)". */
+export function currencySymbol(currency: string): string {
+  try {
+    const parts = new Intl.NumberFormat(formatLocale(), { style: "currency", currency, currencyDisplay: "narrowSymbol" }).formatToParts(0);
+    return parts.find((p) => p.type === "currency")?.value ?? currency;
+  } catch {
+    return currency;
+  }
+}

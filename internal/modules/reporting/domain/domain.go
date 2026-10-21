@@ -135,6 +135,23 @@ type GrossProfitRow struct {
 	CostBasis        string // "historical" | "approximate"
 }
 
+// TaxSummaryRow is one line of the generic tax summary used outside India
+// (VAT in Spain/UK/EU, sales tax in the US): the tax collected on sales
+// (OUTPUT) or paid on purchases (INPUT), by tax name and rate, with credit
+// notes and returns subtracted. Lines with no tax component (exempt, zero-rated,
+// reverse-charge, export, not collected) appear with TaxName set to their
+// classification and zero tax, so the bases for those boxes of a return are
+// visible too. Amounts are in the organisation's ledger currency.
+type TaxSummaryRow struct {
+	Direction     string // "OUTPUT" | "INPUT"
+	TaxName       string // IVA, VAT, RE, STATE_SALES_TAX, or a zero-tax classification
+	Rate          string // percent, "0" for zero-tax classifications
+	Region        string // destination state for US sales ("US-CA"), otherwise ""
+	DocumentCount int
+	TaxableAmount money.Money
+	TaxAmount     money.Money
+}
+
 type StockValuationRow struct {
 	WarehouseID      uuid.UUID
 	WarehouseName    string
@@ -303,6 +320,7 @@ type Repository interface {
 	// row here rather than shown as a guessed zero that could be
 	// mistaken for a confirmed one.
 	GSTR3B(ctx context.Context, f Filter) ([]GSTR3BLine, error)
+	TaxSummary(ctx context.Context, f Filter) ([]TaxSummaryRow, error)
 	Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) (DashboardSummary, error)
 	// RecordReminderSent upserts receivable_reminders (migrations/0042):
 	// FirstSentAt is set only the first time this (org, party) pair is

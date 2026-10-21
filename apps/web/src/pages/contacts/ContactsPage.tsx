@@ -4,7 +4,8 @@ import { useState } from "react";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
-import { formatMoney, isZeroMoney, type Money } from "../../lib/money";
+import { currencySymbol, formatMoney, isZeroMoney, type Money } from "../../lib/money";
+import { useCompanyCurrency } from "../../lib/useOrgContext";
 import type { Party, PartyType } from "../../lib/partyTypes";
 import layout from "../DashboardPage.module.css";
 
@@ -37,6 +38,7 @@ function PartyBalanceCell({ partyId }: { partyId: string }) {
 }
 
 export function ContactsPage() {
+  const currency = useCompanyCurrency();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
@@ -124,7 +126,7 @@ export function ContactsPage() {
             </div>
             {partyType !== "SUPPLIER" ? (
               <div className={ui.field}>
-                <label htmlFor="party-credit">Credit limit (₹)</label>
+                <label htmlFor="party-credit">Credit limit ({currencySymbol(currency)})</label>
                 <input id="party-credit" className={ui.input} value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
               </div>
             ) : null}

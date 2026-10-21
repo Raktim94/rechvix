@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	contactsdomain "rechvix/internal/modules/contacts/domain"
 	taxdomain "rechvix/internal/modules/taxation/domain"
+	"rechvix/internal/platform/geo"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -112,10 +115,10 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		}
 		for _, a := range addresses {
 			if doc.BillingAddressID != nil && a.ID == *doc.BillingAddressID {
-				billAddr = []string{a.Line1, a.Line2, fmt.Sprintf("%s, %s %s", a.City, a.State, a.PostalCode)}
+				billAddr = addressLines(a, legalEntity.CountryCode)
 			}
 			if doc.ShippingAddressID != nil && a.ID == *doc.ShippingAddressID {
-				shipAddr = []string{a.Line1, a.Line2, fmt.Sprintf("%s, %s %s", a.City, a.State, a.PostalCode)}
+				shipAddr = addressLines(a, legalEntity.CountryCode)
 			}
 		}
 	}
@@ -165,7 +168,7 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 				items[i].TaxRate, items[i].TaxValue = lt.rate, lt.value
 				// Outside India the printed line total includes the tax, matching the grand total.
 				items[i].LineTotal = lt.gross
-				items[i].HSNSAC = displayTaxCategory(items[i].HSNSAC)
+				items[i].HSNSAC = taxCategoryKind(items[i].HSNSAC)
 			}
 		}
 	}
@@ -225,6 +228,9 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		VehicleNumber:     doc.VehicleNumber,
 		Lines:             items,
 		GenericTax:        genericTax,
+		Language:          printing.LanguageFor(legalEntity.CountryCode),
+		DateLayout:        dateLayoutForDocument(genericTax, legalEntity.CountryCode),
+		SupplyDate:        supplyDateIfGeneric(genericTax, doc.SupplyDate),
 		Currency:          taxDoc.CurrencyCode,
 		TaxTotals:         taxTotals,
 		TaxNotes:          taxNotes,
@@ -268,22 +274,16 @@ func documentLabel(t domain.DocumentType, generic bool) string {
 	return label
 }
 
-// displayTaxCategory turns the stored tax code into words for a printed invoice:
-// "STANDARD" -> "Standard", "RATE:10" -> "Reduced", and so on. The rate itself is
-// printed in the Tax % column.
-func displayTaxCategory(code string) string {
+// taxCategoryKind reduces the stored tax code to its kind (STANDARD, REDUCED, ZERO,
+// EXEMPT, TAXABLE); the renderer words it in the document language and the rate
+// itself is printed in the Tax % column.
+func taxCategoryKind(code string) string {
 	c := strings.ToUpper(strings.TrimSpace(code))
 	switch {
-	case c == "STANDARD":
-		return "Standard"
+	case c == "STANDARD", c == "ZERO", c == "EXEMPT", c == "TAXABLE":
+		return c
 	case strings.HasPrefix(c, "RATE:"), c == "REDUCED":
-		return "Reduced"
-	case c == "ZERO":
-		return "Zero rate"
-	case c == "EXEMPT":
-		return "Exempt"
-	case c == "TAXABLE":
-		return "Taxable"
+		return "REDUCED"
 	}
 	return code
 }
@@ -309,26 +309,14 @@ func genericLineTaxes(taxLines []*taxdomain.TaxLine, comps map[uuid.UUID][]*taxd
 	return out
 }
 
-// taxNoteFor is the statement a classification needs on the printed document;
-// "" for ordinary taxed supplies.
-func taxNoteFor(classification string) string {
+// taxNoteCode returns the classification itself when it needs a printed
+// statement (the renderer owns the wording, per language), "" for ordinary taxed
+// supplies.
+func taxNoteCode(classification string) string {
 	switch classification {
-	case "REVERSE_CHARGE":
-		return "Reverse charge: the customer accounts for the VAT."
-	case "INTRA_EU_B2B":
-		return "Intra-Community supply: VAT not charged, reverse charge applies."
-	case "EXPORT":
-		return "Export outside the supplier's VAT area: VAT not charged."
-	case "EXEMPT":
-		return "Exempt supply."
-	case "ZERO_RATED":
-		return "Zero-rated supply."
-	case "EXEMPT_CERTIFICATE":
-		return "No sales tax charged: customer exemption certificate on file."
-	case "NOT_COLLECTED":
-		return "No sales tax charged: not registered to collect in the destination state."
-	case "STATE_HAS_NO_SALES_TAX":
-		return "No state sales tax applies in the destination state."
+	case "REVERSE_CHARGE", "INTRA_EU_B2B", "EXPORT", "EXEMPT", "ZERO_RATED",
+		"EXEMPT_CERTIFICATE", "NOT_COLLECTED", "STATE_HAS_NO_SALES_TAX":
+		return classification
 	}
 	return ""
 }
@@ -342,7 +330,7 @@ func genericTaxSummary(taxLines []*taxdomain.TaxLine, comps map[uuid.UUID][]*tax
 	var notes []string
 	seenNote := map[string]bool{}
 	for _, tl := range taxLines {
-		if n := taxNoteFor(tl.Classification); n != "" && !seenNote[n] {
+		if n := taxNoteCode(tl.Classification); n != "" && !seenNote[n] {
 			seenNote[n] = true
 			notes = append(notes, n)
 		}
@@ -364,6 +352,52 @@ func genericTaxSummary(taxLines []*taxdomain.TaxLine, comps map[uuid.UUID][]*tax
 		out = append(out, printing.TaxTotal{Label: k.name, Rate: k.rate, Amount: sums[k].StringFixed(money.RoundHalfUp)})
 	}
 	return out, notes
+}
+
+// addressLines formats an address the way the seller's country writes it, dropping
+// empty parts: India "City, State PIN" (unchanged), US "City, ST 12345", Spain and
+// most of the EU "28001 Madrid (Madrid)", UK "City POSTCODE". A country line is added
+// when the address is in a different country from the seller.
+func addressLines(a *contactsdomain.Address, sellerCountry string) []string {
+	var city string
+	switch strings.ToUpper(strings.TrimSpace(sellerCountry)) {
+	case "", "IN":
+		return []string{a.Line1, a.Line2, fmt.Sprintf("%s, %s %s", a.City, a.State, a.PostalCode)}
+	case "US":
+		city = strings.TrimSpace(a.City + ", " + strings.TrimSpace(a.State+" "+a.PostalCode))
+		city = strings.Trim(city, ", ")
+	case "GB":
+		city = strings.TrimSpace(a.City + " " + a.PostalCode)
+	default:
+		city = strings.TrimSpace(a.PostalCode + " " + a.City)
+		if a.State != "" {
+			city += " (" + a.State + ")"
+		}
+	}
+	out := []string{a.Line1, a.Line2, city}
+	if c := strings.ToUpper(strings.TrimSpace(a.CountryCode)); c != "" && c != strings.ToUpper(strings.TrimSpace(sellerCountry)) {
+		if country, ok := geo.Lookup(c); ok {
+			out = append(out, country.Name)
+		} else {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// dateLayoutFor is the date format of the seller's country, so a US invoice reads
+// 10/21/2026, a German one 21.10.2026 and a Spanish one 21/10/2026; elsewhere the
+// unambiguous 21-Oct-2026 (also India's long-standing format).
+func dateLayoutFor(country string) string {
+	switch strings.ToUpper(strings.TrimSpace(country)) {
+	case "US":
+		return "01/02/2006"
+	case "DE", "AT":
+		return "02.01.2006"
+	case "ES", "FR", "IT", "PT", "NL":
+		return "02/01/2006"
+	}
+	return "02-Jan-2006"
 }
 
 // splitNonEmptyLines turns LegalEntity.Address's free-text, newline
@@ -396,4 +430,18 @@ func addFixed(a, b string) string {
 		db = decimal.Zero
 	}
 	return da.Add(db).StringFixed(2)
+}
+
+func dateLayoutForDocument(generic bool, country string) string {
+	if !generic {
+		return ""
+	}
+	return dateLayoutFor(country)
+}
+
+func supplyDateIfGeneric(generic bool, d *time.Time) *time.Time {
+	if !generic {
+		return nil
+	}
+	return d
 }
