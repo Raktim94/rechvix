@@ -164,3 +164,11 @@ cd deploy/compose && docker compose config -q
 cd deploy/compose && docker compose --profile redis --profile minio --profile reverse-proxy config -q
 cd casaos && docker compose config -q
 ```
+
+## Database connection pool sizing
+
+`DATABASE_MAX_CONNS` (default `20`) caps the server's Postgres pool. In the Stage 11 load test,
+20 concurrent readers against a correctly indexed endpoint queued on the pool (p95 731ms vs 45ms
+alone), so raise it for busy multi-user installs. Keep
+`DATABASE_MAX_CONNS` + worker connections below Postgres `max_connections` (default 100), leaving
+headroom for backups and admin sessions. Measure p95 under your own concurrency after changing it.

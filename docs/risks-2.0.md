@@ -11,7 +11,7 @@ Severity: H/M/L. Status: Open unless stated. Evidence refers to this audit (2026
 | R-05 | OpenAPI documents snake_case, server emits PascalCase for 14/15 modules | H | TODO Stage 11 | Add versioned DTO layer (`/v2`), contract tests; do not break `apps/web` |
 | R-06 | Backups manual only; no schedule/retention/integrity check | H | `modules/backup` has Export/Restore only | Phase 1 using existing worker + AEAD |
 | R-07 | Reservation wiring/concurrency unverified (Scenario 3) | H | `stock_reservations` schema + domain exist; service use not confirmed | Phase 3/4: lock-based reserve test with concurrent clerks |
-| R-08 | DB pool default 20 saturates at 20 concurrent readers (p95 45→731ms) | M | TODO Stage 11 | Make configurable + document sizing; Phase 1 |
+| R-08 | DB pool default 20 saturates at 20 concurrent readers (p95 45→731ms) | L | TODO Stage 11 | Already configurable; sizing guidance added to docs/operations/deployment.md (done) |
 | R-09 | Webhook outbound SSRF defense unverified | M | `modules/webhooks` | Phase 9: allowlist/deny private ranges, test |
 | R-10 | Go 1.27.1 pinned; toolchain download needed on fresh machines; dependabot branch pending | L | go.mod | Document in CONTRIBUTING |
 | R-11 | e-Invoice sandbox creds from env, encrypted table unused | M | TODO Stage 8 | Blocked on credentials; wire table before production |
