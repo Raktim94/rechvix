@@ -7,6 +7,8 @@ interface ShareLink {
   ExpiresAt: string;
   RevokedAt: string | null;
   CreatedAt: string;
+  FirstViewedAt?: string | null;
+  ViewCount?: number;
 }
 
 /** GET/DELETE /share-links existed (Stage 9) with no screen that could
@@ -45,6 +47,9 @@ export function ShareLinksPanel({ documentType, documentId }: { documentType: st
               <span className={ui.muted}>
                 Created {new Date(l.CreatedAt).toLocaleString()}
                 {isLive ? ` · expires ${new Date(l.ExpiresAt).toLocaleDateString()}` : ""}
+              </span>
+              <span className={ui.muted}>
+                {l.ViewCount ? `Opened ${l.ViewCount} time${l.ViewCount === 1 ? "" : "s"}${l.FirstViewedAt ? `, first on ${new Date(l.FirstViewedAt).toLocaleString()}` : ""}` : "Not opened yet"}
               </span>
               {isLive ? (
                 <button type="button" className={ui.btnGhost} disabled={revoke.isPending} onClick={() => revoke.mutate(l.ID)}>
