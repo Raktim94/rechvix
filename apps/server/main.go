@@ -68,6 +68,7 @@ import (
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchaseshttp "rechvix/internal/modules/purchases/httpapi"
 	purchasespg "rechvix/internal/modules/purchases/pg"
+	referencehttp "rechvix/internal/modules/reference/httpapi"
 	reportingapp "rechvix/internal/modules/reporting/app"
 	reportinghttp "rechvix/internal/modules/reporting/httpapi"
 	reportingpg "rechvix/internal/modules/reporting/pg"
@@ -581,6 +582,7 @@ func run() error {
 			r.Use(identityhttp.RequireAuthOrAPIKey(identitySvc, cfg.Session.CookieName))
 			identityHandlers.MountAPIKeys(r)
 			orghttp.NewHandlers(orgSvc).Mount(r)
+			referencehttp.NewHandlers().Mount(r)
 			cataloguehttp.NewHandlers(catalogueSvc).Mount(r)
 			contactshttp.NewHandlers(contactsSvc).Mount(r)
 			pricinghttp.NewHandlers(pricingSvc).Mount(r)
