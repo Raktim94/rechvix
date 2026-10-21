@@ -1,3 +1,4 @@
+import { OnlinePaymentsSettings } from "../../components/OnlinePayPanels";
 import { PriceRulePanel } from "../../components/PriceRulePanel";
 import { DocumentStatusSettings } from "../../components/DocumentStatuses";
 import { RemindersPanel } from "../../components/RemindersPanel";
@@ -1288,6 +1289,8 @@ export function SettingsPage() {
       {org.legalEntity ? <BranchesPanel legalEntityId={org.legalEntity.ID} /> : null}
 
       {org.legalEntity ? <BankAccountsPanel legalEntityId={org.legalEntity.ID} /> : null}
+
+      {org.organisation ? <OnlinePaymentsSettings organisationId={org.organisation.ID} /> : null}
 
       <PriceRulePanel />
 

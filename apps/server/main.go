@@ -68,6 +68,7 @@ import (
 	orgapp "rechvix/internal/modules/organisation/app"
 	orghttp "rechvix/internal/modules/organisation/httpapi"
 	orgpg "rechvix/internal/modules/organisation/pg"
+	"rechvix/internal/modules/onlinepay"
 	"rechvix/internal/modules/pricerules"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricinghttp "rechvix/internal/modules/pricing/httpapi"
@@ -526,6 +527,7 @@ func run() error {
 	recurringSvc := recurring.NewService(pool, salesSvc, notificationsSvc, permissionsChecker, auditRecorder, logger, func() string { return strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) })
 	esignSvc := esignapp.NewService(pool, salesDocRenderer{sales: salesSvc}, notificationsMailer{svc: notificationsSvc}, permissionsChecker, auditRecorder)
 	salesSvc.WithESign(esignSvc)
+	onlinepaySvc := onlinepay.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)
 	remindersSvc := reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger)
 
 	router := httpx.NewRouter(httpx.RouterConfig{AllowedOrigins: cfg.Server.AllowedOrigins, Logger: logger})
@@ -614,6 +616,7 @@ func run() error {
 
 		esignhttp := esignapp.NewHandlers(esignSvc)
 		esignhttp.MountPublic(r)
+		onlinepay.NewHandlers(onlinepaySvc).MountPublic(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(identityhttp.RequireAuthOrAPIKey(identitySvc, cfg.Session.CookieName))
@@ -637,6 +640,7 @@ func run() error {
 			einvoicehttp.NewHandlers(einvoiceSvc, pool, permissionsChecker).Mount(r)
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
 			esignhttp.Mount(r)
+			onlinepay.NewHandlers(onlinepaySvc).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)
 			pricerules.NewHandlers(priceRulesSvc).Mount(r)
