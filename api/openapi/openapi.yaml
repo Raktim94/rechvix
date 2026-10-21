@@ -28,6 +28,39 @@ security:
   - apiKey: []
 
 paths:
+  /reports/tax/accountant-package:
+    get:
+      tags: [Reporting]
+      summary: Accountant handoff preview, ZIP or workbook
+      description: >
+        Requires reports.view and reports.export for this exact legal entity.
+        Complete company scope only; extra filters are rejected. Verified 2026
+        India/Spain/UK/US workpapers, not return submission. Unknown fields stay
+        blank for accountant review. Maximum 20000 documents and 100000 lines.
+      parameters:
+        - { name: legal_entity_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: format, in: query, schema: { type: string, enum: [json, zip, xlsx], default: json } }
+      responses:
+        '200':
+          description: Private no-store preview or complete downloadable file with review checks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [CA_REVIEW_REQUIRED, BLOCKED_ITEMS_PRESENT] }
+                  document_count: { type: integer }
+                  checks: { type: array, items: { type: object } }
+                  boxes: { type: array, items: { type: object } }
+            application/zip:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '400': { description: Invalid company, period, format, unsupported country or export size }
+        '403': { description: Missing scoped view/export permission }
+        '404': { description: Company not found in tenant }
   # ============================================================
   # IDENTITY — auth, sessions, MFA, password reset, API keys
   # apps/server/main.go mounts these both inside and outside the

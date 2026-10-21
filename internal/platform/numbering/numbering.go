@@ -62,7 +62,21 @@ func (s *Service) NextDocumentNumberFor(ctx context.Context, orgID, branchID uui
 	if err != nil {
 		return "", fmt.Errorf("numbering: allocating next number: %w", err)
 	}
-	return fmt.Sprintf("%s/%s/%06d", prefix, fy, seq), nil
+	displayPeriod := fy
+	india := strings.EqualFold(strings.TrimSpace(countryCode), "IN") || strings.TrimSpace(countryCode) == ""
+	if india {
+		// Keep the full FY key/counter unchanged; compact only the newly generated
+		// printed identifier so it fits GST's 16-character invoice-number limit.
+		displayPeriod = fy[2:]
+		if prefix == "RINV" {
+			prefix = "RIN"
+		}
+	}
+	result := fmt.Sprintf("%s/%s/%06d", prefix, displayPeriod, seq)
+	if india && len(result) > 16 {
+		return "", fmt.Errorf("numbering: Indian invoice series exceeds the 16-character GST limit; configure a new series")
+	}
+	return result, nil
 }
 
 // FinancialYearFor returns the India-default financial year label (April 1

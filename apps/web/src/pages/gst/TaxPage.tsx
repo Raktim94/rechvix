@@ -1,3 +1,4 @@
+import { AccountantExportPanel } from "../../components/AccountantExportPanel";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,6 +35,8 @@ export function TaxPage({ legalEntity }: { legalEntity: LegalEntity }) {
           {t("tax.settingsLink")}
         </Link>
       </div>
+
+      <AccountantExportPanel key={legalEntity.ID} company={legalEntity} />
 
       <div className={layout.panel}>
         <h2>{t("tax.ratesTitle")}</h2>

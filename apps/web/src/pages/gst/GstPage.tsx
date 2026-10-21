@@ -1,3 +1,4 @@
+import { AccountantExportPanel } from "../../components/AccountantExportPanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ImportPanel } from "../../components/ImportPanel";
@@ -676,6 +677,8 @@ function IndiaGstPage() {
           below ARE filtered — each is squarely "this company's filing
           prep," the one place mixing companies together would be
           actively wrong, not just incomplete. */}
+      {org.legalEntity ? <AccountantExportPanel key={org.legalEntity.ID} company={org.legalEntity} /> : null}
+
       <div className={layout.panel}>
         <h2>HSN summary</h2>
         <ReportTable path="/reports/tax/hsn-summary?format=json" />

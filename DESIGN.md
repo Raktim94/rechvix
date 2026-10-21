@@ -79,3 +79,8 @@ Skill anti-patterns we adopt: no stock photography, no auto-rotating carousels, 
 
 ## Invoice language and currency follow-up
 Reuse the existing form tokens and responsive billing grid. Show language/currency/rate in the same workspace before draft creation, then show the persisted values read-only. Settings separates interface language, company document language, and a browser-only invoice-currency preference. The book currency is not relabelled. Rate labels state the direction explicitly. Failed settings saves stay inline. Hindi uses a plain, embedded-font browser-print layout, repeated table headings and non-splitting totals; server PDF themes remain unchanged. Verify controls at 375/768/1440px and Devanagari shaping in browser print. Native translation review and real-device verification remain separate acceptance tasks.
+
+
+## Accountant handoff update (2026-10-21)
+
+Tax pages now provide company-scoped 2026 accountant ZIP/XLSX packages for India, Spain, UK and US. Calculated records, unknown statutory inputs and review issues are distinct; no return is submitted. This supersedes older statements that only raw tax figures can be exported. It does not change VERI*FACTU, MTD submission, Indian live e-invoicing or US local-tax/nexus limitations. See [accountant export contract](docs/accountant-exports.md).

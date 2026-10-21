@@ -293,6 +293,7 @@ type DashboardSummary struct {
 // against. Implemented in pg/ with plain parameterized SQL (brief §62) —
 // no ORM, matching every other module's data-access convention.
 type Repository interface {
+	AccountantData(ctx context.Context, f Filter) (*AccountantData, error)
 	SalesSummary(ctx context.Context, f Filter, group GroupDimension) ([]SummaryRow, error)
 	SalesInvoiceDetail(ctx context.Context, f Filter) ([]DocumentDetailRow, error)
 	GrossProfit(ctx context.Context, f Filter) ([]GrossProfitRow, error)

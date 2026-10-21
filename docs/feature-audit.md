@@ -125,3 +125,8 @@ Columns: ID · user outcome · existing location · backend · UI · security ·
 
 ## Language/currency follow-up (2026-10-21)
 Settings and billing controls are wired; migration 0048 adds Hindi. Invoice currency is separate from fixed book currency, with a required agreed rate; the default invoice-currency preference is browser-local and user/company scoped. Hindi uses authenticated browser-print HTML with embedded Devanagari font, not server-generated PDF attachments. Operational sales summaries now subtract credits/returns and aggregate product/category snapshot lines once. See docs/localisation.md for verification and remaining limits. No tax return filing or compliance adapter was added. The Spanish Ministry has proposed a further deadline change; docs/tax-regimes.md distinguishes it from AEAT's approved-deadline note.
+
+
+## Accountant exports (2026-10-21)
+
+Company-scoped tax workpapers and audit registers are now available for India, Spain, UK and US. Accountant inputs and unresolved cases remain explicit; these are not universally ready-to-upload returns. See [scope, country mappings and acceptance](accountant-exports.md).

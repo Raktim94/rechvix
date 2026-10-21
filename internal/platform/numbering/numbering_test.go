@@ -1,6 +1,8 @@
 package numbering
 
 import (
+	"context"
+	"github.com/google/uuid"
 	"testing"
 	"time"
 )
@@ -45,5 +47,34 @@ func TestSeriesPeriodFor(t *testing.T) {
 		if got := SeriesPeriodFor(c.country, c.date); got != c.want {
 			t.Errorf("SeriesPeriodFor(%q, %s) = %q, want %q", c.country, c.date.Format("2006-01-02"), got, c.want)
 		}
+	}
+}
+
+type counterStub struct {
+	period string
+	seq    int64
+}
+
+func (r *counterStub) Next(_ context.Context, _, _ uuid.UUID, _, period, _ string) (int64, error) {
+	r.period = period
+	return r.seq, nil
+}
+func TestIndianDisplayKeepsCounterAndGSTLength(t *testing.T) {
+	r := &counterStub{seq: 1}
+	s := NewService(nil, r)
+	date := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for _, prefix := range []string{"INV", "RINV"} {
+		got, err := s.NextDocumentNumberFor(context.Background(), uuid.New(), uuid.New(), "TAX_INVOICE", prefix, date, "IN")
+		if err != nil || len(got) > 16 || r.period != "2026-27" {
+			t.Fatalf("number=%s period=%s err=%v", got, r.period, err)
+		}
+	}
+	got, err := s.NextDocumentNumberFor(context.Background(), uuid.New(), uuid.New(), "TAX_INVOICE", "INV", date, "ES")
+	if err != nil || got != "INV/2026/000001" {
+		t.Fatalf("Spanish identifier changed: %s %v", got, err)
+	}
+	r.seq = 10000000
+	if _, err = s.NextDocumentNumberFor(context.Background(), uuid.New(), uuid.New(), "TAX_INVOICE", "INV", date, "IN"); err == nil {
+		t.Fatal("oversized GST identifier accepted")
 	}
 }

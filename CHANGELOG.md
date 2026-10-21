@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Accountant handoff packages
+- India, Spain, UK and US tax workpapers, source registers, review checks and downloadable ZIP/XLSX; scoped permissions and reconciliation.
+- Spain IVA/recargo corrections and Modelo 303 workpapers; UK VAT boxes; eligible Indian offline-tool CSVs; separate US state schedules. Unknown statutory inputs stay blank for the accountant.
+- No government submission credentials required for exports. See docs/accountant-exports.md for supported cases and remaining accountant work.
+
+
 ### Invoice language, currency and credit-note follow-up
 - Settings: interface language, company invoice-language default, and scoped browser preference for new-invoice currency.
 - Invoice screen: explicit language/currency/rate controls; exact-decimal conversion of catalogue prices at the invoice rate.

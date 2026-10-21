@@ -121,3 +121,8 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 No feature in this release files a tax return. UK VAT figures need separate MTD-compatible submission software ([HMRC](https://www.gov.uk/submit-vat-return/how-to-send-vat-return)); Rechvix does not implement that submission. India adapters remain sandbox/mock unless an operator deliberately configures and verifies a supported live provider; this work does not configure credentials or enable live submission. US coverage remains state base rates only, without local taxes or nexus determination.
 
 Foreign-currency invoice posting is available at an explicit stored rate, but automated FX revaluation is not. The sales summary now subtracts credit notes/returns and attributes product/category totals to snapshot lines. It is an operational document summary, not a tax return.
+
+
+## Accountant exports (2026-10-21)
+
+Company-scoped tax workpapers and audit registers are now available for India, Spain, UK and US. Accountant inputs and unresolved cases remain explicit; these are not universally ready-to-upload returns. See [scope, country mappings and acceptance](accountant-exports.md).
