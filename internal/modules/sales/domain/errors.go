@@ -3,6 +3,10 @@ package domain
 import "errors"
 
 var (
+	// ErrDeliveryNoteAlreadyBilled means a delivery note is already on another invoice.
+	ErrDeliveryNoteAlreadyBilled = errors.New("sales: a delivery note is already billed on another invoice")
+	// ErrMixedDeliveryNotes means the chosen delivery notes cannot share one invoice.
+	ErrMixedDeliveryNotes   = errors.New("sales: delivery notes must be finalized, for the same customer, company and currency")
 	ErrNotFound             = errors.New("sales: not found")
 	ErrInvalidDocumentType  = errors.New("sales: invalid document type")
 	ErrDocumentNotDraft     = errors.New("sales: document is not in DRAFT status")

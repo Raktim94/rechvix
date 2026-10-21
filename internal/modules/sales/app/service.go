@@ -678,7 +678,13 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 			return domain.ErrZeroValueDocument
 		}
 
-		if domain.StockAffecting(doc.DocumentType) {
+		// An invoice built from delivery challans must not take the goods out of stock a second time: each challan
+		// already did when it was finalized.
+		fromChallans, err := s.documents.HasSources(ctx, documentID)
+		if err != nil {
+			return err
+		}
+		if domain.StockAffecting(doc.DocumentType) && !fromChallans {
 			movementType := inventorydomain.MovementSale
 			if domain.MovementTypeFor(doc.DocumentType) == "SALE_RETURN" {
 				movementType = inventorydomain.MovementSaleReturn
@@ -892,6 +898,94 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 			return nil, fmt.Errorf("sales: copying line %d during conversion: %w", sl.LineNumber, err)
 		}
 	}
+	if source.DocumentType == domain.DocDeliveryChallan && (targetType == domain.DocTaxInvoice || targetType == domain.DocPOSInvoice) {
+		if err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+			return s.documents.LinkSources(ctx, principal.OrganisationID, target.ID, []uuid.UUID{source.ID})
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return target, nil
+}
+
+// ConvertDeliveryNotes bills several finalized delivery notes in one draft invoice. All must be for the same customer,
+// company and currency and not yet billed. The invoice records which notes it covers, so finalizing it does not take the
+// goods out of stock again (each delivery note already did), and cancelling it releases the notes.
+func (s *Service) ConvertDeliveryNotes(ctx context.Context, principal permissions.Principal, sourceIDs []uuid.UUID) (*domain.Document, error) {
+	if len(sourceIDs) == 0 {
+		return nil, fmt.Errorf("%w: choose at least one delivery note", domain.ErrMixedDeliveryNotes)
+	}
+	seen := map[uuid.UUID]bool{}
+	var sources []*domain.Document
+	var linesBySource [][]*domain.DocumentLine
+	for _, id := range sourceIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		doc, lines, err := s.GetDocument(ctx, principal, id)
+		if err != nil {
+			return nil, err
+		}
+		if doc.DocumentType != domain.DocDeliveryChallan || doc.Status != domain.StatusFinalized {
+			return nil, fmt.Errorf("%w: %s is not a finalized delivery note", domain.ErrMixedDeliveryNotes, doc.DocumentNumber)
+		}
+		if len(sources) > 0 {
+			first := sources[0]
+			if doc.CustomerPartyID != first.CustomerPartyID || doc.LegalEntityID != first.LegalEntityID || doc.CurrencyCode != first.CurrencyCode {
+				return nil, fmt.Errorf("%w: %s differs from %s", domain.ErrMixedDeliveryNotes, doc.DocumentNumber, first.DocumentNumber)
+			}
+		}
+		sources = append(sources, doc)
+		linesBySource = append(linesBySource, lines)
+	}
+	ids := make([]uuid.UUID, len(sources))
+	for i, d := range sources {
+		ids[i] = d.ID
+	}
+	var billed map[uuid.UUID]bool
+	if err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		billed, err = s.documents.BilledSources(ctx, ids)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	for _, d := range sources {
+		if billed[d.ID] {
+			return nil, fmt.Errorf("%w: %s", domain.ErrDeliveryNoteAlreadyBilled, d.DocumentNumber)
+		}
+	}
+	first := sources[0]
+	target, err := s.CreateDocument(ctx, principal, CreateDocumentParams{
+		LegalEntityID: first.LegalEntityID, BranchID: first.BranchID, WarehouseID: first.WarehouseID,
+		CustomerPartyID: first.CustomerPartyID, DocumentType: domain.DocTaxInvoice, ReferenceDocumentID: &first.ID,
+		IssueDate: s.now(), BillingAddressID: first.BillingAddressID, ShippingAddressID: first.ShippingAddressID,
+		CustomerTaxRegistrationID: first.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: first.PlaceOfSupplyStateCode,
+		CustomerCountry: first.CustomerCountry, SupplyRegion: first.SupplyRegion,
+		CustomerTaxExempt: first.CustomerTaxExempt, EquivalenceSurcharge: first.EquivalenceSurcharge,
+		InvoiceLanguage: first.InvoiceLanguage, SalespersonUserID: first.SalespersonUserID, PriceListID: first.PriceListID,
+		CurrencyCode: first.CurrencyCode, BaseCurrencyCode: first.BaseCurrencyCode, ExchangeRate: first.ExchangeRate, PricingMode: first.PricingMode,
+		CustomerReference: first.CustomerReference, Notes: first.Notes, TermsAndConditions: first.TermsAndConditions, PaymentTermsDays: first.PaymentTermsDays,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i, lines := range linesBySource {
+		for _, sl := range lines {
+			if _, err := s.AddLine(ctx, principal, AddLineParams{
+				DocumentID: target.ID, ProductVariantID: sl.ProductVariantID, UnitID: sl.UnitID, Quantity: sl.Quantity,
+				UnitPrice: sl.UnitPrice.Decimal(), LineDiscountAmount: sl.LineDiscountAmount.Decimal(), BatchCode: sl.BatchCode, SerialCode: sl.SerialCode,
+			}); err != nil {
+				return nil, fmt.Errorf("sales: copying line %d of %s: %w", sl.LineNumber, sources[i].DocumentNumber, err)
+			}
+		}
+	}
+	if err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		return s.documents.LinkSources(ctx, principal.OrganisationID, target.ID, ids)
+	}); err != nil {
+		return nil, err
+	}
 	return target, nil
 }
 
@@ -939,7 +1033,11 @@ func (s *Service) CancelDocument(ctx context.Context, principal permissions.Prin
 			return err
 		}
 
-		if domain.StockAffecting(doc.DocumentType) {
+		fromChallans, err := s.documents.HasSources(ctx, documentID)
+		if err != nil {
+			return err
+		}
+		if domain.StockAffecting(doc.DocumentType) && !fromChallans {
 			// The reversal of whatever finalize originally posted: a
 			// document that took stock out (SALE-type movements) gets it
 			// back via SALE_RETURN; one that already put it back
@@ -994,6 +1092,9 @@ func (s *Service) CancelDocument(ctx context.Context, principal permissions.Prin
 				SalesDocumentID: doc.ID, IssuerNIF: le.TaxID, Number: doc.DocumentNumber, IssueDate: doc.IssueDate}); err != nil {
 				return fmt.Errorf("recording the VERI*FACTU cancellation: %w", err)
 			}
+		}
+		if err := s.documents.UnlinkSources(ctx, documentID); err != nil { // release billed delivery notes
+			return err
 		}
 		if err := s.documents.UpdateStatus(ctx, documentID, domain.StatusCancelled, &now); err != nil {
 			return err
