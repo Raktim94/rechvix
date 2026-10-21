@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"rechvix/internal/modules/taxregimes"
 	"testing"
 
 	"github.com/google/uuid"
@@ -55,7 +56,7 @@ func newTestEinvoiceServices(t *testing.T) (*salesapp.Service, *einvoiceapp.Serv
 	gstRateRepo := gstindiapg.NewTaxRateRepo(sharedPool)
 	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(sharedPool))
 	taxationSvc := taxationapp.NewService(
-		sharedPool, gstEngine, taxationpg.NewTaxDocumentRepo(sharedPool), taxationpg.NewTaxLineRepo(sharedPool), taxationpg.NewTaxComponentRepo(sharedPool),
+		sharedPool, taxregimes.NewDispatcher(gstEngine), taxationpg.NewTaxDocumentRepo(sharedPool), taxationpg.NewTaxLineRepo(sharedPool), taxationpg.NewTaxComponentRepo(sharedPool),
 	)
 	numberingSvc := numbering.NewService(sharedPool, numbering.NewPGRepository(sharedPool))
 	pricingSvc := pricingapp.NewService(sharedPool, pricingpg.NewPriceListRepo(sharedPool), pricingpg.NewPriceListItemRepo(sharedPool), checker, recorder)

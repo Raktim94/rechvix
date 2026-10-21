@@ -43,8 +43,9 @@ func (r *DocumentRepo) Create(ctx context.Context, d *domain.Document) error {
 			customer_tax_registration_id, place_of_supply_state_code, salesperson_user_id, price_list_id,
 			currency_code, base_currency_code, exchange_rate, pricing_mode, customer_reference, transporter,
 			vehicle_number, shipping_terms, notes, terms_and_conditions, payment_terms_days,
-			created_by, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32)`
+			created_by, created_at, updated_at,
+			customer_country, supply_region, customer_tax_exempt, equivalence_surcharge
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32,$33,$34,$35,$36)`
 	_, err := r.pool.Q(ctx).Exec(ctx, q,
 		d.ID, d.OrganisationID, d.LegalEntityID, d.BranchID, d.WarehouseID, d.CustomerPartyID, string(d.DocumentType), d.DocumentNumber,
 		d.ReferenceDocumentID, string(d.Status), d.IssueDate, d.DueDate, d.SupplyDate, d.BillingAddressID, d.ShippingAddressID,
@@ -52,6 +53,7 @@ func (r *DocumentRepo) Create(ctx context.Context, d *domain.Document) error {
 		d.CurrencyCode, d.BaseCurrencyCode, d.ExchangeRate, string(d.PricingMode), nullIfEmpty(d.CustomerReference), nullIfEmpty(d.Transporter),
 		nullIfEmpty(d.VehicleNumber), nullIfEmpty(d.ShippingTerms), nullIfEmpty(d.Notes), nullIfEmpty(d.TermsAndConditions), d.PaymentTermsDays,
 		d.CreatedBy, d.CreatedAt,
+		nullIfEmpty(d.CustomerCountry), nullIfEmpty(d.SupplyRegion), d.CustomerTaxExempt, d.EquivalenceSurcharge,
 	)
 	if err != nil {
 		if pgUniqueViolation(err) {
@@ -67,7 +69,8 @@ const documentCols = `id, organisation_id, legal_entity_id, branch_id, warehouse
 	customer_tax_registration_id, COALESCE(place_of_supply_state_code, ''), salesperson_user_id, price_list_id,
 	currency_code, base_currency_code, exchange_rate, pricing_mode, COALESCE(customer_reference, ''), COALESCE(transporter, ''),
 	COALESCE(vehicle_number, ''), COALESCE(shipping_terms, ''), COALESCE(notes, ''), COALESCE(terms_and_conditions, ''), payment_terms_days,
-	tax_document_id, grand_total_amount, created_by, created_at, updated_at, finalized_at`
+	tax_document_id, grand_total_amount, created_by, created_at, updated_at, finalized_at,
+	COALESCE(customer_country, ''), COALESCE(supply_region, ''), customer_tax_exempt, equivalence_surcharge`
 
 func (r *DocumentRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Document, error) {
 	q := fmt.Sprintf(`SELECT %s FROM sales_documents WHERE organisation_id = $1 AND id = $2`, documentCols)
@@ -148,7 +151,8 @@ func scanDocumentRow(row scannable) (*domain.Document, error) {
 		&d.CustomerTaxRegistrationID, &d.PlaceOfSupplyStateCode, &d.SalespersonUserID, &d.PriceListID,
 		&d.CurrencyCode, &d.BaseCurrencyCode, &d.ExchangeRate, &pricingMode, &d.CustomerReference, &d.Transporter,
 		&d.VehicleNumber, &d.ShippingTerms, &d.Notes, &d.TermsAndConditions, &d.PaymentTermsDays,
-		&taxDocID, &grandTotalAmount, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.FinalizedAt); err != nil {
+		&taxDocID, &grandTotalAmount, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.FinalizedAt,
+		&d.CustomerCountry, &d.SupplyRegion, &d.CustomerTaxExempt, &d.EquivalenceSurcharge); err != nil {
 		return nil, err
 	}
 	d.DocumentType = domain.DocumentType(docType)

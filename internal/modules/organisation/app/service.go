@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -424,6 +425,45 @@ func (s *Service) UpdateLegalEntityGST(ctx context.Context, principal permission
 			EntityID:       &legalEntityID,
 			AfterState:     map[string]any{"gstin": gstin, "gst_state_code": gstStateCode},
 			At:             s.now(),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return le, nil
+}
+
+// UpdateLegalEntityUSCollectionRegions sets the US states ("US-CA") in which the
+// entity is registered to collect sales tax. Tax is charged only in these
+// states; whether the entity has nexus elsewhere is a legal decision this
+// system does not make. Codes are validated against the known US states.
+func (s *Service) UpdateLegalEntityUSCollectionRegions(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID, regions []string) (*domain.LegalEntity, error) {
+	if err := s.permissions.Require(ctx, principal, "settings.manage", permissions.Scope{}); err != nil {
+		return nil, err
+	}
+	clean := make([]string, 0, len(regions))
+	seen := map[string]bool{}
+	for _, r := range regions {
+		r = strings.ToUpper(strings.TrimSpace(r))
+		if !strings.HasPrefix(r, "US-") || len(r) != 5 {
+			return nil, fmt.Errorf("%w: %q is not a US state code like US-CA", domain.ErrInvalidInput, r)
+		}
+		if !seen[r] {
+			seen[r] = true
+			clean = append(clean, r)
+		}
+	}
+	var le *domain.LegalEntity
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		le, err = s.legalEntities.UpdateUSCollectionRegions(ctx, principal.OrganisationID, legalEntityID, clean)
+		if err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "legal_entity.us_collection_regions_updated", EntityType: "legal_entity", EntityID: &legalEntityID,
+			AfterState: map[string]any{"us_collection_regions": clean}, At: s.now(),
 		})
 	})
 	if err != nil {

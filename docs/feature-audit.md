@@ -16,7 +16,7 @@ it was re-run on 2026-10-21 (285 pass / 0 fail).
 | `go test ./...` (unit) | pass, 25 packages with tests |
 | `apps/web`: `tsc -b` | pass |
 | `apps/web`: `npm run lint` (oxlint) | pass, warnings only (`set-state-in-effect` x7, `only-export-components` x1) |
-| `go test -tags=integration ./...` | **pass, 293 tests, 0 failed, 0 skipped** (2026-10-21, after migration 0044, with `pg_dump` 18 on PATH; Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
+| `go test -tags=integration ./...` | **pass, 312 tests, 0 failed, 0 skipped** (2026-10-21, after migrations 0044-0045, with `pg_dump` 18 on PATH; Postgres 18 testcontainers on a remote Docker daemon; see docs/operations/testing-remote-docker.md) |
 | Playwright / e2e / screenshots | **not run** — Postgres stack unavailable (needs Docker) |
 | staticcheck / govulncheck | not run locally (CI job `go-static` runs them) |
 
@@ -109,3 +109,16 @@ Columns: ID · user outcome · existing location · backend · UI · security ·
 1. **Do not ship a margin/tax feature on D2/D3 until fixed** (brief rule). Fix needs `unit_cost` snapshot on SALE movements (migration expand/migrate/contract + backfill from the `stock_cost_lots`/movement history where derivable).
 2. B4 reservations: verify whether sales finalize actually consumes reservations. Phase 3 depends on it.
 3. API shape (I1) must be fixed with a **versioned** `/v2` DTO layer, not by retagging structs, because `apps/web` reads PascalCase today (rule 8: preserve public API).
+
+## Localisation and tax (L) — updated 2026-10-21
+
+| ID | Outcome | Location | BE | UI | Sec | Tests | Risk | Evidence |
+|---|---|---|---|---|---|---|---|---|
+| L1 | All ISO 4217 currencies, exact minor units | `platform/money/iso4217_gen.go`, `scripts/gengeo` | Full (165 currencies) | Pending | n/a | unit | L | ISO list published 2026-09-17 |
+| L2 | All ISO 3166 countries with default currency | `platform/geo` | Full (250) | Pending | n/a | unit | L | generator + overrides vs ISO |
+| L3 | Spain IVA incl. recargo de equivalencia | `taxregimes` | Full (IVA mainland/Baleares) | Pending | RLS | unit + integ | M | AEAT rates; IGIC/IPSI refused |
+| L4 | UK VAT | `taxregimes` | Full | Pending | RLS | unit + integ | M | gov.uk/vat-rates |
+| L5 | EU VAT (27 states) with intra-EU B2B / export | `taxregimes` | Full except OSS consumer | Pending | RLS | unit + integ | M | 2 sources agree on standard rates |
+| L6 | US state sales tax | `taxregimes` | State base rate only; registered states only | Pending | RLS | unit + integ | H (not a compliance engine) | Tax Foundation 2026 |
+| L7 | UI language (multilingual) | none yet | Missing | Missing | - | - | M | next |
+| L8 | VAT returns / filings | none | Missing | Missing | - | - | H | not started |

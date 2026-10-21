@@ -42,6 +42,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/legal-entities", h.listLegalEntities)
 	r.Post("/legal-entities", h.createLegalEntity)
 	r.Put("/legal-entities/{id}/gst", h.updateLegalEntityGST)
+	r.Put("/legal-entities/{id}/us-collection-regions", h.updateLegalEntityUSCollectionRegions)
 	r.Put("/legal-entities/{id}/invoice-branding", h.updateInvoiceBranding)
 	r.Get("/branches", h.listBranches)
 	r.Post("/branches", h.createBranch)
@@ -62,6 +63,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		httpx.WriteError(w, r, httpx.NewNotFound("NOT_FOUND", "The requested resource was not found."))
+	case errors.Is(err, domain.ErrInvalidInput):
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INPUT", err.Error()))
 	case errors.As(err, &forbidden):
 		httpx.WriteError(w, r, httpx.NewForbidden("FORBIDDEN", "You do not have permission to perform this action."))
 	default:
@@ -209,6 +212,31 @@ func (h *Handlers) updateLegalEntityGST(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	le, err := h.svc.UpdateLegalEntityGST(r.Context(), principal(r), id, req.GSTIN, req.GSTStateCode)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, le)
+}
+
+type updateUSCollectionRegionsRequest struct {
+	Regions []string `json:"regions"`
+}
+
+// updateLegalEntityUSCollectionRegions sets the US states where the entity is
+// registered to collect sales tax; tax is only charged in these states.
+func (h *Handlers) updateLegalEntityUSCollectionRegions(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[updateUSCollectionRegionsRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	le, err := h.svc.UpdateLegalEntityUSCollectionRegions(r.Context(), principal(r), id, req.Regions)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"rechvix/internal/modules/taxregimes"
 	"sync"
 	"testing"
 	"time"
@@ -79,7 +80,7 @@ func newTestSalesServices(t *testing.T) (*salesapp.Service, *inventoryapp.Servic
 	gstindiaSvc := gstindiaapp.NewService(sharedPool, gstRateRepo, gstindiapg.NewStateRepo(sharedPool), catalogueSvc, inventorySvc, checker, recorder)
 	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(sharedPool))
 	taxationSvc := taxationapp.NewService(
-		sharedPool, gstEngine,
+		sharedPool, taxregimes.NewDispatcher(gstEngine),
 		taxationpg.NewTaxDocumentRepo(sharedPool),
 		taxationpg.NewTaxLineRepo(sharedPool),
 		taxationpg.NewTaxComponentRepo(sharedPool),

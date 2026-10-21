@@ -124,25 +124,30 @@ type Document struct {
 	ShippingAddressID         *uuid.UUID
 	CustomerTaxRegistrationID *uuid.UUID
 	PlaceOfSupplyStateCode    string
-	SalespersonUserID         *uuid.UUID
-	PriceListID               *uuid.UUID
-	CurrencyCode              string
-	BaseCurrencyCode          string
-	ExchangeRate              decimal.Decimal
-	PricingMode               taxdomain.PricingMode
-	CustomerReference         string
-	Transporter               string
-	VehicleNumber             string
-	ShippingTerms             string
-	Notes                     string
-	TermsAndConditions        string
-	PaymentTermsDays          int
-	TaxDocumentID             *uuid.UUID
-	GrandTotalAmount          *money.Money
-	CreatedBy                 uuid.UUID
-	CreatedAt                 time.Time
-	UpdatedAt                 time.Time
-	FinalizedAt               *time.Time
+	// Tax context for non-India regimes (migration 0045); fixed at creation.
+	CustomerCountry      string // ISO 3166-1 alpha-2; empty means domestic
+	SupplyRegion         string // ISO 3166-2 destination, e.g. US-CA
+	CustomerTaxExempt    bool   // customer holds an exemption/resale certificate
+	EquivalenceSurcharge bool   // Spain: customer under recargo de equivalencia
+	SalespersonUserID    *uuid.UUID
+	PriceListID          *uuid.UUID
+	CurrencyCode         string
+	BaseCurrencyCode     string
+	ExchangeRate         decimal.Decimal
+	PricingMode          taxdomain.PricingMode
+	CustomerReference    string
+	Transporter          string
+	VehicleNumber        string
+	ShippingTerms        string
+	Notes                string
+	TermsAndConditions   string
+	PaymentTermsDays     int
+	TaxDocumentID        *uuid.UUID
+	GrandTotalAmount     *money.Money
+	CreatedBy            uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	FinalizedAt          *time.Time
 }
 
 type DocumentLine struct {

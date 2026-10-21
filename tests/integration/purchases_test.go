@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"rechvix/internal/modules/taxregimes"
 	"sync"
 	"testing"
 
@@ -40,7 +41,7 @@ func newTestPurchasesService(t *testing.T, inventorySvc *inventoryapp.Service) *
 	gstRateRepo := gstindiapg.NewTaxRateRepo(sharedPool)
 	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(sharedPool))
 	taxationSvc := taxationapp.NewService(
-		sharedPool, gstEngine, taxationpg.NewTaxDocumentRepo(sharedPool), taxationpg.NewTaxLineRepo(sharedPool), taxationpg.NewTaxComponentRepo(sharedPool),
+		sharedPool, taxregimes.NewDispatcher(gstEngine), taxationpg.NewTaxDocumentRepo(sharedPool), taxationpg.NewTaxLineRepo(sharedPool), taxationpg.NewTaxComponentRepo(sharedPool),
 	)
 	return purchasesapp.NewService(
 		sharedPool,

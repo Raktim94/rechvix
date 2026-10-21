@@ -52,6 +52,9 @@ type LegalEntity struct {
 	// neither.
 	GSTIN        string
 	GSTStateCode string
+	// USCollectionRegions are the US states ("US-CA") where this entity is
+	// registered to collect sales tax (migration 0045). Empty: no US tax is charged.
+	USCollectionRegions []string
 	// Invoice branding fields (migrations/0034) — the actual source
 	// internal/modules/sales/printing has been able to render since
 	// Stage 5b (logo, address, bank details) but had nowhere to read
@@ -158,6 +161,7 @@ type LegalEntityRepository interface {
 	// has a NOT NULL foreign key to gst_state_codes), and until this was
 	// added there was no way to set it after the fact at all.
 	UpdateGSTDetails(ctx context.Context, orgID, id uuid.UUID, gstin, gstStateCode string) (*LegalEntity, error)
+	UpdateUSCollectionRegions(ctx context.Context, orgID, id uuid.UUID, regions []string) (*LegalEntity, error)
 	// UpdateInvoiceBranding is the equivalent fix/set path for
 	// everything a printed invoice can show beyond GSTIN — see
 	// InvoiceBrandingUpdate's doc comment.

@@ -79,6 +79,30 @@ type TaxCalculationInput struct {
 	SupplyType        SupplyType
 	ReverseCharge     bool
 	CurrencyCode      string
+
+	// Multi-jurisdiction fields (additive; zero values keep the original India
+	// GST behaviour). SupplierCountry selects the tax regime: "" or "IN" is
+	// India GST; "ES", "GB" and the EU member states use VAT; "US" uses state
+	// sales tax. See internal/modules/taxregimes.
+	SupplierCountry string // ISO 3166-1 alpha-2 of the selling legal entity
+	CustomerCountry string // ISO 3166-1 alpha-2 of the customer; "" means domestic
+	// SupplyRegion is the destination subdivision as an ISO 3166-2 code, e.g.
+	// "US-CA", "ES-CN", "GB-NIR". Required for US sales tax; used by the VAT
+	// packs to reject territories whose rules are not implemented.
+	SupplyRegion string
+	// CustomerTaxRegistered is true when the customer has a business tax
+	// identifier (e.g. an EU VAT number). The identifier is NOT validated
+	// against VIES here; the caller is responsible for that.
+	CustomerTaxRegistered bool
+	// CustomerTaxExempt is true when the customer holds a valid exemption or
+	// resale certificate (US sales tax).
+	CustomerTaxExempt bool
+	// EquivalenceSurcharge is true when the customer is under Spain's
+	// "recargo de equivalencia" regime, adding the surcharge to Spanish IVA.
+	EquivalenceSurcharge bool
+	// CollectionRegions lists the US states ("US-CA") where the seller is
+	// registered to collect sales tax. Tax is charged only in these states.
+	CollectionRegions []string
 }
 
 // TaxComponent is one named amount within a line's total tax (CGST, SGST,
@@ -105,6 +129,11 @@ type TaxLineResult struct {
 	// by the app layer to persist the tax_lines.tax_rate_master_id
 	// snapshot reference (brief §7).
 	RateMasterID uuid.UUID
+	// Regime and RatePackVersion identify, for non-India regimes, which tax
+	// regime and which dated rate table produced this line (stored with the
+	// snapshot because such lines have no tax_rate_master row).
+	Regime          string
+	RatePackVersion string
 }
 
 // TaxCalculationResult is a full document's calculated outcome.
@@ -129,14 +158,18 @@ type TaxEngine interface {
 // business document triggered the calculation) that a pure calculation
 // doesn't need.
 type TaxDocument struct {
-	ID                 uuid.UUID
-	OrganisationID     uuid.UUID
-	ReferenceType      string
-	ReferenceID        *uuid.UUID
-	DocumentDate       time.Time
-	CurrencyCode       string
-	SupplierStateCode  string
-	PlaceOfSupplyCode  string
+	ID                uuid.UUID
+	OrganisationID    uuid.UUID
+	ReferenceType     string
+	ReferenceID       *uuid.UUID
+	DocumentDate      time.Time
+	CurrencyCode      string
+	SupplierStateCode string
+	PlaceOfSupplyCode string
+	// Non-India regimes: where the supply is from/to (empty for India GST).
+	SupplierCountry    string
+	CustomerCountry    string
+	SupplyRegion       string
 	SupplyType         SupplyType
 	ReverseCharge      bool
 	TotalTaxableAmount money.Money
@@ -146,17 +179,21 @@ type TaxDocument struct {
 }
 
 type TaxLine struct {
-	ID              uuid.UUID
-	OrganisationID  uuid.UUID
-	TaxDocumentID   uuid.UUID
-	LineRef         string
-	HSNSACCode      string
-	PricingMode     PricingMode
-	GrossAmount     money.Money
-	TaxableAmount   money.Money
-	TotalTaxAmount  money.Money
-	Classification  string
+	ID             uuid.UUID
+	OrganisationID uuid.UUID
+	TaxDocumentID  uuid.UUID
+	LineRef        string
+	HSNSACCode     string
+	PricingMode    PricingMode
+	GrossAmount    money.Money
+	TaxableAmount  money.Money
+	TotalTaxAmount money.Money
+	Classification string
+	// TaxRateMasterID is uuid.Nil for non-India regimes, which record
+	// Regime and RatePackVersion instead (migration 0045).
 	TaxRateMasterID uuid.UUID
+	Regime          string
+	RatePackVersion string
 	CreatedAt       time.Time
 }
 

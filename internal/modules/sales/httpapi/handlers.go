@@ -119,6 +119,10 @@ type createDocumentRequest struct {
 	ShippingAddressID         *uuid.UUID `json:"shipping_address_id"`
 	CustomerTaxRegistrationID *uuid.UUID `json:"customer_tax_registration_id"`
 	PlaceOfSupplyStateCode    string     `json:"place_of_supply_state_code"`
+	CustomerCountry           string     `json:"customer_country"`
+	SupplyRegion              string     `json:"supply_region"`
+	CustomerTaxExempt         bool       `json:"customer_tax_exempt"`
+	EquivalenceSurcharge      bool       `json:"equivalence_surcharge"`
 	SalespersonUserID         *uuid.UUID `json:"salesperson_user_id"`
 	PriceListID               *uuid.UUID `json:"price_list_id"`
 	CurrencyCode              string     `json:"currency_code"`
@@ -158,6 +162,8 @@ func (h *Handlers) createDocument(w http.ResponseWriter, r *http.Request) {
 		ReferenceDocumentID: req.ReferenceDocumentID, IssueDate: issueDate, DueDate: req.DueDate, SupplyDate: req.SupplyDate,
 		BillingAddressID: req.BillingAddressID, ShippingAddressID: req.ShippingAddressID,
 		CustomerTaxRegistrationID: req.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: req.PlaceOfSupplyStateCode,
+		CustomerCountry: req.CustomerCountry, SupplyRegion: req.SupplyRegion,
+		CustomerTaxExempt: req.CustomerTaxExempt, EquivalenceSurcharge: req.EquivalenceSurcharge,
 		SalespersonUserID: req.SalespersonUserID, PriceListID: req.PriceListID, CurrencyCode: req.CurrencyCode,
 		BaseCurrencyCode: req.BaseCurrencyCode, ExchangeRate: exchangeRate, PricingMode: taxdomain.PricingMode(req.PricingMode),
 		CustomerReference: req.CustomerReference, Transporter: req.Transporter, VehicleNumber: req.VehicleNumber,

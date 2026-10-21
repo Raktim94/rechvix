@@ -80,6 +80,7 @@ import (
 	staffpg "rechvix/internal/modules/staff/pg"
 	taxationapp "rechvix/internal/modules/taxation/app"
 	taxationpg "rechvix/internal/modules/taxation/pg"
+	"rechvix/internal/modules/taxregimes"
 	webhooksapp "rechvix/internal/modules/webhooks/app"
 	webhookshttp "rechvix/internal/modules/webhooks/httpapi"
 	webhookspg "rechvix/internal/modules/webhooks/pg"
@@ -365,8 +366,10 @@ func run() error {
 	// only gstindia's admin rate-configuration API is mounted below;
 	// sales.FinalizeDocument is taxationSvc's real caller (Stage 5b).
 	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(pool))
+	// taxregimes.Dispatcher keeps gstEngine for India (and for any legal
+	// entity with no country) and adds VAT (ES/GB/EU) and US sales tax.
 	taxationSvc := taxationapp.NewService(
-		pool, gstEngine,
+		pool, taxregimes.NewDispatcher(gstEngine),
 		taxationpg.NewTaxDocumentRepo(pool),
 		taxationpg.NewTaxLineRepo(pool),
 		taxationpg.NewTaxComponentRepo(pool),

@@ -10,6 +10,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -196,6 +197,10 @@ type CreateDocumentParams struct {
 	// address, still overridable) supplies it explicitly, and it is then
 	// immutable once set on the document (brief §55).
 	PlaceOfSupplyStateCode string
+	CustomerCountry        string
+	SupplyRegion           string
+	CustomerTaxExempt      bool
+	EquivalenceSurcharge   bool
 	SalespersonUserID      *uuid.UUID
 	PriceListID            *uuid.UUID
 	CurrencyCode           string
@@ -241,6 +246,8 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 		ReferenceDocumentID: p.ReferenceDocumentID, Status: domain.StatusDraft, IssueDate: issueDate,
 		DueDate: p.DueDate, SupplyDate: p.SupplyDate, BillingAddressID: p.BillingAddressID, ShippingAddressID: p.ShippingAddressID,
 		CustomerTaxRegistrationID: p.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: p.PlaceOfSupplyStateCode,
+		CustomerCountry: strings.ToUpper(strings.TrimSpace(p.CustomerCountry)), SupplyRegion: strings.ToUpper(strings.TrimSpace(p.SupplyRegion)),
+		CustomerTaxExempt: p.CustomerTaxExempt, EquivalenceSurcharge: p.EquivalenceSurcharge,
 		SalespersonUserID: p.SalespersonUserID, PriceListID: p.PriceListID, CurrencyCode: p.CurrencyCode,
 		BaseCurrencyCode: p.BaseCurrencyCode, ExchangeRate: exchangeRate, PricingMode: pricingMode,
 		CustomerReference: p.CustomerReference, Transporter: p.Transporter, VehicleNumber: p.VehicleNumber,
@@ -614,6 +621,14 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 				DocumentDate:      doc.IssueDate,
 				SupplyType:        taxdomain.SupplyB2C,
 				CurrencyCode:      doc.CurrencyCode,
+				// Non-India regimes (the dispatcher ignores these for India).
+				SupplierCountry:       legalEntity.CountryCode,
+				CustomerCountry:       doc.CustomerCountry,
+				SupplyRegion:          doc.SupplyRegion,
+				CustomerTaxRegistered: doc.CustomerTaxRegistrationID != nil,
+				CustomerTaxExempt:     doc.CustomerTaxExempt,
+				EquivalenceSurcharge:  doc.EquivalenceSurcharge,
+				CollectionRegions:     legalEntity.USCollectionRegions,
 			},
 		})
 		if err != nil {
@@ -786,6 +801,8 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 		CustomerPartyID: source.CustomerPartyID, DocumentType: targetType, ReferenceDocumentID: &refID,
 		IssueDate: s.now(), BillingAddressID: source.BillingAddressID, ShippingAddressID: source.ShippingAddressID,
 		CustomerTaxRegistrationID: source.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: source.PlaceOfSupplyStateCode,
+		CustomerCountry: source.CustomerCountry, SupplyRegion: source.SupplyRegion,
+		CustomerTaxExempt: source.CustomerTaxExempt, EquivalenceSurcharge: source.EquivalenceSurcharge,
 		SalespersonUserID: source.SalespersonUserID, PriceListID: source.PriceListID, CurrencyCode: source.CurrencyCode,
 		BaseCurrencyCode: source.BaseCurrencyCode, ExchangeRate: source.ExchangeRate, PricingMode: source.PricingMode,
 		CustomerReference: source.CustomerReference, Transporter: source.Transporter, VehicleNumber: source.VehicleNumber,

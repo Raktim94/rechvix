@@ -10,6 +10,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -148,6 +149,9 @@ func (s *Service) calculateAndPersist(ctx context.Context, req SnapshotRequest) 
 		CurrencyCode:       req.Input.CurrencyCode,
 		SupplierStateCode:  req.Input.SupplierStateCode,
 		PlaceOfSupplyCode:  req.Input.SupplyPlace.StateCode,
+		SupplierCountry:    strings.ToUpper(strings.TrimSpace(req.Input.SupplierCountry)),
+		CustomerCountry:    strings.ToUpper(strings.TrimSpace(req.Input.CustomerCountry)),
+		SupplyRegion:       req.Input.SupplyRegion,
 		SupplyType:         req.Input.SupplyType,
 		ReverseCharge:      req.Input.ReverseCharge,
 		TotalTaxableAmount: result.TotalTaxableAmount,
@@ -178,6 +182,8 @@ func (s *Service) calculateAndPersist(ctx context.Context, req SnapshotRequest) 
 			TotalTaxAmount:  lr.TotalTax,
 			Classification:  lr.Classification,
 			TaxRateMasterID: lr.RateMasterID,
+			Regime:          lr.Regime,
+			RatePackVersion: lr.RatePackVersion,
 			CreatedAt:       now,
 		}
 		if err := s.lines.Create(ctx, line); err != nil {

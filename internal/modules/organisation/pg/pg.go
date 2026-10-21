@@ -122,7 +122,7 @@ const legalEntityColumns = `id, organisation_id, legal_name, country_code, base_
 	COALESCE(phone, ''), COALESCE(email, ''), COALESCE(website, ''), COALESCE(address, ''), COALESCE(pincode, ''),
 	COALESCE(bank_name, ''), COALESCE(bank_account_number, ''), COALESCE(bank_ifsc, ''), COALESCE(upi_id, ''),
 	COALESCE(authorized_signatory_name, ''), COALESCE(default_terms_and_conditions, ''), logo_png,
-	status, created_at, updated_at`
+	status, created_at, updated_at, us_collection_regions`
 
 // rowScanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows (Query,
 // per-row in a Next() loop) — one scan function serves every call site
@@ -139,7 +139,7 @@ func scanLegalEntity(row rowScanner) (*domain.LegalEntity, error) {
 		&le.Phone, &le.Email, &le.Website, &le.Address, &le.Pincode,
 		&le.BankName, &le.BankAccountNumber, &le.BankIFSC, &le.UPIID,
 		&le.AuthorizedSignatoryName, &le.DefaultTermsAndConditions, &le.LogoPNG,
-		&status, &le.CreatedAt, &le.UpdatedAt); err != nil {
+		&status, &le.CreatedAt, &le.UpdatedAt, &le.USCollectionRegions); err != nil {
 		return nil, err
 	}
 	le.Status = domain.Status(status)
@@ -154,6 +154,24 @@ func (r *LegalEntityRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*do
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("organisation: querying legal_entity: %w", err)
+	}
+	return le, nil
+}
+
+func (r *LegalEntityRepo) UpdateUSCollectionRegions(ctx context.Context, orgID, id uuid.UUID, regions []string) (*domain.LegalEntity, error) {
+	if regions == nil {
+		regions = []string{}
+	}
+	q := `
+		UPDATE legal_entities SET us_collection_regions = $3, updated_at = now()
+		WHERE organisation_id = $1 AND id = $2
+		RETURNING ` + legalEntityColumns
+	le, err := scanLegalEntity(r.pool.Q(ctx).QueryRow(ctx, q, orgID, id, regions))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("organisation: updating legal_entity US collection regions: %w", err)
 	}
 	return le, nil
 }

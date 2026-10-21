@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	backupapp "rechvix/internal/modules/backup/app"
+	"rechvix/internal/modules/taxregimes"
 	"strconv"
 	"syscall"
 	"time"
@@ -113,7 +114,7 @@ func run() error {
 		permissionsChecker, auditRecorder)
 	gstRateRepo := gstindiapg.NewTaxRateRepo(pool)
 	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(pool))
-	taxationSvc := taxationapp.NewService(pool, gstEngine, taxationpg.NewTaxDocumentRepo(pool), taxationpg.NewTaxLineRepo(pool),
+	taxationSvc := taxationapp.NewService(pool, taxregimes.NewDispatcher(gstEngine), taxationpg.NewTaxDocumentRepo(pool), taxationpg.NewTaxLineRepo(pool),
 		taxationpg.NewTaxComponentRepo(pool))
 	accountingSvc := accountingapp.NewService(pool, accountingpg.NewAccountRepo(pool), accountingpg.NewJournalRepo(pool),
 		accountingpg.NewJournalLineRepo(pool), accountingpg.NewFiscalPeriodRepo(pool), accountingpg.NewBankAccountRepo(pool),

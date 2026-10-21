@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"rechvix/internal/modules/taxregimes"
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -146,7 +147,7 @@ func run() error {
 
 	gstRateRepo := gstindiapg.NewTaxRateRepo(pool)
 	gstEngine := gstindia.NewEngine(gstRateRepo, gstindiapg.NewStateRepo(pool))
-	taxationSvc := taxationapp.NewService(pool, gstEngine, taxationpg.NewTaxDocumentRepo(pool),
+	taxationSvc := taxationapp.NewService(pool, taxregimes.NewDispatcher(gstEngine), taxationpg.NewTaxDocumentRepo(pool),
 		taxationpg.NewTaxLineRepo(pool), taxationpg.NewTaxComponentRepo(pool))
 	numberingSvc := numbering.NewService(pool, numbering.NewPGRepository(pool))
 	outboxStore := outbox.NewPGStore(pool)
