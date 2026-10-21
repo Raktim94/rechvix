@@ -62,7 +62,17 @@ WCAG 2.2 AA. Test 360/390/768 and 1280/1440/1920, 200% zoom, screen-reader smoke
 ## 9. Deliverables and acceptance gate
 Per UI phase: route map, roles/journeys, wireframes, permissions matrix, components/tokens, mobile flow, empty/loading/error/offline states; afterwards screenshots, keyboard test, WCAG review, performance check. No dead buttons, fake counters, alert-based CRUD, fake signature/GPS/read-receipt/payment/OCR certainty, or tax/legal claims without configured rules. Sign-off requires a tested end-to-end workflow.
 
-## 10. Known conflicts with the shipped UI (to reconcile in Phase 1)
-- Shipped fonts are IBM Plex Sans / Space Grotesk / IBM Plex Mono (`apps/web/package.json`); this contract specifies Inter. Decide after a visual check; do not restyle during functional phases.
-- Existing tokens live in `apps/web/src/styles/tokens.css` (`--color-surface`, `--color-text-faint`, …); names differ from this table. Migrate by aliasing, with the Stage 11 contrast fixes preserved.
-- Navigation: current shell groups are Rechvix-specific; adopt §4 groups incrementally as modules ship.
+## 10. Decisions on conflicts with the shipped UI (resolved 2026-10-21)
+- **Type: keep the shipped IBM Plex Sans / IBM Plex Mono (+ Space Grotesk for headings/wordmark), not Inter.** They are already self-hosted, give true tabular figures for money columns and passed the Stage 11 contrast audit. Changing family would cost a full visual regression pass for no user benefit. §3 "Inter" is superseded.
+- **Color: keep the shipped ledger-green accent (`--color-accent #0f6e5c`) and token names** in `apps/web/src/styles/tokens.css`; the Slate & Signal table in §3 is the reference for *new* tokens only. Added `--color-info` / `--color-info-soft` (light and both dark blocks; contrast 5.9–7.8:1) for quote, pipeline and service statuses. Amber stays the "needs attention" color (`--color-warning`).
+- **Navigation:** adopt §4 groups incrementally as modules ship; current shell stays stable until then.
+
+## 11. Art direction (awwwards skill process, adapted for work screens)
+The skill (`~/.claude/skills/awwwards`, read and vetted 2026-10-21: Markdown only) is built for showcase sites. Its *process* applies; its spectacle does not. Answers to its six questions:
+1. **Emotion on first load:** calm confidence — "my books and stock are under control." Not excitement.
+2. **Vertical:** industrial distribution, workshops and field service. Language: ledger paper, spec sheets, stamped job cards. Not SaaS gradients.
+3. **Archetype:** *Warm editorial restraint* in the app (paper surfaces, one accent, strong numerals); the public marketing site may be bolder. No dark-immersive or 3D in work screens.
+4. **Typography (90% of the design):** Plex for data, Space Grotesk only for titles, tabular figures everywhere money or quantity appears, right-aligned. Fluid `clamp()` sizing applies to marketing/portal pages only; dense app screens use the fixed scale in §3.
+5. **Layout rhythm:** vary density deliberately — dense tables for work, generous whitespace on the Overview and document previews. Avoid identical card rows; the one signature element is the **document stamp** (status chip + document number + timeline rail) reused on quote, order, delivery, invoice and job card so a document looks the same wherever it appears.
+6. **Motion:** only motion that answers "what changed": row insert/status change fades (150ms), panel slide (220ms). Honour `prefers-reduced-motion`. No scroll-jacking, parallax, custom cursor, or smooth-scroll libraries on app screens.
+Skill anti-patterns we adopt: no stock photography, no auto-rotating carousels, no hover-only affordances on touch, no pure black/white backgrounds, one animation system only.

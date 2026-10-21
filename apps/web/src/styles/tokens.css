@@ -56,6 +56,8 @@
   --color-negative-soft: #fbeae5;
   --color-warning: #7a5407;
   --color-warning-soft: #fbf1de;
+  --color-info: #1f4f96;
+  --color-info-soft: #e6eefa;
 
   --color-focus-ring: #0f6e5c;
 
@@ -155,6 +157,8 @@
     --color-negative-soft: #3a1f17;
     --color-warning: #e0b355;
     --color-warning-soft: #362c15;
+    --color-info: #8db8ff;
+    --color-info-soft: #172336;
 
     --color-focus-ring: #29c191;
 
@@ -199,6 +203,8 @@
   --color-negative-soft: #3a1f17;
   --color-warning: #e0b355;
   --color-warning-soft: #362c15;
+  --color-info: #8db8ff;
+  --color-info-soft: #172336;
 
   --color-focus-ring: #29c191;
 
