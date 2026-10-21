@@ -140,7 +140,10 @@
     "pageSubtitle": "Aliquote e riepilogo imposte per {{company}}.",
     "colCategory": "Categoria",
     "colRate": "Aliquota",
-    "colKind": "Tipo"
+    "colKind": "Tipo",
+    "pricesIncludeTax": "Prezzi IVA inclusa",
+    "pricesIncludeTaxHelp": "I prezzi sono quelli pagati dal cliente; l'imposta viene scorporata da ogni prezzo invece di essere aggiunta.",
+    "categoryRequired": "Scegli una categoria fiscale per questo prodotto."
   },
   "region": {
     "heading": "Lingua e area geografica",

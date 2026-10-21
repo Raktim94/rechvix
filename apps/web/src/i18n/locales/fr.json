@@ -140,7 +140,10 @@
     "pageSubtitle": "Taux et récapitulatif des taxes pour {{company}}.",
     "colCategory": "Catégorie",
     "colRate": "Taux",
-    "colKind": "Type"
+    "colKind": "Type",
+    "pricesIncludeTax": "Prix TTC",
+    "pricesIncludeTaxHelp": "Les prix sont ceux payés par le client ; la taxe est extraite de chaque prix au lieu d'être ajoutée.",
+    "categoryRequired": "Choisissez une catégorie de taxe pour ce produit."
   },
   "region": {
     "heading": "Langue et région",

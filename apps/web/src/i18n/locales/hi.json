@@ -140,7 +140,10 @@
     "pageSubtitle": "{{company}} के लिए दरें और कर सारांश।",
     "colCategory": "श्रेणी",
     "colRate": "दर",
-    "colKind": "प्रकार"
+    "colKind": "प्रकार",
+    "pricesIncludeTax": "कीमतों में कर शामिल है",
+    "pricesIncludeTaxHelp": "कीमतें वही हैं जो ग्राहक चुकाता है; कर हर कीमत में से निकाला जाता है, ऊपर से जोड़ा नहीं जाता।",
+    "categoryRequired": "इस उत्पाद के लिए कर श्रेणी चुनें।"
   },
   "region": {
     "heading": "भाषा और क्षेत्र",

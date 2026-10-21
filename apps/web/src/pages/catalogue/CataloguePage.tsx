@@ -584,6 +584,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                     ))}
                   </select>
                   <span className={ui.muted} style={{ display: "block", marginTop: 4 }}>
+                    {!hsn ? `${t("tax.categoryRequired")} ` : ""}
                     {taxRef.data?.supported === false
                       ? t("tax.notSupported", { country: org.legalEntity?.CountryCode })
                       : taxRef.data
@@ -764,7 +765,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
               <button
                 type="button"
                 className={ui.btnPrimary}
-                disabled={!name || !unitId || createProduct.isPending}
+                disabled={!name || !unitId || (!isIndia && !hsn) || createProduct.isPending}
                 onClick={() => createProduct.mutate()}
               >
                 Save product

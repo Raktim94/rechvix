@@ -140,7 +140,10 @@
     "pageSubtitle": "Tipos y resumen de impuestos de {{company}}.",
     "colCategory": "Categoría",
     "colRate": "Tipo",
-    "colKind": "Clase"
+    "colKind": "Clase",
+    "pricesIncludeTax": "Precios con impuestos incluidos",
+    "pricesIncludeTaxHelp": "Los precios son lo que paga el cliente; el impuesto se extrae de cada precio en lugar de sumarse.",
+    "categoryRequired": "Elige una categoría de impuesto para este producto."
   },
   "region": {
     "heading": "Idioma y región",

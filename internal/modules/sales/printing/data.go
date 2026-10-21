@@ -131,6 +131,13 @@ type InvoiceData struct {
 	// printed statement (REVERSE_CHARGE, EXPORT, ...); the renderer turns each code
 	// into the sentence for the document language. One per distinct treatment.
 	TaxNotes []string
+	// BaseCurrency/ExchangeRate/GrandTotalBase are set only for a foreign-currency document:
+	// the company's currency, the rate (company-currency units per unit of Currency) and the
+	// total converted to the company currency, printed so the customer and the tax office can
+	// see both figures.
+	BaseCurrency   string
+	ExchangeRate   string
+	GrandTotalBase string
 	// Language selects the label set for the generic layout ("es", "fr", ...);
 	// DateLayout is the Go time layout used for dates ("" = 02-Jan-2006).
 	Language        string

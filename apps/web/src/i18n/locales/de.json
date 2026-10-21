@@ -140,7 +140,10 @@
     "pageSubtitle": "Sätze und Steuerübersicht für {{company}}.",
     "colCategory": "Kategorie",
     "colRate": "Satz",
-    "colKind": "Art"
+    "colKind": "Art",
+    "pricesIncludeTax": "Preise inklusive Steuer",
+    "pricesIncludeTaxHelp": "Die Preise sind das, was der Kunde zahlt; die Steuer wird aus jedem Preis herausgerechnet statt aufgeschlagen.",
+    "categoryRequired": "Wählen Sie eine Steuerkategorie für dieses Produkt."
   },
   "region": {
     "heading": "Sprache und Region",

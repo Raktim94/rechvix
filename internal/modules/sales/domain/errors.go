@@ -22,4 +22,16 @@ var (
 	// partial-quantity override: a return/credit note can never claim
 	// more of a line than the source document actually sold.
 	ErrReturnQuantityExceedsSource = errors.New("sales: return quantity exceeds the quantity on the source document line")
+
+	// ErrInvalidInvoiceLanguage means the requested invoice language is not one of the supported ones.
+	ErrInvalidInvoiceLanguage = errors.New("sales: unsupported invoice language")
+
+	// ErrExchangeRateRequired means a document in a currency other than the company's was
+	// created without an exchange rate; defaulting it to 1 would book foreign money as if
+	// it were company currency.
+	ErrExchangeRateRequired = errors.New("sales: an exchange rate is required for a foreign-currency document")
+	// ErrUnknownCurrency means the document currency is not a known ISO 4217 currency.
+	ErrUnknownCurrency = errors.New("sales: unknown currency code")
+	// ErrBaseCurrencyMismatch means the document names a base currency other than the company's.
+	ErrBaseCurrencyMismatch = errors.New("sales: the base currency must be the company's currency")
 )

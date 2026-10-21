@@ -58,6 +58,9 @@ type LegalEntity struct {
 	// TaxID is the seller's tax identifier outside India (NIF, VAT number, EIN);
 	// India uses GSTIN. Printed on invoices (migration 0046).
 	TaxID string
+	// InvoiceLanguage is the language invoices print in outside India ("" = the
+	// language of the entity's country; otherwise en, es, fr, de, it, pt or nl).
+	InvoiceLanguage string
 	// Invoice branding fields (migrations/0034) — the actual source
 	// internal/modules/sales/printing has been able to render since
 	// Stage 5b (logo, address, bank details) but had nowhere to read
@@ -166,6 +169,7 @@ type LegalEntityRepository interface {
 	UpdateGSTDetails(ctx context.Context, orgID, id uuid.UUID, gstin, gstStateCode string) (*LegalEntity, error)
 	UpdateUSCollectionRegions(ctx context.Context, orgID, id uuid.UUID, regions []string) (*LegalEntity, error)
 	UpdateTaxID(ctx context.Context, orgID, id uuid.UUID, taxID string) (*LegalEntity, error)
+	UpdateInvoiceLanguage(ctx context.Context, orgID, id uuid.UUID, language string) (*LegalEntity, error)
 	// UpdateInvoiceBranding is the equivalent fix/set path for
 	// everything a printed invoice can show beyond GSTIN — see
 	// InvoiceBrandingUpdate's doc comment.

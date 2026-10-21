@@ -10,6 +10,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"strings"
 	"time"
 
@@ -152,6 +153,7 @@ func (s *Service) calculateAndPersist(ctx context.Context, req SnapshotRequest) 
 		SupplierCountry:    strings.ToUpper(strings.TrimSpace(req.Input.SupplierCountry)),
 		CustomerCountry:    strings.ToUpper(strings.TrimSpace(req.Input.CustomerCountry)),
 		SupplyRegion:       req.Input.SupplyRegion,
+		ExchangeRate:       rateOrOne(req.Input.ExchangeRate),
 		SupplyType:         req.Input.SupplyType,
 		ReverseCharge:      req.Input.ReverseCharge,
 		TotalTaxableAmount: result.TotalTaxableAmount,
@@ -248,4 +250,12 @@ func (s *Service) GetByReference(ctx context.Context, orgID uuid.UUID, reference
 		return nil, nil, nil, err
 	}
 	return doc, lines, componentsByLine, nil
+}
+
+// rateOrOne treats an unset exchange rate as 1 (a document in the company currency).
+func rateOrOne(r decimal.Decimal) decimal.Decimal {
+	if r.IsZero() {
+		return decimal.NewFromInt(1)
+	}
+	return r
 }

@@ -195,6 +195,12 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 		DocumentDate: docDate, CurrencyCode: p.CurrencyCode, Notes: p.Notes, CreatedBy: principal.UserID, CreatedAt: now, UpdatedAt: now,
 	}
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		// Purchases are kept in the company's currency. Foreign-currency purchases (with their
+		// own rate, import VAT and exchange differences) are not implemented, and posting them
+		// at face value would book foreign money as company currency, so they are refused.
+		if d.CurrencyCode != money.LedgerCurrency(ctx) {
+			return domain.ErrForeignCurrencyUnsupported
+		}
 		seq, err := s.documents.NextNumber(ctx, principal.OrganisationID, p.DocumentType)
 		if err != nil {
 			return err

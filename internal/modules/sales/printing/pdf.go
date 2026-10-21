@@ -297,6 +297,9 @@ func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Label
 	setFont(pdf, lo, st, "", 9)
 	pdf.CellFormat(0, 5, data.BillTo.Name, "", 1, "L", false, 0, "")
 	for _, line := range data.BillTo.AddressLines {
+		if strings.TrimSpace(line) == "" { // an empty second address line must not print a blank row
+			continue
+		}
 		pdf.CellFormat(0, 4.5, line, "", 1, "L", false, 0, "")
 	}
 	if data.BillTo.GSTIN != "" {
@@ -311,6 +314,9 @@ func drawParties(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Label
 		pdf.CellFormat(0, 5, lb.ShipTo+":", "", 1, "L", false, 0, "")
 		setFont(pdf, lo, st, "", 9)
 		for _, line := range data.ShipTo.AddressLines {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
 			pdf.CellFormat(0, 4.5, line, "", 1, "L", false, 0, "")
 		}
 	}
@@ -413,7 +419,11 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Labels
 	if data.GenericTax {
 		// One line per tax and rate, e.g. "IVA 21%:", so the tax is visible, not implied.
 		for _, t := range data.TaxTotals {
-			row(fmt.Sprintf("%s %s%%:", t.Label, t.Rate), t.Amount)
+			name := t.Label
+			if v, ok := lb.TaxNames[name]; ok {
+				name = v
+			}
+			row(fmt.Sprintf("%s %s%%:", name, t.Rate), t.Amount)
 		}
 	} else {
 		row("CGST:", data.TotalCGST)
@@ -442,7 +452,7 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Labels
 		pdf.Ln(1)
 	}
 	grandLabel := lb.GrandTotal + ":"
-	if data.GenericTax && data.Currency != "" {
+	if (data.GenericTax || data.BaseCurrency != "") && data.Currency != "" {
 		grandLabel = lb.GrandTotal + " (" + data.Currency + "):"
 	}
 	setFont(pdf, lo, st, "B", 10)
@@ -455,6 +465,14 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Labels
 		setAccentText(pdf, st)
 		row(grandLabel, data.GrandTotal)
 		resetTextColor(pdf)
+	}
+	// A foreign-currency invoice also states the rate and the company-currency equivalent.
+	if data.BaseCurrency != "" && data.ExchangeRate != "" {
+		setFont(pdf, lo, st, "", 9)
+		pdf.CellFormat(0, 5, fmt.Sprintf("%s: 1 %s = %s %s", lb.ExchangeRate, data.Currency, data.ExchangeRate, data.BaseCurrency), "", 1, "R", false, 0, "")
+		if data.GrandTotalBase != "" {
+			pdf.CellFormat(0, 5, fmt.Sprintf("%s %s: %s", lb.EquivalentIn, data.BaseCurrency, data.GrandTotalBase), "", 1, "R", false, 0, "")
+		}
 	}
 	// Statements the law requires on some invoices (reverse charge, export, exemption).
 	if len(data.TaxNotes) > 0 {

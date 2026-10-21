@@ -10,11 +10,16 @@
 - Scheduled, verified, encrypted backups with retention (worker, opt-in).
 - Historical cost snapshots on stock movements (`stock_movements.base_unit_cost`) for accurate gross profit.
 
+### Added (tax readiness for India, Spain, UK, US)
+- Input VAT on domestic purchases (Spain, UK, EU); credit notes, tax summary report and Tax page; country-specific tax account names; readable tax errors; tax-inclusive pricing; invoice labels, tax names, dates and legal notes in the seller's language; customer address and tax ID on invoices; IBAN/BIC; country-aware contacts, inventory and settings screens. See docs/tax-regimes.md for what is and is not ready per country.
+
 ### Fixed
 - Accounting and reports labelled every amount "INR" regardless of the company's currency.
 - Gross profit counted quotations/orders/challans as revenue and added credit notes instead of subtracting them.
 - Invoice PDFs printed accented letters and the euro sign incorrectly.
 - Mobile layout: the page scrolled sideways below ~1196px; topbar and 320px reflow; table scroll regions are keyboard-focusable; contrast of sidebar group labels.
+- Purchases silently skipped tax for any company outside India, so input VAT was never recorded.
+- Tax-rule errors reached users as "An unexpected error occurred" (HTTP 500).
 - Setup country select could show a different country from the one the form held.
 - Dependency vulnerabilities: excelize, vite, and the Go toolchain/standard library (1.27.1 -> 1.27.3, covering net/http, net/http/internal/http2 and crypto/x509 advisories) plus golang.org/x/net. CI's govulncheck job had been failing since 9 October; it now reports 0 affecting vulnerabilities.
 

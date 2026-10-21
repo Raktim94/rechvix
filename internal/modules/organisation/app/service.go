@@ -433,6 +433,52 @@ func (s *Service) UpdateLegalEntityGST(ctx context.Context, principal permission
 	return le, nil
 }
 
+// InvoiceLanguages are the languages an invoice can be printed in outside India.
+var InvoiceLanguages = []string{"en", "es", "fr", "de", "it", "pt", "nl"}
+
+// ValidInvoiceLanguage reports whether code is "" (the country's own language) or a supported language.
+func ValidInvoiceLanguage(code string) bool {
+	if code == "" {
+		return true
+	}
+	for _, l := range InvoiceLanguages {
+		if l == code {
+			return true
+		}
+	}
+	return false
+}
+
+// UpdateLegalEntityInvoiceLanguage sets the company's default invoice language.
+// "" restores the language of the company's country. A single invoice can still
+// override it, and a print request can pick another language for one copy.
+func (s *Service) UpdateLegalEntityInvoiceLanguage(ctx context.Context, principal permissions.Principal, legalEntityID uuid.UUID, language string) (*domain.LegalEntity, error) {
+	if err := s.permissions.Require(ctx, principal, "settings.manage", permissions.Scope{}); err != nil {
+		return nil, err
+	}
+	language = strings.ToLower(strings.TrimSpace(language))
+	if !ValidInvoiceLanguage(language) {
+		return nil, fmt.Errorf("%w: %q is not a supported invoice language", domain.ErrInvalidInput, language)
+	}
+	var le *domain.LegalEntity
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		le, err = s.legalEntities.UpdateInvoiceLanguage(ctx, principal.OrganisationID, legalEntityID, language)
+		if err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{
+			OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "legal_entity.invoice_language_updated", EntityType: "legal_entity", EntityID: &legalEntityID,
+			AfterState: map[string]any{"invoice_language": language}, At: s.now(),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return le, nil
+}
+
 // UpdateLegalEntityTaxID sets the seller's tax identifier printed on invoices
 // outside India (NIF, VAT number, EIN). The value is stored as typed, trimmed and
 // upper-cased; it is not validated against any national checksum or VIES.

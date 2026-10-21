@@ -44,6 +44,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Put("/legal-entities/{id}/gst", h.updateLegalEntityGST)
 	r.Put("/legal-entities/{id}/us-collection-regions", h.updateLegalEntityUSCollectionRegions)
 	r.Put("/legal-entities/{id}/tax-id", h.updateLegalEntityTaxID)
+	r.Put("/legal-entities/{id}/invoice-language", h.updateLegalEntityInvoiceLanguage)
 	r.Put("/legal-entities/{id}/invoice-branding", h.updateInvoiceBranding)
 	r.Get("/branches", h.listBranches)
 	r.Post("/branches", h.createBranch)
@@ -213,6 +214,31 @@ func (h *Handlers) updateLegalEntityGST(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	le, err := h.svc.UpdateLegalEntityGST(r.Context(), principal(r), id, req.GSTIN, req.GSTStateCode)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, le)
+}
+
+type updateInvoiceLanguageRequest struct {
+	Language string `json:"language"`
+}
+
+// updateLegalEntityInvoiceLanguage sets the company's default invoice language
+// ("" = the language of its country).
+func (h *Handlers) updateLegalEntityInvoiceLanguage(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[updateInvoiceLanguageRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Request body is malformed."))
+		return
+	}
+	le, err := h.svc.UpdateLegalEntityInvoiceLanguage(r.Context(), principal(r), id, req.Language)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

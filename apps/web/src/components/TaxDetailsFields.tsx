@@ -14,9 +14,10 @@ export interface TaxDetails {
   taxExempt: boolean;
   surcharge: boolean;
   registrationId: string; // customer tax registration id, "" = none
+  pricesIncludeTax: boolean; // prices entered are tax-inclusive (retail)
 }
 
-export const EMPTY_TAX_DETAILS: TaxDetails = { customerCountry: "", supplyRegion: "", taxExempt: false, surcharge: false, registrationId: "" };
+export const EMPTY_TAX_DETAILS: TaxDetails = { customerCountry: "", supplyRegion: "", taxExempt: false, surcharge: false, registrationId: "", pricesIncludeTax: false };
 
 interface Registration {
   ID: string;
@@ -125,6 +126,13 @@ export function TaxDetailsFields({
         </div>
       ) : null}
 
+      <label style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 44 }}>
+        <input type="checkbox" checked={value.pricesIncludeTax} onChange={(e) => set({ pricesIncludeTax: e.target.checked })} aria-describedby="tax-inclusive-help" />
+        {t("tax.pricesIncludeTax")}
+      </label>
+      <p id="tax-inclusive-help" className={ui.muted} style={{ marginTop: 0 }}>
+        {t("tax.pricesIncludeTaxHelp")}
+      </p>
       {supplierCountry === "US" ? (
         <label style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 44 }}>
           <input type="checkbox" checked={value.taxExempt} onChange={(e) => set({ taxExempt: e.target.checked })} />

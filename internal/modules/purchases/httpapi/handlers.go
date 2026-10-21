@@ -57,6 +57,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_CASE_NOT_SUPPORTED", "This purchase can't be taxed yet: "+taxdomain.UserMessage(err)+"."))
 	case errors.Is(err, taxdomain.ErrInvalidTaxInput):
 		httpx.WriteError(w, r, httpx.NewBadRequest("TAX_DETAILS_INVALID", "The tax details need attention: "+taxdomain.UserMessage(err)+"."))
+	case errors.Is(err, domain.ErrForeignCurrencyUnsupported):
+		httpx.WriteError(w, r, httpx.NewBadRequest("FOREIGN_CURRENCY_UNSUPPORTED", "Purchases can only be recorded in your company currency for now. Enter the supplier bill converted to your company currency."))
 	case errors.Is(err, domain.ErrDuplicateNumber):
 		httpx.WriteError(w, r, httpx.NewConflict("DUPLICATE_NUMBER", "That document number is already in use."))
 	case errors.As(err, &forbidden):

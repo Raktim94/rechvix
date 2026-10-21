@@ -16,6 +16,7 @@ import (
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchasesdomain "rechvix/internal/modules/purchases/domain"
 	reportingdomain "rechvix/internal/modules/reporting/domain"
+	salesapp "rechvix/internal/modules/sales/app"
 	salesdomain "rechvix/internal/modules/sales/domain"
 	taxdomain "rechvix/internal/modules/taxation/domain"
 	"rechvix/internal/platform/audit"
@@ -462,5 +463,215 @@ func TestPrint_CustomerAddressLanguageAndDateFollowTheSellersCountry(t *testing.
 				t.Errorf("a domestic address must not print a country line, got %q", lines)
 			}
 		})
+	}
+}
+
+func TestInvoiceLanguage_PrecedenceAndValidation(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, acct, _ := newTestAccountingServices(t)
+	fx := setupRegimeFixture(t, ctx, "ES", "EUR", "STANDARD")
+	if err := acct.EnsureDefaultChartOfAccounts(ctx, fx.Principal, fx.Principal.OrganisationID); err != nil {
+		t.Fatal(err)
+	}
+	orgSvc := newTestOrgService(t)
+	issue := func(lang string) *salesdomain.Document {
+		t.Helper()
+		doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+			LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+			DocumentType: salesdomain.DocTaxInvoice, CurrencyCode: "EUR", BaseCurrencyCode: "EUR", PricingMode: taxdomain.PricingExclusive, InvoiceLanguage: lang,
+		})
+		if err != nil {
+			t.Fatalf("CreateDocument(lang=%q): %v", lang, err)
+		}
+		if _, err := salesSvc.AddLine(ctx, fx.Principal, salesapp.AddLineParams{DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS, Quantity: mustDecimal(t, "1"), UnitPrice: mustDecimal(t, "100")}); err != nil {
+			t.Fatal(err)
+		}
+		fin, err := salesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fin
+	}
+	langOf := func(doc *salesdomain.Document, override string) string {
+		t.Helper()
+		d, err := salesSvc.BuildInvoiceDataInLanguage(ctx, fx.Principal, doc.ID, override)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Language
+	}
+
+	// 1. Nothing chosen: the language of the company's country.
+	plain := issue("")
+	if got := langOf(plain, ""); got != "es" {
+		t.Errorf("default language for a Spanish company = %q, want es", got)
+	}
+	// 2. The company chooses English: every invoice without its own choice follows it.
+	if _, err := orgSvc.UpdateLegalEntityInvoiceLanguage(ctx, fx.Principal, fx.LegalEntityID, "en"); err != nil {
+		t.Fatal(err)
+	}
+	if got := langOf(plain, ""); got != "en" {
+		t.Errorf("company setting en: got %q", got)
+	}
+	// 3. A single invoice can choose another language, which beats the company's.
+	german := issue("de")
+	if got := langOf(german, ""); got != "de" {
+		t.Errorf("document language de: got %q", got)
+	}
+	// 4. One printed copy can choose again without changing the stored choices.
+	if got := langOf(german, "fr"); got != "fr" {
+		t.Errorf("print override fr: got %q", got)
+	}
+	if got := langOf(german, ""); got != "de" {
+		t.Errorf("a print override must not be stored; got %q", got)
+	}
+	// 5. Clearing the company's setting returns to the country's language.
+	if _, err := orgSvc.UpdateLegalEntityInvoiceLanguage(ctx, fx.Principal, fx.LegalEntityID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := langOf(plain, ""); got != "es" {
+		t.Errorf("cleared setting: got %q, want es", got)
+	}
+	// 6. Unsupported values are rejected, never stored.
+	if _, err := orgSvc.UpdateLegalEntityInvoiceLanguage(ctx, fx.Principal, fx.LegalEntityID, "hi"); err == nil {
+		t.Error("Hindi is not a supported PDF invoice language and must be rejected")
+	}
+	if _, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocTaxInvoice, CurrencyCode: "EUR", BaseCurrencyCode: "EUR", InvoiceLanguage: "xx",
+	}); !errors.Is(err, salesdomain.ErrInvalidInvoiceLanguage) {
+		t.Errorf("document language xx: want ErrInvalidInvoiceLanguage, got %v", err)
+	}
+}
+
+func TestForeignCurrency_SpanishCompanyIssuesUSDInvoices(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, acct, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, acct)
+	fx := setupRegimeFixture(t, ctx, "ES", "EUR", "STANDARD")
+	if err := acct.EnsureDefaultChartOfAccounts(ctx, fx.Principal, fx.Principal.OrganisationID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rejected up front, never booked wrongly.
+	create := func(currency, base, rate string) error {
+		_, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+			LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+			DocumentType: salesdomain.DocTaxInvoice, CurrencyCode: currency, BaseCurrencyCode: base, ExchangeRate: rateOrZero(t, rate),
+		})
+		return err
+	}
+	if err := create("USD", "EUR", ""); !errors.Is(err, salesdomain.ErrExchangeRateRequired) {
+		t.Errorf("USD invoice without a rate: want ErrExchangeRateRequired, got %v", err)
+	}
+	if err := create("USD", "EUR", "-1"); !errors.Is(err, salesdomain.ErrExchangeRateRequired) {
+		t.Errorf("USD invoice with a negative rate: want ErrExchangeRateRequired, got %v", err)
+	}
+	if err := create("XYZ", "EUR", "1.1"); !errors.Is(err, salesdomain.ErrUnknownCurrency) {
+		t.Errorf("unknown currency: want ErrUnknownCurrency, got %v", err)
+	}
+	if err := create("USD", "GBP", "1.1"); !errors.Is(err, salesdomain.ErrBaseCurrencyMismatch) {
+		t.Errorf("wrong base currency: want ErrBaseCurrencyMismatch, got %v", err)
+	}
+
+	// Export to a US customer: 10 x 100 USD = 1000 USD, no VAT; at 0.92 EUR per USD the books get 920.00 EUR.
+	export, err := finalizeRegimeInvoice(t, ctx, salesSvc, fx, regimeInvoice{currency: "USD", base: "EUR", rate: "0.92", customerCountry: "US", qty: "10", price: "100"})
+	if err != nil {
+		t.Fatalf("USD export invoice: %v", err)
+	}
+	if got := export.GrandTotalAmount.StringFixed(0); got != "1000.00" || export.GrandTotalAmount.Currency() != "USD" {
+		t.Errorf("document total = %s %s, want 1000.00 USD", got, export.GrandTotalAmount.Currency())
+	}
+	if export.GrandTotalBaseAmount == nil || export.GrandTotalBaseAmount.StringFixed(0) != "920.00" || export.GrandTotalBaseAmount.Currency() != "EUR" {
+		t.Errorf("company-currency total = %v, want 920.00 EUR", export.GrandTotalBaseAmount)
+	}
+	ej := ledger(t, ctx, fx, "sales_document", export.ID)
+	wantLedger(t, ej, "1100", "920", "0")
+	wantLedger(t, ej, "4000", "0", "920")
+
+	// Domestic Spanish customer invoiced in USD: 1000 USD net + 21% IVA 210 USD.
+	// At 0.9183: net 918.30, IVA 192.84 (210 x 0.9183 = 192.843), receivable = their sum 1111.14 EUR.
+	dom, err := finalizeRegimeInvoice(t, ctx, salesSvc, fx, regimeInvoice{currency: "USD", base: "EUR", rate: "0.9183", qty: "10", price: "100"})
+	if err != nil {
+		t.Fatalf("USD domestic invoice: %v", err)
+	}
+	if got := dom.GrandTotalAmount.StringFixed(0); got != "1210.00" {
+		t.Errorf("document total = %s, want 1210.00 USD", got)
+	}
+	dj := ledger(t, ctx, fx, "sales_document", dom.ID)
+	wantLedger(t, dj, "1100", "1111.14", "0")
+	wantLedger(t, dj, "4000", "0", "918.3")
+	wantLedger(t, dj, "2100", "0", "192.84")
+	if dom.GrandTotalBaseAmount.StringFixed(0) != "1111.14" {
+		t.Errorf("stored company-currency total = %s, want 1111.14", dom.GrandTotalBaseAmount.StringFixed(0))
+	}
+
+	// A credit note for 2 of the 10 units uses the invoice's own rate.
+	_, lines, _ := salesSvc.GetDocument(ctx, fx.Principal, dom.ID)
+	cn, err := salesSvc.ConvertDocument(ctx, fx.Principal, dom.ID, salesdomain.DocCreditNote, map[uuid.UUID]decimal.Decimal{lines[0].ID: mustDecimal(t, "2")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cnFin, err := salesSvc.FinalizeDocument(ctx, fx.Principal, cn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2 units: 200 USD net + 42 USD IVA = 242 USD; base 183.66 + 38.57 (42 x 0.9183 = 38.5686) = 222.23 EUR.
+	if got := cnFin.GrandTotalAmount.StringFixed(0); got != "242.00" || cnFin.ExchangeRate.String() != "0.9183" {
+		t.Errorf("credit note total %s at rate %s, want 242.00 at 0.9183", got, cnFin.ExchangeRate)
+	}
+	cj := ledger(t, ctx, fx, "sales_document", cn.ID)
+	wantLedger(t, cj, "1100", "0", "222.23")
+	wantLedger(t, cj, "4000", "183.66", "0")
+	wantLedger(t, cj, "2100", "38.57", "0")
+
+	// Reports are in company currency, each document at its own rate. NOTE: this report adds credit
+	// notes instead of subtracting them (existing behaviour, tracked as a known issue): 920 + 1111.14 + 222.23.
+	sum, err := reportingSvc.SalesSummary(ctx, fx.Principal, reportingdomain.Filter{}, reportingdomain.GroupByDay)
+	if err != nil || len(sum) == 0 {
+		t.Fatalf("SalesSummary: %v", err)
+	}
+	if got := sum[0].GrandTotal.StringFixed(0); got != "2253.37" || sum[0].GrandTotal.Currency() != "EUR" {
+		t.Errorf("sales summary total = %s %s, want 2253.37 EUR (documents converted at their own rates)", got, sum[0].GrandTotal.Currency())
+	}
+	tax, err := reportingSvc.TaxSummary(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Output IVA: 192.84 - 38.57 = 154.27 EUR on a base of 918.30 - 183.66 = 734.64 EUR.
+	iva := findTaxRow(tax, "OUTPUT", "IVA", "21", "")
+	if iva == nil || iva.TaxAmount.StringFixed(0) != "154.27" || iva.TaxableAmount.StringFixed(0) != "734.64" {
+		t.Errorf("tax summary IVA row = %+v, want base 734.64 tax 154.27 (EUR)", iva)
+	}
+	if exp := findTaxRow(tax, "OUTPUT", "EXPORT", "0", ""); exp == nil || exp.TaxableAmount.StringFixed(0) != "920.00" {
+		t.Errorf("export base = %+v, want 920.00 EUR", exp)
+	}
+
+	// The printed invoice shows the invoice currency, the rate and the equivalent.
+	data, err := salesSvc.BuildInvoiceData(ctx, fx.Principal, dom.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Currency != "USD" || data.BaseCurrency != "EUR" || data.ExchangeRate != "0.9183" || data.GrandTotalBase != "1111.14" || data.GrandTotal != "1210.00" {
+		t.Errorf("print data = currency %s base %s rate %s equivalent %s total %s", data.Currency, data.BaseCurrency, data.ExchangeRate, data.GrandTotalBase, data.GrandTotal)
+	}
+
+	// An invoice in the company currency is untouched by all of this.
+	plain, err := finalizeRegimeInvoice(t, ctx, salesSvc, fx, regimeInvoice{currency: "EUR", qty: "1", price: "100"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.GrandTotalBaseAmount == nil || plain.GrandTotalBaseAmount.StringFixed(0) != "121.00" || !plain.ExchangeRate.Equal(decimal.NewFromInt(1)) {
+		t.Errorf("company-currency invoice: base total %v rate %s, want 121.00 at 1", plain.GrandTotalBaseAmount, plain.ExchangeRate)
+	}
+
+	// Purchases stay in the company currency.
+	purchasesSvc, _ := newPurchasesFor(t)
+	_, perr := purchasesSvc.CreateDocument(ctx, fx.Principal, purchasesapp.CreateDocumentParams{
+		BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, SupplierPartyID: fx.CustomerID,
+		DocumentType: purchasesdomain.DocPurchaseInvoice, CurrencyCode: "USD",
+	})
+	if !errors.Is(perr, purchasesdomain.ErrForeignCurrencyUnsupported) {
+		t.Errorf("a USD purchase must be refused, got %v", perr)
 	}
 }

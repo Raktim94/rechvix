@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	orgapp "rechvix/internal/modules/organisation/app"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -60,6 +62,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/sales/documents/{id}/cancel", h.cancelDocument)
 	r.Get("/sales/documents/{id}/print", h.printDocument)
 	r.Get("/sales/billing-lookup", h.billingLookup)
+	r.Get("/sales/exchange-rate", h.lastExchangeRate)
 }
 
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -75,6 +78,14 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		httpx.WriteError(w, r, httpx.NewNotFound("NOT_FOUND", "The requested resource was not found."))
+	case errors.Is(err, domain.ErrExchangeRateRequired):
+		httpx.WriteError(w, r, httpx.NewBadRequest("EXCHANGE_RATE_REQUIRED", "Enter the exchange rate for this invoice currency (how many units of your company currency equal one unit of it)."))
+	case errors.Is(err, domain.ErrUnknownCurrency):
+		httpx.WriteError(w, r, httpx.NewBadRequest("UNKNOWN_CURRENCY", "That currency code is not recognised."))
+	case errors.Is(err, domain.ErrBaseCurrencyMismatch):
+		httpx.WriteError(w, r, httpx.NewBadRequest("BASE_CURRENCY_MISMATCH", "The base currency must be your company's currency."))
+	case errors.Is(err, domain.ErrInvalidInvoiceLanguage):
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INVOICE_LANGUAGE", "That invoice language is not supported. Choose English, Spanish, French, German, Italian, Portuguese or Dutch."))
 	case errors.Is(err, domain.ErrInvalidDocumentType):
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_DOCUMENT_TYPE", "That is not a recognized sales document type."))
 	case errors.Is(err, domain.ErrDocumentNotDraft):
@@ -127,6 +138,7 @@ type createDocumentRequest struct {
 	SupplyRegion              string     `json:"supply_region"`
 	CustomerTaxExempt         bool       `json:"customer_tax_exempt"`
 	EquivalenceSurcharge      bool       `json:"equivalence_surcharge"`
+	InvoiceLanguage           string     `json:"invoice_language"`
 	SalespersonUserID         *uuid.UUID `json:"salesperson_user_id"`
 	PriceListID               *uuid.UUID `json:"price_list_id"`
 	CurrencyCode              string     `json:"currency_code"`
@@ -167,7 +179,7 @@ func (h *Handlers) createDocument(w http.ResponseWriter, r *http.Request) {
 		BillingAddressID: req.BillingAddressID, ShippingAddressID: req.ShippingAddressID,
 		CustomerTaxRegistrationID: req.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: req.PlaceOfSupplyStateCode,
 		CustomerCountry: req.CustomerCountry, SupplyRegion: req.SupplyRegion,
-		CustomerTaxExempt: req.CustomerTaxExempt, EquivalenceSurcharge: req.EquivalenceSurcharge,
+		CustomerTaxExempt: req.CustomerTaxExempt, EquivalenceSurcharge: req.EquivalenceSurcharge, InvoiceLanguage: req.InvoiceLanguage,
 		SalespersonUserID: req.SalespersonUserID, PriceListID: req.PriceListID, CurrencyCode: req.CurrencyCode,
 		BaseCurrencyCode: req.BaseCurrencyCode, ExchangeRate: exchangeRate, PricingMode: taxdomain.PricingMode(req.PricingMode),
 		CustomerReference: req.CustomerReference, Transporter: req.Transporter, VehicleNumber: req.VehicleNumber,
@@ -405,6 +417,23 @@ func (h *Handlers) cancelDocument(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, doc)
 }
 
+// lastExchangeRate returns the rate last used for a foreign-currency invoice in ?currency=,
+// to pre-fill the next one: {"currency":"USD","rate":"83.5"} or rate null when there is none.
+func (h *Handlers) lastExchangeRate(w http.ResponseWriter, r *http.Request) {
+	currency := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("currency")))
+	rate, err := h.svc.LastExchangeRate(r.Context(), principal(r), currency)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	var out *string
+	if rate != nil {
+		v := rate.String()
+		out = &v
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"currency": currency, "rate": out})
+}
+
 // printDocument renders a finalized document to PDF. ?template= selects
 // the layout (brief §19); defaults to the A4 GST invoice. ?theme= selects
 // the visual design (font/color/border treatment, orthogonal to
@@ -428,7 +457,12 @@ func (h *Handlers) printDocument(w http.ResponseWriter, r *http.Request) {
 	if theme == "" {
 		theme = printing.ThemeClassic
 	}
-	data, err := h.svc.BuildInvoiceData(r.Context(), principal(r), id)
+	lang := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("lang")))
+	if !orgapp.ValidInvoiceLanguage(lang) {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INVOICE_LANGUAGE", "lang must be one of en, es, fr, de, it, pt, nl."))
+		return
+	}
+	data, err := h.svc.BuildInvoiceDataInLanguage(r.Context(), principal(r), id, lang)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

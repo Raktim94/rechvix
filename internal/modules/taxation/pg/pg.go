@@ -31,13 +31,13 @@ func (r *TaxDocumentRepo) Create(ctx context.Context, d *domain.TaxDocument) err
 			id, organisation_id, reference_type, reference_id, document_date, currency_code,
 			supplier_state_code, place_of_supply_code, supply_type, reverse_charge,
 			total_taxable_amount, total_tax_amount, grand_total, created_at,
-			supplier_country, customer_country, supply_region
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
+			supplier_country, customer_country, supply_region, exchange_rate
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
 	_, err := r.pool.Q(ctx).Exec(ctx, q,
 		d.ID, d.OrganisationID, d.ReferenceType, d.ReferenceID, d.DocumentDate, d.CurrencyCode,
 		nullIfEmpty(d.SupplierStateCode), nullIfEmpty(d.PlaceOfSupplyCode), string(d.SupplyType), d.ReverseCharge,
 		d.TotalTaxableAmount.Decimal(), d.TotalTaxAmount.Decimal(), d.GrandTotal.Decimal(), d.CreatedAt,
-		nullIfEmpty(d.SupplierCountry), nullIfEmpty(d.CustomerCountry), nullIfEmpty(d.SupplyRegion))
+		nullIfEmpty(d.SupplierCountry), nullIfEmpty(d.CustomerCountry), nullIfEmpty(d.SupplyRegion), d.ExchangeRate)
 	if err != nil {
 		return fmt.Errorf("taxation: inserting tax_document: %w", err)
 	}

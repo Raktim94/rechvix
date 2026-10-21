@@ -49,6 +49,14 @@ func (s *Service) BuildInvoiceDataForShareLink(ctx context.Context, orgID, creat
 }
 
 func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Principal, documentID uuid.UUID) (*printing.InvoiceData, error) {
+	return s.BuildInvoiceDataInLanguage(ctx, principal, documentID, "")
+}
+
+// BuildInvoiceDataInLanguage is BuildInvoiceData with a language chosen for this
+// one copy ("" = no override). The language used is, in order: the override, the
+// document's own setting, the company's setting, the language of the company's
+// country. It only affects the generic (non-India) layout.
+func (s *Service) BuildInvoiceDataInLanguage(ctx context.Context, principal permissions.Principal, documentID uuid.UUID, override string) (*printing.InvoiceData, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err
 	}
@@ -228,7 +236,10 @@ func (s *Service) BuildInvoiceData(ctx context.Context, principal permissions.Pr
 		VehicleNumber:     doc.VehicleNumber,
 		Lines:             items,
 		GenericTax:        genericTax,
-		Language:          printing.LanguageFor(legalEntity.CountryCode),
+		BaseCurrency:      foreignBase(doc),
+		ExchangeRate:      foreignRate(doc),
+		GrandTotalBase:    foreignTotalBase(doc),
+		Language:          firstNonEmpty(override, doc.InvoiceLanguage, legalEntity.InvoiceLanguage, printing.LanguageFor(legalEntity.CountryCode)),
 		DateLayout:        dateLayoutForDocument(genericTax, legalEntity.CountryCode),
 		SupplyDate:        supplyDateIfGeneric(genericTax, doc.SupplyDate),
 		Currency:          taxDoc.CurrencyCode,
@@ -444,4 +455,35 @@ func supplyDateIfGeneric(generic bool, d *time.Time) *time.Time {
 		return nil
 	}
 	return d
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// foreignBase is the company currency when the document is in another currency, else "".
+func foreignBase(doc *domain.Document) string {
+	if doc.CurrencyCode != doc.BaseCurrencyCode {
+		return doc.BaseCurrencyCode
+	}
+	return ""
+}
+
+func foreignRate(doc *domain.Document) string {
+	if doc.CurrencyCode == doc.BaseCurrencyCode {
+		return ""
+	}
+	return doc.ExchangeRate.String()
+}
+
+func foreignTotalBase(doc *domain.Document) string {
+	if doc.CurrencyCode == doc.BaseCurrencyCode || doc.GrandTotalBaseAmount == nil {
+		return ""
+	}
+	return doc.GrandTotalBaseAmount.StringFixed(money.RoundHalfUp)
 }

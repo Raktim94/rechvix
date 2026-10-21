@@ -6,6 +6,29 @@ Added 2026-10-21. Code: `internal/modules/taxregimes`. Migration: `0045_tax_line
 **supplier legal entity's country**: empty or `IN` → India GST (unchanged), `US` → state sales tax, `ES`, `GB` and the
 EU member states → VAT. Any other country returns `ErrRegimeNotSupported`; nothing is guessed.
 
+## Readiness by country (2026-10-21)
+
+"Ready" means calculated, invoiced, posted to the ledger, reversible by credit note, summarised, and exercised in an automated
+test **and** in a real browser run. It does not mean filed: nothing here submits a return to a tax authority.
+
+| | India | Spain | United Kingdom | United States |
+|---|---|---|---|---|
+| Sales tax calculation, invoice, PDF | ready | ready | ready | ready (state base rate) |
+| Credit notes / returns | ready | ready | ready | ready |
+| Purchases | ITC ready (needs supplier GSTIN) | input IVA ready (domestic supplier) | input VAT ready (domestic supplier) | tax paid is part of cost (no split) |
+| Ledger accounts | GST Input/Output | IVA soportado/repercutido | Input/Output VAT | Sales Tax Paid/Payable |
+| Tax summary for preparing a return | GSTR-1 / GSTR-3B (partial boxes) | Tax summary (not the Modelo 303 layout) | Tax summary (not the 9-box layout) | Tax by state |
+| Invoice language / date format | English, 21-Oct-2026 | Spanish, 21/10/2026 | English, 21-Oct-2026 | English, 10/21/2026 |
+| Tax-inclusive (retail) pricing | n/a in UI | yes | yes | yes |
+
+**Dependencies you must plan for (not implemented):**
+* **India:** e-Invoice (IRP) and e-Way Bill run against the government *sandbox* or the mock provider until real credentials are configured; GST returns are filed on the GST portal, not from here; reverse charge, ITC reversal, ineligible ITC and TCS/TDS are not modelled.
+* **Spain:** invoicing software must comply with **VERI\*FACTU / the Reglamento de sistemas informáticos de facturación** (hash-chained records, QR, submission to the AEAT). Per the Agencia Tributaria (citing RDL 15/2025), systems must be adapted **before 1 January 2027 for companies (Impuesto sobre Sociedades) and before 1 July 2027 for everyone else**. Rechvix does not implement it, so it is acceptable for Spanish invoicing only until then. Modelo 303 / 390, SII, FacturaE/Peppol, Canary Islands (IGIC), Ceuta and Melilla (IPSI) are not implemented.
+* **United Kingdom:** returns for VAT-registered businesses must be submitted through Making Tax Digital compatible software with digital links; this system only prepares the figures. Northern Ireland goods (Windsor Framework), flat-rate and cash-accounting schemes are not implemented.
+* **United States:** no local (city/county/district) tax, no nexus determination, no product-specific taxability by state, no marketplace-facilitator rules, no filing. You choose the states where you collect.
+* **EU (all 27 states):** sales to consumers in another member state (OSS), reverse-charge purchases and import VAT are refused with a clear message.
+* **All:** the dated rate tables must be re-verified and updated by a release when rates change; documents dated before 1 January 2026 are refused.
+
 ## What is supported
 
 | Country | Engine | Rates (verified Oct 2026) |
@@ -49,6 +72,20 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 `POST /sales/documents` accepts `customer_country`, `supply_region` (ISO 3166-2: `US-CA`, `ES-CN`), `customer_tax_exempt`,
 `equivalence_surcharge`. Omitted fields keep the old behaviour.
 
+## Purchases, credit notes, accounts and the tax summary
+
+* **Purchases (VAT countries):** a finalized purchase invoice from a *domestic* supplier calculates input VAT at the tax category of
+  each line, posts it to the input-tax account and records a snapshot. A supplier registered in another country is refused
+  (`ErrCrossBorderPurchaseUnsupported`) because reverse charge / import VAT is not implemented; it is never silently dropped.
+  Purchase returns and debit notes reverse it. For US and other countries tax paid on a purchase is booked as part of its cost.
+* **Credit notes and returns** copy the original invoice's tax context (country, region, exemption, surcharge) and reverse the
+  tax proportionally; the ledger and the printed document both show it.
+* **Chart of accounts:** accounts 1400 and 2100 are named for the country (see the table above); a company's customised names are never overwritten.
+* **Tax summary** (`GET /reports/tax/summary`, page *Tax*): output tax on sales and input tax on purchases by tax and rate, with
+  credit notes and returns subtracted, US sales by state, and zero-tax lines (exempt, zero-rated, reverse-charge, export,
+  not collected) shown with their bases. Net = output − input. Preparation data, not a return.
+* **Errors:** every refused case reaches the user as a readable 400 (`TAX_CASE_NOT_SUPPORTED` / `TAX_DETAILS_INVALID`) instead of a generic 500.
+
 ## Invoices outside India
 
 * **Layout:** for a legal entity whose country is not India the PDF switches to a generic layout: `Tax category | Qty |
@@ -60,16 +97,16 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 * **Legal notes** print when they apply: reverse charge, intra-Community supply, export, exempt, zero-rated, US
   exemption certificate, US not registered to collect, US state without sales tax.
 * **Numbering:** `INV/<calendar year>/000001` outside India; India keeps `INV/2026-27/000001` (April-March).
+* **Language and dates:** labels, document headings, tax names and legal notes are printed in the seller's language (Spanish, French, German, Italian, Portuguese, Dutch; English otherwise) and dates in the country's format. Labels were drafted by an AI model and need review by a native speaker and an accountant.
+* **Parties:** the customer's default billing address and tax ID print under "Bill To"; a date of supply prints when it differs from the issue date. Bank details print as IBAN and BIC/SWIFT outside India.
 * **Text:** Windows-1252 text (all Western European languages and the euro sign) uses the built-in fonts and every theme
   looks as before; any other text (for example Polish, Czech, Hungarian, Greek, Cyrillic) switches that document to an
   embedded Unicode font. Scripts that font lacks (Devanagari, CJK, Arabic) cannot be printed.
 
 ## Known gaps
 
-* Purchases still call the engine with the old input; input VAT on purchases and reclaim reporting for VAT countries are not done.
 * Accounting's tax account is labelled "GST Output Tax Payable" for every country (numerically correct, label is India-specific).
-* Invoice wording is English only ("INVOICE", "Bill To", "Taxable Amount"); invoice language is not yet selectable and the
-  signature line still reads "For Authorized Signatory".
+* The invoice language follows the seller's country; it cannot yet be chosen per customer or per document.
 * A Spanish invoice must also carry items this system does not capture (for example the date of the transaction when it
   differs from the issue date, and the customer's address and NIF on full invoices to businesses); review the layout with
   your gestor. SII, VERI*FACTU, FacturaE/Peppol and other electronic-invoicing and real-time reporting regimes are not implemented.

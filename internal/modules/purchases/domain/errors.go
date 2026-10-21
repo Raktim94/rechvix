@@ -9,4 +9,7 @@ var (
 	ErrDocumentNotFinalized = errors.New("purchases: document is not in FINALIZED status")
 	ErrEmptyDocument        = errors.New("purchases: document has no lines")
 	ErrDuplicateNumber      = errors.New("purchases: document number already in use for this document type")
+
+	// ErrForeignCurrencyUnsupported means a purchase document was created in a currency other than the company's.
+	ErrForeignCurrencyUnsupported = errors.New("purchases: foreign-currency purchases are not supported")
 )

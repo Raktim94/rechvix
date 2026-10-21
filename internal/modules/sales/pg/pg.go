@@ -44,8 +44,8 @@ func (r *DocumentRepo) Create(ctx context.Context, d *domain.Document) error {
 			currency_code, base_currency_code, exchange_rate, pricing_mode, customer_reference, transporter,
 			vehicle_number, shipping_terms, notes, terms_and_conditions, payment_terms_days,
 			created_by, created_at, updated_at,
-			customer_country, supply_region, customer_tax_exempt, equivalence_surcharge
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32,$33,$34,$35,$36)`
+			customer_country, supply_region, customer_tax_exempt, equivalence_surcharge, invoice_language
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32,$33,$34,$35,$36,$37)`
 	_, err := r.pool.Q(ctx).Exec(ctx, q,
 		d.ID, d.OrganisationID, d.LegalEntityID, d.BranchID, d.WarehouseID, d.CustomerPartyID, string(d.DocumentType), d.DocumentNumber,
 		d.ReferenceDocumentID, string(d.Status), d.IssueDate, d.DueDate, d.SupplyDate, d.BillingAddressID, d.ShippingAddressID,
@@ -53,7 +53,7 @@ func (r *DocumentRepo) Create(ctx context.Context, d *domain.Document) error {
 		d.CurrencyCode, d.BaseCurrencyCode, d.ExchangeRate, string(d.PricingMode), nullIfEmpty(d.CustomerReference), nullIfEmpty(d.Transporter),
 		nullIfEmpty(d.VehicleNumber), nullIfEmpty(d.ShippingTerms), nullIfEmpty(d.Notes), nullIfEmpty(d.TermsAndConditions), d.PaymentTermsDays,
 		d.CreatedBy, d.CreatedAt,
-		nullIfEmpty(d.CustomerCountry), nullIfEmpty(d.SupplyRegion), d.CustomerTaxExempt, d.EquivalenceSurcharge,
+		nullIfEmpty(d.CustomerCountry), nullIfEmpty(d.SupplyRegion), d.CustomerTaxExempt, d.EquivalenceSurcharge, nullIfEmpty(d.InvoiceLanguage),
 	)
 	if err != nil {
 		if pgUniqueViolation(err) {
@@ -70,7 +70,7 @@ const documentCols = `id, organisation_id, legal_entity_id, branch_id, warehouse
 	currency_code, base_currency_code, exchange_rate, pricing_mode, COALESCE(customer_reference, ''), COALESCE(transporter, ''),
 	COALESCE(vehicle_number, ''), COALESCE(shipping_terms, ''), COALESCE(notes, ''), COALESCE(terms_and_conditions, ''), payment_terms_days,
 	tax_document_id, grand_total_amount, created_by, created_at, updated_at, finalized_at,
-	COALESCE(customer_country, ''), COALESCE(supply_region, ''), customer_tax_exempt, equivalence_surcharge`
+	grand_total_base_amount, COALESCE(customer_country, ''), COALESCE(supply_region, ''), customer_tax_exempt, equivalence_surcharge, COALESCE(invoice_language, '')`
 
 func (r *DocumentRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Document, error) {
 	q := fmt.Sprintf(`SELECT %s FROM sales_documents WHERE organisation_id = $1 AND id = $2`, documentCols)
@@ -125,9 +125,9 @@ func (r *DocumentRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status do
 	return nil
 }
 
-func (r *DocumentRepo) UpdateFinalizedTotals(ctx context.Context, id, taxDocumentID uuid.UUID, grandTotal decimal.Decimal) error {
-	const q = `UPDATE sales_documents SET tax_document_id = $2, grand_total_amount = $3, updated_at = now() WHERE id = $1`
-	tag, err := r.pool.Q(ctx).Exec(ctx, q, id, taxDocumentID, grandTotal)
+func (r *DocumentRepo) UpdateFinalizedTotals(ctx context.Context, id, taxDocumentID uuid.UUID, grandTotal, grandTotalBase decimal.Decimal) error {
+	const q = `UPDATE sales_documents SET tax_document_id = $2, grand_total_amount = $3, grand_total_base_amount = $4, updated_at = now() WHERE id = $1`
+	tag, err := r.pool.Q(ctx).Exec(ctx, q, id, taxDocumentID, grandTotal, grandTotalBase)
 	if err != nil {
 		return fmt.Errorf("sales: updating sales_document finalized totals: %w", err)
 	}
@@ -135,6 +135,21 @@ func (r *DocumentRepo) UpdateFinalizedTotals(ctx context.Context, id, taxDocumen
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func (r *DocumentRepo) LastExchangeRate(ctx context.Context, orgID uuid.UUID, currency string) (*decimal.Decimal, error) {
+	var rate decimal.Decimal
+	err := r.pool.Q(ctx).QueryRow(ctx, `
+		SELECT exchange_rate FROM sales_documents
+		WHERE organisation_id = $1 AND currency_code = $2 AND currency_code <> base_currency_code
+		ORDER BY created_at DESC LIMIT 1`, orgID, currency).Scan(&rate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("sales: reading last exchange rate: %w", err)
+	}
+	return &rate, nil
 }
 
 type scannable interface {
@@ -145,14 +160,15 @@ func scanDocumentRow(row scannable) (*domain.Document, error) {
 	var d domain.Document
 	var docType, status, pricingMode string
 	var taxDocID *uuid.UUID
-	var grandTotalAmount *decimal.Decimal
+	var grandTotalAmount, grandTotalBase *decimal.Decimal
 	if err := row.Scan(&d.ID, &d.OrganisationID, &d.LegalEntityID, &d.BranchID, &d.WarehouseID, &d.CustomerPartyID, &docType, &d.DocumentNumber,
 		&d.ReferenceDocumentID, &status, &d.IssueDate, &d.DueDate, &d.SupplyDate, &d.BillingAddressID, &d.ShippingAddressID,
 		&d.CustomerTaxRegistrationID, &d.PlaceOfSupplyStateCode, &d.SalespersonUserID, &d.PriceListID,
 		&d.CurrencyCode, &d.BaseCurrencyCode, &d.ExchangeRate, &pricingMode, &d.CustomerReference, &d.Transporter,
 		&d.VehicleNumber, &d.ShippingTerms, &d.Notes, &d.TermsAndConditions, &d.PaymentTermsDays,
 		&taxDocID, &grandTotalAmount, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.FinalizedAt,
-		&d.CustomerCountry, &d.SupplyRegion, &d.CustomerTaxExempt, &d.EquivalenceSurcharge); err != nil {
+		&grandTotalBase,
+		&d.CustomerCountry, &d.SupplyRegion, &d.CustomerTaxExempt, &d.EquivalenceSurcharge, &d.InvoiceLanguage); err != nil {
 		return nil, err
 	}
 	d.DocumentType = domain.DocumentType(docType)
@@ -165,6 +181,13 @@ func scanDocumentRow(row scannable) (*domain.Document, error) {
 			return nil, fmt.Errorf("constructing grand total money value: %w", err)
 		}
 		d.GrandTotalAmount = &m
+	}
+	if grandTotalBase != nil {
+		m, err := money.New(*grandTotalBase, d.BaseCurrencyCode)
+		if err != nil {
+			return nil, fmt.Errorf("constructing grand total base money value: %w", err)
+		}
+		d.GrandTotalBaseAmount = &m
 	}
 	return &d, nil
 }

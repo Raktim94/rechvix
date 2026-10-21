@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	contactsapp "rechvix/internal/modules/contacts/app"
@@ -84,6 +85,7 @@ type regimeInvoice struct {
 	registrationID                          *uuid.UUID
 	mode                                    taxdomain.PricingMode
 	qty, price                              string
+	base, rate                              string // company currency and exchange rate of a foreign-currency invoice
 }
 
 func finalizeRegimeInvoice(t *testing.T, ctx context.Context, salesSvc *salesapp.Service, fx accountingFixture, in regimeInvoice) (*salesdomain.Document, error) {
@@ -93,7 +95,7 @@ func finalizeRegimeInvoice(t *testing.T, ctx context.Context, salesSvc *salesapp
 	}
 	doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
 		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
-		DocumentType: salesdomain.DocTaxInvoice, CurrencyCode: in.currency, BaseCurrencyCode: in.currency, PricingMode: in.mode,
+		DocumentType: salesdomain.DocTaxInvoice, CurrencyCode: in.currency, BaseCurrencyCode: firstOr(in.base, in.currency), ExchangeRate: rateOrZero(t, in.rate), PricingMode: in.mode,
 		CustomerCountry: in.customerCountry, SupplyRegion: in.supplyRegion, CustomerTaxExempt: in.taxExempt,
 		EquivalenceSurcharge: in.surcharge, CustomerTaxRegistrationID: in.registrationID,
 	})
@@ -365,4 +367,19 @@ func TestPrint_SpanishInvoice_ItemisesIVAAndCarriesTaxIDs(t *testing.T) {
 	if !strings.HasPrefix(data.DocumentNumber, "INV/2026/") && !strings.HasPrefix(data.DocumentNumber, fmt.Sprintf("INV/%d/", time.Now().Year())) {
 		t.Errorf("document number %q should use a calendar-year series outside India", data.DocumentNumber)
 	}
+}
+
+func firstOr(v, fallback string) string {
+	if v != "" {
+		return v
+	}
+	return fallback
+}
+
+func rateOrZero(t *testing.T, s string) decimal.Decimal {
+	t.Helper()
+	if s == "" {
+		return decimal.Zero
+	}
+	return mustDecimal(t, s)
 }

@@ -202,6 +202,7 @@ type CreateDocumentParams struct {
 	SupplyRegion           string
 	CustomerTaxExempt      bool
 	EquivalenceSurcharge   bool
+	InvoiceLanguage        string
 	SalespersonUserID      *uuid.UUID
 	PriceListID            *uuid.UUID
 	CurrencyCode           string
@@ -224,6 +225,9 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 	if !domain.ValidDocumentType(p.DocumentType) {
 		return nil, domain.ErrInvalidDocumentType
 	}
+	if !orgapp.ValidInvoiceLanguage(strings.ToLower(strings.TrimSpace(p.InvoiceLanguage))) {
+		return nil, domain.ErrInvalidInvoiceLanguage
+	}
 	id, err := uuid.NewV7()
 	if err != nil {
 		return nil, fmt.Errorf("sales: generating sales_document id: %w", err)
@@ -237,10 +241,7 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 	if pricingMode == "" {
 		pricingMode = taxdomain.PricingExclusive
 	}
-	exchangeRate := p.ExchangeRate
-	if exchangeRate.IsZero() {
-		exchangeRate = decimal.NewFromInt(1)
-	}
+	exchangeRate := p.ExchangeRate // validated against the company currency inside the transaction below
 	d := &domain.Document{
 		ID: id, OrganisationID: principal.OrganisationID, LegalEntityID: p.LegalEntityID, BranchID: p.BranchID,
 		WarehouseID: p.WarehouseID, CustomerPartyID: p.CustomerPartyID, DocumentType: p.DocumentType,
@@ -249,6 +250,7 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 		CustomerTaxRegistrationID: p.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: p.PlaceOfSupplyStateCode,
 		CustomerCountry: strings.ToUpper(strings.TrimSpace(p.CustomerCountry)), SupplyRegion: strings.ToUpper(strings.TrimSpace(p.SupplyRegion)),
 		CustomerTaxExempt: p.CustomerTaxExempt, EquivalenceSurcharge: p.EquivalenceSurcharge,
+		InvoiceLanguage:   strings.ToLower(strings.TrimSpace(p.InvoiceLanguage)),
 		SalespersonUserID: p.SalespersonUserID, PriceListID: p.PriceListID, CurrencyCode: p.CurrencyCode,
 		BaseCurrencyCode: p.BaseCurrencyCode, ExchangeRate: exchangeRate, PricingMode: pricingMode,
 		CustomerReference: p.CustomerReference, Transporter: p.Transporter, VehicleNumber: p.VehicleNumber,
@@ -256,6 +258,24 @@ func (s *Service) CreateDocument(ctx context.Context, principal permissions.Prin
 		PaymentTermsDays: p.PaymentTermsDays, CreatedBy: principal.UserID, CreatedAt: now, UpdatedAt: now,
 	}
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		// Currency rules. The books are kept in the company's currency (carried by ctx);
+		// a document may be issued in another currency only with an explicit exchange rate,
+		// so foreign money is never booked as if it were company currency.
+		base := money.LedgerCurrency(ctx)
+		if d.BaseCurrencyCode == "" {
+			d.BaseCurrencyCode = base
+		} else if d.BaseCurrencyCode != base {
+			return domain.ErrBaseCurrencyMismatch
+		}
+		if _, ok := money.MinorDigits(d.CurrencyCode); !ok {
+			return domain.ErrUnknownCurrency
+		}
+		switch {
+		case d.CurrencyCode == base:
+			d.ExchangeRate = decimal.NewFromInt(1)
+		case !d.ExchangeRate.IsPositive():
+			return domain.ErrExchangeRateRequired
+		}
 		// The numbering period follows the issuing legal entity's country (India:
 		// April-March; elsewhere the calendar year).
 		legalEntity, err := s.organisation.GetLegalEntityForOtherModule(ctx, principal.OrganisationID, p.LegalEntityID)
@@ -629,6 +649,7 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 				SupplyType:        taxdomain.SupplyB2C,
 				CurrencyCode:      doc.CurrencyCode,
 				// Non-India regimes (the dispatcher ignores these for India).
+				ExchangeRate:          doc.ExchangeRate,
 				SupplierCountry:       legalEntity.CountryCode,
 				CustomerCountry:       doc.CustomerCountry,
 				SupplyRegion:          doc.SupplyRegion,
@@ -671,15 +692,28 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 			}
 		}
 
+		// The ledger is in the company's currency. For a foreign-currency document each part
+		// (net, tax) is converted at the document's rate and rounded once, and the receivable is
+		// their sum, so the journal always balances and no cent is invented.
+		salesBase, err := toBase(taxDoc.TotalTaxableAmount, doc.ExchangeRate, doc.BaseCurrencyCode)
+		if err != nil {
+			return err
+		}
+		taxBase, err := toBase(taxDoc.TotalTaxAmount, doc.ExchangeRate, doc.BaseCurrencyCode)
+		if err != nil {
+			return err
+		}
+		grandBase := salesBase.Add(taxBase)
+
 		if s.accounting != nil && domain.RevenueAffecting(doc.DocumentType) {
 			customerID := doc.CustomerPartyID
 			debitCode, creditSalesCode, creditTaxCode := accountingdomain.CodeAccountsReceivable, accountingdomain.CodeSales, accountingdomain.CodeGSTOutputTaxPayable
 			lines := []accountingapp.JournalLineRequest{
-				{AccountCode: debitCode, PartyID: &customerID, Debit: taxDoc.GrandTotal.Decimal(), Description: "Sale " + doc.DocumentNumber},
-				{AccountCode: creditSalesCode, Credit: taxDoc.TotalTaxableAmount.Decimal(), Description: "Sale " + doc.DocumentNumber},
+				{AccountCode: debitCode, PartyID: &customerID, Debit: grandBase, Description: "Sale " + doc.DocumentNumber},
+				{AccountCode: creditSalesCode, Credit: salesBase, Description: "Sale " + doc.DocumentNumber},
 			}
-			if taxDoc.TotalTaxAmount.Decimal().IsPositive() {
-				lines = append(lines, accountingapp.JournalLineRequest{AccountCode: creditTaxCode, Credit: taxDoc.TotalTaxAmount.Decimal(), Description: "Sale " + doc.DocumentNumber})
+			if taxBase.IsPositive() {
+				lines = append(lines, accountingapp.JournalLineRequest{AccountCode: creditTaxCode, Credit: taxBase, Description: "Sale " + doc.DocumentNumber})
 			}
 			if domain.ReducesReceivable(doc.DocumentType) {
 				// A credit note / sales return reduces what the customer
@@ -698,7 +732,7 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 			}
 		}
 
-		if err := s.documents.UpdateFinalizedTotals(ctx, documentID, taxDoc.ID, taxDoc.GrandTotal.Decimal()); err != nil {
+		if err := s.documents.UpdateFinalizedTotals(ctx, documentID, taxDoc.ID, taxDoc.GrandTotal.Decimal(), grandBase); err != nil {
 			return err
 		}
 		if err := s.documents.UpdateStatus(ctx, documentID, domain.StatusFinalized, &now); err != nil {
@@ -709,6 +743,9 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 		doc.TaxDocumentID = &taxDoc.ID
 		grandTotal := taxDoc.GrandTotal
 		doc.GrandTotalAmount = &grandTotal
+		if baseTotal, err := money.New(grandBase, doc.BaseCurrencyCode); err == nil {
+			doc.GrandTotalBaseAmount = &baseTotal
+		}
 
 		// Queue e-Invoice generation (Stage 8) atomically with
 		// finalization itself — one more INSERT inside this same
@@ -810,6 +847,7 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 		CustomerTaxRegistrationID: source.CustomerTaxRegistrationID, PlaceOfSupplyStateCode: source.PlaceOfSupplyStateCode,
 		CustomerCountry: source.CustomerCountry, SupplyRegion: source.SupplyRegion,
 		CustomerTaxExempt: source.CustomerTaxExempt, EquivalenceSurcharge: source.EquivalenceSurcharge,
+		InvoiceLanguage:   source.InvoiceLanguage,
 		SalespersonUserID: source.SalespersonUserID, PriceListID: source.PriceListID, CurrencyCode: source.CurrencyCode,
 		BaseCurrencyCode: source.BaseCurrencyCode, ExchangeRate: source.ExchangeRate, PricingMode: source.PricingMode,
 		CustomerReference: source.CustomerReference, Transporter: source.Transporter, VehicleNumber: source.VehicleNumber,
@@ -975,4 +1013,33 @@ func (s *Service) billingAddressFor(ctx context.Context, principal permissions.P
 		return anyBilling
 	}
 	return anyDefault
+}
+
+// toBase converts a document-currency amount to the company (base) currency at rate,
+// rounded half-up to the base currency's minor unit. An amount already in the base
+// currency is returned unchanged.
+func toBase(amount money.Money, rate decimal.Decimal, base string) (decimal.Decimal, error) {
+	if amount.Currency() == base {
+		return amount.Decimal(), nil
+	}
+	m, err := money.New(amount.Decimal().Mul(rate), base)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return m.Round(money.RoundHalfUp).Decimal(), nil
+}
+
+// LastExchangeRate returns the rate most recently used for a foreign-currency document in
+// currency, or nil. It needs only permission to view sales.
+func (s *Service) LastExchangeRate(ctx context.Context, principal permissions.Principal, currency string) (*decimal.Decimal, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	var out *decimal.Decimal
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.documents.LastExchangeRate(ctx, principal.OrganisationID, currency)
+		return err
+	})
+	return out, err
 }

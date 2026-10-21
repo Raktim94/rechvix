@@ -129,21 +129,27 @@ type Document struct {
 	SupplyRegion         string // ISO 3166-2 destination, e.g. US-CA
 	CustomerTaxExempt    bool   // customer holds an exemption/resale certificate
 	EquivalenceSurcharge bool   // Spain: customer under recargo de equivalencia
-	SalespersonUserID    *uuid.UUID
-	PriceListID          *uuid.UUID
-	CurrencyCode         string
-	BaseCurrencyCode     string
-	ExchangeRate         decimal.Decimal
-	PricingMode          taxdomain.PricingMode
-	CustomerReference    string
-	Transporter          string
-	VehicleNumber        string
-	ShippingTerms        string
-	Notes                string
-	TermsAndConditions   string
-	PaymentTermsDays     int
-	TaxDocumentID        *uuid.UUID
-	GrandTotalAmount     *money.Money
+	// InvoiceLanguage overrides the company's invoice language for this document ("" = use the company's).
+	InvoiceLanguage    string
+	SalespersonUserID  *uuid.UUID
+	PriceListID        *uuid.UUID
+	CurrencyCode       string
+	BaseCurrencyCode   string
+	ExchangeRate       decimal.Decimal
+	PricingMode        taxdomain.PricingMode
+	CustomerReference  string
+	Transporter        string
+	VehicleNumber      string
+	ShippingTerms      string
+	Notes              string
+	TermsAndConditions string
+	PaymentTermsDays   int
+	TaxDocumentID      *uuid.UUID
+	GrandTotalAmount   *money.Money
+	// GrandTotalBaseAmount is GrandTotalAmount converted to the company (ledger)
+	// currency at ExchangeRate, rounded once. Equal to GrandTotalAmount for a document
+	// in the company currency. The ledger, receipts and reports use this figure.
+	GrandTotalBaseAmount *money.Money
 	CreatedBy            uuid.UUID
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
@@ -182,7 +188,10 @@ type DocumentRepository interface {
 	// UpdateFinalizedTotals stamps the tax snapshot pointer and headline
 	// grand total onto a document being finalized, in the same
 	// transaction as UpdateStatus.
-	UpdateFinalizedTotals(ctx context.Context, id, taxDocumentID uuid.UUID, grandTotal decimal.Decimal) error
+	UpdateFinalizedTotals(ctx context.Context, id, taxDocumentID uuid.UUID, grandTotal, grandTotalBase decimal.Decimal) error
+	// LastExchangeRate is the rate most recently used for a foreign-currency document in this
+	// currency (nil if none), to pre-fill the next one.
+	LastExchangeRate(ctx context.Context, orgID uuid.UUID, currency string) (*decimal.Decimal, error)
 }
 
 type DocumentLineRepository interface {

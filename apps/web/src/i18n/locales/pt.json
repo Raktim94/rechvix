@@ -140,7 +140,10 @@
     "pageSubtitle": "Taxas e resumo de impostos de {{company}}.",
     "colCategory": "Categoria",
     "colRate": "Taxa",
-    "colKind": "Tipo"
+    "colKind": "Tipo",
+    "pricesIncludeTax": "Preços com impostos incluídos",
+    "pricesIncludeTaxHelp": "Os preços são o que o cliente paga; o imposto é retirado de cada preço em vez de somado.",
+    "categoryRequired": "Escolha uma categoria de imposto para este produto."
   },
   "region": {
     "heading": "Idioma e região",

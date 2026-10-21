@@ -140,7 +140,10 @@
     "pageSubtitle": "Rates and tax summary for {{company}}.",
     "colCategory": "Category",
     "colRate": "Rate",
-    "colKind": "Type"
+    "colKind": "Type",
+    "pricesIncludeTax": "Prices include tax",
+    "pricesIncludeTaxHelp": "Prices are what the customer pays; the tax is taken out of each price instead of added on top.",
+    "categoryRequired": "Choose a tax category for this product."
   },
   "region": {
     "heading": "Language and region",

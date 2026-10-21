@@ -116,9 +116,9 @@ Columns: ID · user outcome · existing location · backend · UI · security ·
 |---|---|---|---|---|---|---|---|---|
 | L1 | All ISO 4217 currencies, exact minor units | `platform/money/iso4217_gen.go`, `scripts/gengeo` | Full (165 currencies) | Pending | n/a | unit | L | ISO list published 2026-09-17 |
 | L2 | All ISO 3166 countries with default currency | `platform/geo` | Full (250) | Pending | n/a | unit | L | generator + overrides vs ISO |
-| L3 | Spain IVA incl. recargo de equivalencia | `taxregimes` | Full (IVA mainland/Baleares) | Pending | RLS | unit + integ | M | AEAT rates; IGIC/IPSI refused |
-| L4 | UK VAT | `taxregimes` | Full | Pending | RLS | unit + integ | M | gov.uk/vat-rates |
+| L3 | Spain IVA incl. recargo de equivalencia, input IVA, credit notes, summary | `taxregimes`, purchases, reporting | Full (mainland/Baleares); VERI*FACTU NOT implemented (due 2027-01-01 companies / 2027-07-01 others) | Full | RLS | unit + integ + browser | M | AEAT rates; IGIC/IPSI refused |
+| L4 | UK VAT incl. input VAT, credit notes, summary | `taxregimes`, purchases, reporting | Full; MTD submission NOT implemented | Full | RLS | unit + integ + browser | M | gov.uk/vat-rates |
 | L5 | EU VAT (27 states) with intra-EU B2B / export | `taxregimes` | Full except OSS consumer | Pending | RLS | unit + integ | M | 2 sources agree on standard rates |
-| L6 | US state sales tax | `taxregimes` | State base rate only; registered states only | Pending | RLS | unit + integ | H (not a compliance engine) | Tax Foundation 2026 |
+| L6 | US state sales tax with by-state summary | `taxregimes`, reporting | State base rate only; registered states only | Full | RLS | unit + integ + browser | H (not a compliance engine) | Tax Foundation 2026 |
 | L7 | UI language (multilingual) | `apps/web/src/i18n` | Reference endpoints + formatting | 8 languages, partial screens (shell, sign-in, setup, dashboard) | - | locale parity check in CI + browser run | M | docs/localisation.md; machine-drafted, needs native review |
 | L8 | VAT returns / filings | none | Missing | Missing | - | - | H | not started |

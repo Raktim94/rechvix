@@ -166,9 +166,9 @@ func TestRenderedInvoiceUsesTheCountrysLanguageAndDateFormat(t *testing.T) {
 		notWant      []string
 	}{
 		{"es", "02/01/2006", []string{"FACTURA", "Cliente:", "NIF / IVA: B12345678", "Base imponible:", "IVA 21%:", "Total (EUR):", "Fecha: 21/10/2026", "Fecha de la operación: 15/10/2026", "Inversión del sujeto pasivo", "Firma autorizada", "Categoría", "General"}, []string{"Bill To", "Grand Total", "Authorised"}},
-		{"de", "02.01.2006", []string{"RECHNUNG", "USt-IdNr.: B12345678", "Nettobetrag:", "Gesamtbetrag (EUR):", "Datum: 21.10.2026", "Leistungsdatum: 15.10.2026", "Steuerschuldnerschaft"}, []string{"Bill To", "Taxable Amount"}},
-		{"fr", "02/01/2006", []string{"FACTURE", "Client:", "N° de TVA: B12345678", "Total TTC (EUR):", "Date: 21/10/2026", "Autoliquidation"}, []string{"Bill To"}},
-		{"en", "01/02/2006", []string{"INVOICE", "Bill To:", "Tax ID: B12345678", "Grand Total (EUR):", "Date: 10/21/2026", "Reverse charge"}, []string{"FACTURA", "Cliente"}},
+		{"de", "02.01.2006", []string{"RECHNUNG", "USt-IdNr.: B12345678", "Nettobetrag:", "USt 21%:", "Gesamtbetrag (EUR):", "Datum: 21.10.2026", "Leistungsdatum: 15.10.2026", "Steuerschuldnerschaft"}, []string{"Bill To", "Taxable Amount"}},
+		{"fr", "02/01/2006", []string{"FACTURE", "Client:", "N° de TVA: B12345678", "Total TTC (EUR):", "Date: 21/10/2026", "Autoliquidation", "TVA 21%:"}, []string{"Bill To", "VAT 21%"}},
+		{"en", "01/02/2006", []string{"INVOICE", "Bill To:", "Tax ID: B12345678", "Grand Total (EUR):", "Date: 10/21/2026", "Reverse charge", "IVA 21%:"}, []string{"FACTURA", "Cliente"}},
 	}
 	for _, c := range cases {
 		d := sampleData()
@@ -224,6 +224,20 @@ func TestEveryLanguageHasACompleteLabelSet(t *testing.T) {
 		if got := LanguageFor(country); got != lang {
 			t.Errorf("LanguageFor(%q) = %q, want %q", country, got, lang)
 		}
+	}
+}
+
+func TestUSSalesTaxPrintsAReadableName(t *testing.T) {
+	d := sampleData()
+	d.Language = "en"
+	d.TaxTotals = []TaxTotal{{"STATE_SALES_TAX", "6.25", "6.25"}}
+	pdf, err := RenderPDF(TemplateA4GSTInvoice, ThemeClassic, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := pdfText(t, pdf)
+	if !strings.Contains(text, "State sales tax 6.25%:") || strings.Contains(text, "STATE_SALES_TAX") {
+		t.Errorf("the US tax line must read 'State sales tax 6.25%%:', not the internal code\n%s", text)
 	}
 }
 

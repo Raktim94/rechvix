@@ -140,7 +140,10 @@
     "pageSubtitle": "Tarieven en belastingoverzicht voor {{company}}.",
     "colCategory": "Categorie",
     "colRate": "Tarief",
-    "colKind": "Soort"
+    "colKind": "Soort",
+    "pricesIncludeTax": "Prijzen inclusief belasting",
+    "pricesIncludeTaxHelp": "De prijzen zijn wat de klant betaalt; de belasting wordt uit elke prijs gehaald in plaats van erbij opgeteld.",
+    "categoryRequired": "Kies een belastingcategorie voor dit product."
   },
   "region": {
     "heading": "Taal en regio",

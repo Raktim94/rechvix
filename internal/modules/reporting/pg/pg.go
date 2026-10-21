@@ -196,8 +196,8 @@ func (r *Repo) SalesSummary(ctx context.Context, f domain.Filter, group domain.G
 	}
 
 	q := fmt.Sprintf(`
-		SELECT %s AS key, COUNT(DISTINCT sd.id), COALESCE(SUM(td.total_taxable_amount),0),
-		       0::numeric, COALESCE(SUM(td.total_taxable_amount),0), COALESCE(SUM(td.total_tax_amount),0), COALESCE(SUM(sd.grand_total_amount),0)
+		SELECT %s AS key, COUNT(DISTINCT sd.id), COALESCE(SUM(td.total_taxable_amount * td.exchange_rate),0),
+		       0::numeric, COALESCE(SUM(td.total_taxable_amount * td.exchange_rate),0), COALESCE(SUM(td.total_tax_amount * td.exchange_rate),0), COALESCE(SUM(COALESCE(sd.grand_total_base_amount, sd.grand_total_amount)),0)
 		FROM %s
 		LEFT JOIN tax_documents td ON td.id = sd.tax_document_id
 		WHERE %s
@@ -237,7 +237,7 @@ func (r *Repo) SalesInvoiceDetail(ctx context.Context, f domain.Filter) ([]domai
 
 	q := fmt.Sprintf(`
 		SELECT sd.id, sd.document_type, sd.document_number, COALESCE(NULLIF(p.trade_name,''), p.legal_name),
-		       sd.issue_date, sd.status, COALESCE(sd.grand_total_amount, 0)
+		       sd.issue_date, sd.status, COALESCE(sd.grand_total_base_amount, sd.grand_total_amount, 0)
 		FROM sales_documents sd JOIN parties p ON p.id = sd.customer_party_id
 		WHERE %s ORDER BY sd.issue_date DESC, sd.document_number DESC`, w.sql())
 	return r.scanDetail(ctx, q, w.args)
@@ -276,7 +276,7 @@ func (r *Repo) GrossProfit(ctx context.Context, f domain.Filter) ([]domain.Gross
 	q := fmt.Sprintf(`
 		SELECT pv.id, pr.name, pv.sku_code,
 		       SUM(CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -sdl.quantity ELSE sdl.quantity END),
-		       SUM(CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -sdl.line_total_amount ELSE sdl.line_total_amount END)
+		       SUM(sd.exchange_rate * CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -sdl.line_total_amount ELSE sdl.line_total_amount END)
 		FROM sales_document_lines sdl
 		JOIN sales_documents sd ON sd.id = sdl.sales_document_id
 		JOIN product_variants pv ON pv.id = sdl.product_variant_id
@@ -387,14 +387,14 @@ func (r *Repo) TaxSummary(ctx context.Context, f domain.Filter) ([]domain.TaxSum
 		WITH docs AS (
 			SELECT 'OUTPUT' AS dir, td.id AS tax_doc_id,
 			       CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -1 ELSE 1 END AS sign,
-			       COALESCE(td.supply_region, '') AS region
+			       COALESCE(td.supply_region, '') AS region, td.exchange_rate AS rate
 			FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
 			WHERE sd.organisation_id = $1 AND sd.status = 'FINALIZED'
 			  AND sd.document_type IN ('TAX_INVOICE','POS_INVOICE','RECURRING_INVOICE','DEBIT_NOTE','CREDIT_NOTE','SALES_RETURN')` + salesRange + salesEntity + `
 			UNION ALL
 			SELECT 'INPUT', td.id,
 			       CASE WHEN pd.document_type IN ('PURCHASE_RETURN','DEBIT_NOTE') THEN -1 ELSE 1 END,
-			       ''
+			       '', 1::numeric
 			FROM purchase_documents pd
 			JOIN tax_documents td ON td.id = pd.tax_document_id
 			JOIN branches b ON b.id = pd.branch_id
@@ -403,8 +403,8 @@ func (r *Repo) TaxSummary(ctx context.Context, f domain.Filter) ([]domain.TaxSum
 		)
 		SELECT d.dir, COALESCE(tc.component_type, tl.classification), COALESCE(tc.rate, 0)::text, d.region,
 		       COUNT(DISTINCT d.tax_doc_id),
-		       COALESCE(SUM(d.sign * tl.taxable_amount), 0),
-		       COALESCE(SUM(d.sign * tc.amount), 0)
+		       COALESCE(SUM(d.sign * d.rate * tl.taxable_amount), 0),
+		       COALESCE(SUM(d.sign * d.rate * tc.amount), 0)
 		FROM docs d
 		JOIN tax_lines tl ON tl.tax_document_id = d.tax_doc_id
 		LEFT JOIN tax_components tc ON tc.tax_line_id = tl.id
@@ -732,13 +732,13 @@ func (r *Repo) HSNSummary(ctx context.Context, f domain.Filter) ([]domain.HSNSum
 	w.addOptionalString("tl.hsn_sac_code", f.HSNSACCode)
 
 	q := fmt.Sprintf(`
-		SELECT tl.hsn_sac_code, SUM(tl.taxable_amount),
-		       COALESCE(SUM(tc.amount) FILTER (WHERE tc.component_type = 'CGST'), 0),
-		       COALESCE(SUM(tc.amount) FILTER (WHERE tc.component_type = 'SGST'), 0),
-		       COALESCE(SUM(tc.amount) FILTER (WHERE tc.component_type = 'IGST'), 0),
-		       COALESCE(SUM(tc.amount) FILTER (WHERE tc.component_type = 'UTGST'), 0),
-		       COALESCE(SUM(tc.amount) FILTER (WHERE tc.component_type = 'CESS'), 0),
-		       SUM(tl.total_tax_amount)
+		SELECT tl.hsn_sac_code, SUM(tl.taxable_amount * td.exchange_rate),
+		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'CGST'), 0),
+		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'SGST'), 0),
+		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'IGST'), 0),
+		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'UTGST'), 0),
+		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'CESS'), 0),
+		       SUM(tl.total_tax_amount * td.exchange_rate)
 		FROM tax_lines tl
 		JOIN tax_documents td ON td.id = tl.tax_document_id
 		LEFT JOIN tax_components tc ON tc.tax_line_id = tl.id
@@ -768,7 +768,7 @@ func (r *Repo) TaxRateSummary(ctx context.Context, f domain.Filter) ([]domain.Ta
 	w.addRange("td.document_date", f.From, f.To)
 
 	q := fmt.Sprintf(`
-		SELECT tc.rate::text, SUM(tl.taxable_amount), SUM(tc.amount), COUNT(DISTINCT td.id)
+		SELECT tc.rate::text, SUM(tl.taxable_amount * td.exchange_rate), SUM(tc.amount * td.exchange_rate), COUNT(DISTINCT td.id)
 		FROM tax_components tc
 		JOIN tax_lines tl ON tl.id = tc.tax_line_id
 		JOIN tax_documents td ON td.id = tl.tax_document_id
@@ -803,12 +803,12 @@ func (r *Repo) GSTR1(ctx context.Context, f domain.Filter) ([]domain.GSTR1Line, 
 	q := fmt.Sprintf(`
 		SELECT sd.document_number, sd.issue_date, td.supply_type,
 		       COALESCE((SELECT ptr.registration_number FROM party_tax_registrations ptr WHERE ptr.id = sd.customer_tax_registration_id), ''),
-		       td.place_of_supply_code, td.total_taxable_amount,
-		       COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST'), 0),
-		       COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST'), 0),
-		       COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST'), 0),
-		       COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS'), 0),
-		       td.grand_total
+		       td.place_of_supply_code, td.total_taxable_amount * td.exchange_rate,
+		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST'), 0),
+		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST'), 0),
+		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST'), 0),
+		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS'), 0),
+		       td.grand_total * td.exchange_rate
 		FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
 		WHERE %s
 		ORDER BY sd.issue_date, sd.document_number`, w.sql())
@@ -861,13 +861,13 @@ func (r *Repo) gstr3bOutward(ctx context.Context, f domain.Filter) ([]domain.GST
 	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 	q := fmt.Sprintf(`
 		SELECT
-			COALESCE(SUM(td.total_taxable_amount) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM(td.total_taxable_amount) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0)
+			COALESCE(SUM(td.total_taxable_amount * td.exchange_rate) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.total_taxable_amount * td.exchange_rate) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0)
 		FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
 		WHERE %s`, w.sql())
 	var taxable, igst, cgst, sgst, cess, zeroTaxable, zeroIGST decimal.Decimal
@@ -888,11 +888,11 @@ func (r *Repo) gstr3bITC(ctx context.Context, f domain.Filter) (domain.GSTR3BLin
 	w.addLegalEntityViaBranch("pd.branch_id", f.LegalEntityIDs)
 	q := fmt.Sprintf(`
 		SELECT
-			COALESCE(SUM(td.total_taxable_amount), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')), 0),
-			COALESCE(SUM((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')), 0)
+			COALESCE(SUM(td.total_taxable_amount * td.exchange_rate), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')), 0),
+			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')), 0)
 		FROM purchase_documents pd JOIN tax_documents td ON td.id = pd.tax_document_id
 		WHERE %s`, w.sql())
 	var taxable, igst, cgst, sgst, cess decimal.Decimal
@@ -909,7 +909,7 @@ func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) 
 	dayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
 	const q = `
 		SELECT
-			COALESCE((SELECT SUM(grand_total_amount) FROM sales_documents
+			COALESCE((SELECT SUM(COALESCE(grand_total_base_amount, grand_total_amount)) FROM sales_documents
 				WHERE organisation_id = $1 AND status = 'FINALIZED' AND issue_date = $2::date), 0) AS today_sales,
 			COALESCE((SELECT SUM(rc.amount) FROM receipts rc
 				WHERE rc.organisation_id = $1 AND rc.received_at >= $3), 0) AS today_collections,
@@ -927,7 +927,7 @@ func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) 
 			COALESCE((SELECT COUNT(*) FROM stock_balances sb JOIN stock_policies sp
 				ON sp.organisation_id = sb.organisation_id AND sp.warehouse_id = sb.warehouse_id AND sp.product_variant_id = sb.product_variant_id
 				WHERE sb.organisation_id = $1 AND sb.quantity_on_hand <= sp.reorder_level), 0) AS low_stock_count,
-			COALESCE((SELECT SUM(sd.grand_total_amount) FROM sales_documents sd
+			COALESCE((SELECT SUM(COALESCE(sd.grand_total_base_amount, sd.grand_total_amount)) FROM sales_documents sd
 				WHERE sd.organisation_id = $1 AND sd.status = 'FINALIZED' AND sd.due_date IS NOT NULL AND sd.due_date < $2::date), 0) AS overdue_receivable`
 	var todaySales, todayCollections, todayPurchases, outstandingRec, outstandingPay, stockValue, overdue decimal.Decimal
 	var lowStockCount int

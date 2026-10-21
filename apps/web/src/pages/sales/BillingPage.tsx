@@ -327,7 +327,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
         currency_code: org.organisation.DefaultCurrencyCode || "INR",
         base_currency_code: org.organisation.DefaultCurrencyCode || "INR",
         exchange_rate: "1",
-        pricing_mode: "EXCLUSIVE",
+        pricing_mode: !isIndia && taxDetails.pricesIncludeTax ? "INCLUSIVE" : "EXCLUSIVE",
       });
     },
     onSuccess: (d) => {

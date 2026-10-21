@@ -103,6 +103,10 @@ type TaxCalculationInput struct {
 	// CollectionRegions lists the US states ("US-CA") where the seller is
 	// registered to collect sales tax. Tax is charged only in these states.
 	CollectionRegions []string
+	// ExchangeRate is the document's rate to the company currency (units of company
+	// currency per unit of CurrencyCode). Zero means 1. It does not change any amount
+	// calculated here (those stay in CurrencyCode); it is stored so reports can convert.
+	ExchangeRate decimal.Decimal
 }
 
 // TaxComponent is one named amount within a line's total tax (CGST, SGST,
@@ -167,9 +171,11 @@ type TaxDocument struct {
 	SupplierStateCode string
 	PlaceOfSupplyCode string
 	// Non-India regimes: where the supply is from/to (empty for India GST).
-	SupplierCountry    string
-	CustomerCountry    string
-	SupplyRegion       string
+	SupplierCountry string
+	CustomerCountry string
+	SupplyRegion    string
+	// ExchangeRate as on the document (1 for the company currency); reports multiply by it.
+	ExchangeRate       decimal.Decimal
 	SupplyType         SupplyType
 	ReverseCharge      bool
 	TotalTaxableAmount money.Money
