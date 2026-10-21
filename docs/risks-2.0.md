@@ -13,7 +13,7 @@ Severity: H/M/L. Status: Open unless stated. Evidence refers to this audit (2026
 | R-07 | Reservation wiring/concurrency unverified (Scenario 3) | H | `stock_reservations` schema + domain exist; service use not confirmed | Phase 3/4: lock-based reserve test with concurrent clerks |
 | R-08 | DB pool default 20 saturates at 20 concurrent readers (p95 45→731ms) | L | TODO Stage 11 | Already configurable; sizing guidance added to docs/operations/deployment.md (done) |
 | R-09 | Webhook outbound SSRF defense unverified | M | `modules/webhooks` | Phase 9: allowlist/deny private ranges, test |
-| R-10 | Go 1.27.1 pinned; toolchain download needed on fresh machines; dependabot branch pending | L | go.mod | Document in CONTRIBUTING |
+| R-10 | Go 1.27.3 pinned (bumped from 1.27.1 for stdlib advisories; 1.27.3 fixes crypto/x509 GO-2026-6809); toolchain download needed on fresh machines; dependabot branch pending | L | go.mod | Document in CONTRIBUTING |
 | R-11 | e-Invoice sandbox creds from env, encrypted table unused | M | TODO Stage 8 | Blocked on credentials; wire table before production |
 | R-12 | Reuse of Mavri/Zulivio code: licenses verified (AGPL-3.0, same owner); transitive deps and semantics still to review per phase | L | — | See `reuse-matrix.md`; attribute in NOTICE.md |
 | R-13 | Design contract conflicts with shipped UI (fonts IBM Plex/Space Grotesk vs Inter; token names) | L | `apps/web/package.json` | Phase 1 reconciles; no restyle without tested nav stability |

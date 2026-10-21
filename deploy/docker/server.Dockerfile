@@ -31,7 +31,7 @@ RUN npm run build
 # docs.
 FROM postgres:18 AS pgtools
 
-FROM golang:1.27.1-bookworm AS build
+FROM golang:1.27.3-bookworm AS build
 WORKDIR /src
 
 # Cache module downloads separately from source changes.

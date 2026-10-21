@@ -29,7 +29,7 @@ npm run tauri build          # produces an NSIS/WiX installer (Windows), a .dmg 
 See `msix/` — `AppxManifest.xml`, `build-msix.ps1`, `test-install.ps1`,
 and `../TESTING.md` for the full install/uninstall/lifecycle checklist.
 Building and packaging needs Windows (the Windows SDK's
-`makeappx.exe`/`signtool.exe`, Go 1.27.1 to cross-compile `apps/server`,
+`makeappx.exe`/`signtool.exe`, Go 1.27.3 to cross-compile `apps/server`,
 plus Rust's `x86_64-pc-windows-msvc` target), which this repo's Linux dev
 environment doesn't have — so `.github/workflows/desktop-msix.yml` does
 the actual build (server + web + a portable Postgres, then the shell

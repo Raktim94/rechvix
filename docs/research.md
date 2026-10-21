@@ -7,7 +7,7 @@ assumption is verified or changes.
 
 | Component | Version | Status | Source |
 |---|---|---|---|
-| Go | 1.27.1 | Latest stable, released 2026-09-01 | go.dev/doc/devel/release, endoflife.date/go |
+| Go | 1.27.3 | Security release (1.27.2 fixed net/http and http2 advisories, 1.27.3 fixed crypto/x509 GO-2026-6809); originally researched as 1.27.1 on 2026-09-01 | go.dev/doc/devel/release, endoflife.date/go |
 | PostgreSQL | 18 (current patch series) | GA since 2025-09-25 | postgresql.org/about/news/postgresql-18-released-3142 |
 | GST e-Invoice JSON schema | v1.1 (INV-01) | Current, CBIC/GSTN | einvoice1.gst.gov.in |
 | IRP (default) | NIC — einvoice1.gst.gov.in | Sandbox: einv-apisandbox.nic.in | nic.gov.in/project/gst-e-invoice |

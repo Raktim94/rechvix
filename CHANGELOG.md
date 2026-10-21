@@ -16,7 +16,7 @@
 - Invoice PDFs printed accented letters and the euro sign incorrectly.
 - Mobile layout: the page scrolled sideways below ~1196px; topbar and 320px reflow; table scroll regions are keyboard-focusable; contrast of sidebar group labels.
 - Setup country select could show a different country from the one the form held.
-- Dependency vulnerabilities (excelize, vite).
+- Dependency vulnerabilities: excelize, vite, and the Go toolchain/standard library (1.27.1 -> 1.27.3, covering net/http, net/http/internal/http2 and crypto/x509 advisories) plus golang.org/x/net. CI's govulncheck job had been failing since 9 October; it now reports 0 affecting vulnerabilities.
 
 Staged per `docs/architecture.md` §16 / `docs/TODO.md`. A stage is listed
 here once it has real passing unit *and* integration tests — see

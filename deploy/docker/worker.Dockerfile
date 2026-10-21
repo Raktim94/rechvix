@@ -3,7 +3,7 @@
 # Genuinely a separate process/container from billing-server, never sharing
 # its request path (docs/architecture.md §9, brief Rule 12).
 
-FROM golang:1.27.1-bookworm AS build
+FROM golang:1.27.3-bookworm AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./

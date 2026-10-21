@@ -11,7 +11,7 @@ it was re-run on 2026-10-21 (285 pass / 0 fail).
 
 | Check | Result |
 |---|---|
-| `go build ./...` (go 1.27.1) | pass |
+| `go build ./...` (go 1.27.3) | pass |
 | `go vet ./...` | pass |
 | `go test ./...` (unit) | pass, 25 packages with tests |
 | `apps/web`: `tsc -b` | pass |
