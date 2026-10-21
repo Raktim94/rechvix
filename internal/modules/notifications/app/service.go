@@ -9,6 +9,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
+	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -126,6 +129,42 @@ func (s *Service) RedeemShareLink(ctx context.Context, rawToken string) (*domain
 	}
 	return link, nil
 }
+
+// RecordView counts one open of a link as a read receipt. It is best effort: a failure to count never blocks the
+// recipient from seeing their document.
+func (s *Service) RecordView(ctx context.Context, link *domain.ShareLink) {
+	_ = s.shareLinks.RecordView(ctx, link.ID, s.now())
+}
+
+// EmailDocument creates a share link for the document and queues an email containing it. baseURL is the public
+// address of this server (scheme and host). The email carries a link, not an attachment, so opening it is recorded.
+func (s *Service) EmailDocument(ctx context.Context, principal permissions.Principal, baseURL, documentType string, documentID uuid.UUID, to, subject, message string) error {
+	if err := s.perms.Require(ctx, principal, "notifications.share", permissions.Scope{}); err != nil {
+		return err
+	}
+	if s.email == nil {
+		return domain.ErrEmailNotConfigured
+	}
+	if _, err := mail.ParseAddress(strings.TrimSpace(to)); err != nil {
+		return fmt.Errorf("%w: %q is not a valid email address", domain.ErrInvalidRecipient, to)
+	}
+	raw, err := s.CreateShareLink(ctx, principal, documentType, documentID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(subject) == "" {
+		subject = "Your document"
+	}
+	link := strings.TrimRight(baseURL, "/") + "/api/v1/share/" + raw + "/pdf"
+	body := "<p>" + html.EscapeString(message) + "</p><p><a href=\"" + html.EscapeString(link) + "\">View the document</a></p>"
+	if strings.TrimSpace(message) == "" {
+		body = "<p><a href=\"" + html.EscapeString(link) + "\">View the document</a></p>"
+	}
+	return s.QueueSend(ctx, principal, SendPayload{Channel: domain.ChannelEmail, Recipient: strings.TrimSpace(to), DocumentType: documentType, DocumentID: documentID, Subject: subject, BodyHTML: body})
+}
+
+// EmailConfigured reports whether this deployment can send email at all.
+func (s *Service) EmailConfigured() bool { return s.email != nil }
 
 // ListShareLinksForDocument is the "which links exist for this
 // document, and are any of them still live" read path — the repository

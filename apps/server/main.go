@@ -57,6 +57,7 @@ import (
 	logisticshttp "rechvix/internal/modules/logistics/httpapi"
 	logisticspg "rechvix/internal/modules/logistics/pg"
 	notificationsapp "rechvix/internal/modules/notifications/app"
+	notificationsdomain "rechvix/internal/modules/notifications/domain"
 	notificationshttp "rechvix/internal/modules/notifications/httpapi"
 	notificationspg "rechvix/internal/modules/notifications/pg"
 	orgapp "rechvix/internal/modules/organisation/app"
@@ -69,6 +70,7 @@ import (
 	purchaseshttp "rechvix/internal/modules/purchases/httpapi"
 	purchasespg "rechvix/internal/modules/purchases/pg"
 	referencehttp "rechvix/internal/modules/reference/httpapi"
+	"rechvix/internal/modules/reminders"
 	reportingapp "rechvix/internal/modules/reporting/app"
 	reportinghttp "rechvix/internal/modules/reporting/httpapi"
 	reportingpg "rechvix/internal/modules/reporting/pg"
@@ -94,6 +96,7 @@ import (
 	"rechvix/internal/platform/database"
 	httpx "rechvix/internal/platform/http"
 	"rechvix/internal/platform/logging"
+	"rechvix/internal/platform/mail"
 	"rechvix/internal/platform/money"
 	"rechvix/internal/platform/numbering"
 	"rechvix/internal/platform/observability"
@@ -496,14 +499,20 @@ func run() error {
 	// explicitly forbids a WhatsApp Web-scraping stand-in). QueueSend
 	// correctly returns a permanent per-channel failure until an operator
 	// configures one; see internal/modules/notifications/app/service.go.
+	emailProvider, err := buildEmailProvider(logger)
+	if err != nil {
+		return err
+	}
 	notificationsSvc := notificationsapp.NewService(
 		pool,
 		notificationspg.NewShareLinkRepo(pool),
 		outboxStore,
 		permissionsChecker,
 		auditRecorder,
-		nil, nil, nil,
+		emailProvider, nil, nil,
 	)
+
+	remindersSvc := reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger)
 
 	router := httpx.NewRouter(httpx.RouterConfig{AllowedOrigins: cfg.Server.AllowedOrigins, Logger: logger})
 	httpx.MountReady(router, pool)
@@ -610,6 +619,7 @@ func run() error {
 			ewaybillhttp.NewHandlers(ewaybillSvc, pool, permissionsChecker, govPortalSvc).Mount(r)
 			einvoicehttp.NewHandlers(einvoiceSvc, pool, permissionsChecker).Mount(r)
 			verifactuhttp.NewHandlers(verifactuSvc).Mount(r)
+			reminders.NewHandlers(remindersSvc).Mount(r)
 		})
 	})
 
@@ -644,4 +654,18 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 	return server.Shutdown(shutdownCtx)
+}
+
+// buildEmailProvider returns the SMTP transport when SMTP_HOST is set, and nil otherwise (queued emails then fail with
+// a clear "no email provider configured" instead of disappearing).
+func buildEmailProvider(logger *slog.Logger) (notificationsdomain.EmailProvider, error) {
+	cfg, err := mail.FromEnv(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+	logger.Info("email delivery enabled", "smtp_host", cfg.Host, "smtp_port", cfg.Port, "tls", cfg.TLS)
+	return mail.NewSMTP(*cfg), nil
 }

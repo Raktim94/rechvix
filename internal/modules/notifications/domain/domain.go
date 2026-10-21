@@ -14,6 +14,9 @@ import (
 var (
 	ErrNotFound    = errors.New("notifications: not found")
 	ErrLinkInvalid = errors.New("notifications: share link invalid, expired, or revoked")
+	// ErrEmailNotConfigured means no SMTP relay is set up on this server.
+	ErrEmailNotConfigured = errors.New("notifications: email is not configured on this server (set SMTP_HOST)")
+	ErrInvalidRecipient   = errors.New("notifications: invalid recipient")
 )
 
 // Channel is which transport a notification/share went out over.
@@ -69,6 +72,10 @@ type ShareLink struct {
 	RevokedAt      *time.Time
 	CreatedAt      time.Time
 	CreatedBy      uuid.UUID
+	// Read receipt: set by the public viewer, never by the sender.
+	FirstViewedAt *time.Time
+	LastViewedAt  *time.Time
+	ViewCount     int
 }
 
 type ShareLinkRepository interface {
@@ -78,5 +85,7 @@ type ShareLinkRepository interface {
 	// migrations/0027_notifications.up.sql.
 	GetByTokenHash(ctx context.Context, tokenHash string) (*ShareLink, error)
 	Revoke(ctx context.Context, id uuid.UUID, at time.Time) error
+	// RecordView counts one open of the link (called unscoped, like GetByTokenHash).
+	RecordView(ctx context.Context, id uuid.UUID, at time.Time) error
 	ListForDocument(ctx context.Context, organisationID uuid.UUID, documentType string, documentID uuid.UUID) ([]*ShareLink, error)
 }

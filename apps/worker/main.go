@@ -34,11 +34,13 @@ import (
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	inventorypg "rechvix/internal/modules/inventory/pg"
 	notificationsapp "rechvix/internal/modules/notifications/app"
+	notificationsdomain "rechvix/internal/modules/notifications/domain"
 	notificationspg "rechvix/internal/modules/notifications/pg"
 	orgapp "rechvix/internal/modules/organisation/app"
 	orgpg "rechvix/internal/modules/organisation/pg"
 	pricingapp "rechvix/internal/modules/pricing/app"
 	pricingpg "rechvix/internal/modules/pricing/pg"
+	"rechvix/internal/modules/reminders"
 	salesapp "rechvix/internal/modules/sales/app"
 	salespg "rechvix/internal/modules/sales/pg"
 	taxationapp "rechvix/internal/modules/taxation/app"
@@ -52,6 +54,7 @@ import (
 	appcrypto "rechvix/internal/platform/crypto"
 	"rechvix/internal/platform/database"
 	"rechvix/internal/platform/logging"
+	"rechvix/internal/platform/mail"
 	"rechvix/internal/platform/numbering"
 	"rechvix/internal/platform/outbox"
 	"rechvix/internal/platform/permissions"
@@ -144,8 +147,12 @@ func run() error {
 	// either (apps/server/main.go's doc comment explains why) — this
 	// worker still correctly drains queued sends into a documented
 	// per-channel permanent failure rather than silently dropping them.
+	emailProvider, err := buildEmailProvider(logger)
+	if err != nil {
+		return err
+	}
 	notificationsSvc := notificationsapp.NewService(pool, notificationspg.NewShareLinkRepo(pool), outboxStore,
-		permissionsChecker, auditRecorder, nil, nil, nil)
+		permissionsChecker, auditRecorder, emailProvider, nil, nil)
 
 	// Scheduled encrypted backups: off unless BACKUP_SCHEDULE_INTERVAL is set
 	// (e.g. "24h"). Needs BACKUP_DATABASE_DSN (RLS-bypassing role, same as
@@ -172,6 +179,8 @@ func run() error {
 		go backupSvc.RunScheduleLoop(ctx, dir, keep, interval, logger)
 		logger.Info("scheduled backups enabled", "interval", interval.String(), "dir", dir, "keep", keep)
 	}
+
+	go reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger).Loop(ctx, time.Hour)
 
 	poller := outbox.NewPoller(pool, outboxStore, logger)
 	poller.Register(einvoiceapp.EventTypeGenerate, einvoiceSvc.Handler())
@@ -228,4 +237,17 @@ func buildEInvoiceProvider(logger *slog.Logger) (einvoicedomain.EInvoiceProvider
 	logger.Warn("using the REAL NIC sandbox e-Invoice provider — this makes actual network calls; " +
 		"never enable this in an automated test run")
 	return sandboxprovider.New(baseURL, creds, nil), "nic-sandbox-v1"
+}
+
+// buildEmailProvider returns the SMTP transport when SMTP_HOST is set (same variables as apps/server), else nil.
+func buildEmailProvider(logger *slog.Logger) (notificationsdomain.EmailProvider, error) {
+	cfg, err := mail.FromEnv(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+	logger.Info("email delivery enabled", "smtp_host", cfg.Host, "smtp_port", cfg.Port, "tls", cfg.TLS)
+	return mail.NewSMTP(*cfg), nil
 }
