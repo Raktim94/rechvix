@@ -17,7 +17,7 @@ export function ShopAdmin() {
   const products = useQuery({ queryKey: ["shop-products"], queryFn: () => api.getListField<Prod>("/shop/products", "products") });
   const orders = useQuery({ queryKey: ["shop-orders"], queryFn: () => api.getListField<ShopOrder>("/shop/orders", "orders") });
   const [f, setF] = useState<Settings | null>(null);
-  useEffect(() => { if (settings.data) setF(settings.data); }, [settings.data]);
+  useEffect(() => { if (settings.data && typeof settings.data.title === "string") setF(settings.data); }, [settings.data]);
   const save = useMutation({
     mutationFn: (v: Settings) => api.put<Settings>("/shop/settings", { ...v, legal_entity_id: v.legal_entity_id || org.legalEntity?.ID, branch_id: v.branch_id || org.branch?.ID, warehouse_id: v.warehouse_id || org.warehouse?.ID }),
     onSuccess: (d) => qc.setQueryData(["shop-settings"], d),

@@ -91,7 +91,8 @@ export function VerifactuPanel({ company }: { company: LegalEntity }) {
 
   const s = settings.data;
   if (settings.isPending) return null;
-  if (!s) return null;
+  // Defensive: an unexpected or empty answer hides the panel instead of breaking the whole tax page.
+  if (!s || !Array.isArray(s.problems)) return null;
   const environment = env ?? s.environment;
 
   return (
