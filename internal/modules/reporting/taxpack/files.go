@@ -95,7 +95,7 @@ its payment/reclaim direction is a separate cell. Rechvix is not MTD submission 
 Spain: Modelo 303 2026 general-regime workpaper. IVA and recargo rectifications are separate
 from ordinary rate buckets. Allocate purchase candidates to current/capital and deductible
 categories, then complete carry-forwards and settlement. This is not an AEAT fixed-width
-import file and does not satisfy invoice-system/VERI*FACTU requirements by itself.
+import file and does not by itself satisfy invoice-system/VERI*FACTU requirements (the invoice record chain is separate; see docs/verifactu.md).
 US: state-by-state source schedules, not a universal tax return. Local tax, nexus, use tax,
 marketplace sales and state form/jurisdiction mappings must be completed by the CA.
 

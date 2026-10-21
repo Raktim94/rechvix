@@ -109,7 +109,7 @@ Canary Islands (IGIC), Ceuta and Melilla (IPSI), Northern Ireland goods, EU cons
 * Invoice language precedence is one-copy print override → document setting → company setting → seller country. No per-customer language default yet.
 * A Spanish invoice must also carry items this system does not capture (for example the date of the transaction when it
   differs from the issue date, and the customer's address and NIF on full invoices to businesses); review the layout with
-  your gestor. SII, VERI*FACTU, FacturaE/Peppol and other electronic-invoicing and real-time reporting regimes are not implemented.
+  your gestor. SII, FacturaE/Peppol and other electronic-invoicing and real-time reporting regimes are not implemented. VERI*FACTU is implemented but not certified (docs/verifactu.md).
 * Credit notes outside India reuse the same document types and layout; the legal wording for rectifying invoices is not added.
 * No VAT return / Modelo 303 / UK MTD / sales-tax filing exports.
 * Rates sourced from two secondary publications for the EU; the Commission's TEDB could not be fetched. Re-verify before filing.

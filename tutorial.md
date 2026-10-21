@@ -324,7 +324,7 @@ US packages separate recorded sales and state base tax by state, including confi
 
 ![US Tax page and accountant review](docs/assets/tutorial/48-us-tax.png)
 
-**No government API permission is needed to download these accountant exports.** This does not remove statutory invoicing obligations, grant filing authorization, implement VERI*FACTU, or make Rechvix an MTD submission service. These packages cover supported VAT/GST/sales-tax preparation, not every corporate, payroll or personal income tax return. See [the detailed export scope](docs/accountant-exports.md).
+**No government API permission is needed to download these accountant exports.** This does not remove statutory invoicing obligations, grant filing authorization, replace the separate VERI*FACTU record chain (see docs/verifactu.md; it is not certified), or make Rechvix an MTD submission service. These packages cover supported VAT/GST/sales-tax preparation, not every corporate, payroll or personal income tax return. See [the detailed export scope](docs/accountant-exports.md).
 
 ## 13. Reports
 
