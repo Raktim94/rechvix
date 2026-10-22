@@ -249,14 +249,15 @@ x-casaos:
   title:
     en_US: rechvix
   tagline:
-    en_US: Self-hosted billing, inventory, accounting, and India GST — no subscription, no external connection required
+    en_US: Self-hosted invoicing, CRM, stock and accounts with tax workpapers for India, Spain, the UK and the US — no subscription
   description:
     en_US: |
-      A production-grade, multi-company, multi-branch, multi-warehouse
-      billing, inventory, accounting, and tax-management platform.
-      India GST / e-Invoice / e-Way Bill capable, self-hosted on your own
-      hardware — no subscription, no mandatory cloud dependency, no data
-      leaving your server for core operation.
+      Open-source business software that connects invoicing, CRM,
+      multi-warehouse stock, purchasing and double-entry accounting.
+      Multi-company and multi-branch, with tax calculations and accountant
+      workpapers for India (GST), Spain, the UK, the EU and US states.
+      Self-hosted on your own hardware — no subscription, no mandatory
+      cloud dependency, no data leaving your server for core operation.
 
       Double-entry accounting, perpetual multi-warehouse inventory, GST
       invoicing with CGST/SGST/IGST breakdown, and a free e-Way Bill
