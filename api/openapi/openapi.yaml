@@ -1394,6 +1394,20 @@ paths:
             text/html: { schema: { type: string } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /sales/documents/{id}/preview:
+    get:
+      tags: [Sales]
+      summary: The finalized document as the printed invoice shows it (seller, customer, itemised tax, totals), as JSON.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: lang, in: query, schema: { type: string, enum: [en, es, fr, de, it, pt, nl, hi] } }
+      responses:
+        "200":
+          description: Pre-formatted figures computed at finalization; nothing is recalculated.
+          content:
+            application/json: { schema: { type: object } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /sales/billing-lookup:
     get:
       tags: [Sales]

@@ -11,6 +11,7 @@ import { PaymentLinksPanel } from "../../components/OnlinePayPanels";
 import { SignatureRequestPanel } from "../../components/SignatureRequestPanel";
 import { DocumentStatusPicker } from "../../components/DocumentStatuses";
 import { RepeatInvoiceForm } from "../../components/RecurringPanel";
+import { InvoicePaper } from "../../components/InvoicePaper";
 import { EmailDocumentPanel } from "../../components/EmailDocumentPanel";
 import { ShareLinksPanel } from "../../components/ShareLinksPanel";
 import ui from "../../components/ui.module.css";
@@ -99,6 +100,7 @@ export function SalesDetailPage({ id }: { id: string }) {
   // a finalized document always has >=1 line in practice (see
   // apps/web/src/lib/api-client.ts's getListField doc comment).
   const lines = doc.data.lines ?? [];
+  const hasSideCard = isIndia && document.Status === "FINALIZED" && (EWB_ELIGIBLE_TYPES.has(document.DocumentType) || document.DocumentType === "TAX_INVOICE");
 
   return (
     <div className={layout.page}>
@@ -191,65 +193,50 @@ export function SalesDetailPage({ id }: { id: string }) {
           {convert.error instanceof ApiError ? convert.error.message : "Could not convert this document."}
         </p>
       ) : null}
-      <DocumentStatusPicker documentId={document.ID} />
-      {document.Status === "FINALIZED" && (document.DocumentType === "TAX_INVOICE" || document.DocumentType === "POS_INVOICE" || document.DocumentType === "DEBIT_NOTE") ? <PaymentLinksPanel documentId={document.ID} outstanding /> : null}
-      {document.Status === "FINALIZED" ? <SignatureRequestPanel documentId={document.ID} /> : null}
-      {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? <RepeatInvoiceForm documentId={document.ID} /> : null}
-      {document.Status !== "DRAFT" ? <EmailDocumentPanel documentType="sales_document" documentId={document.ID} subject={`${document.DocumentNumber}`} /> : null}
-      {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}
-
-      <div className={styles.grid}>
-        <div className={layout.panel}>
-          <div className={styles.metaRow}>
-            <span>
-              Customer: <strong>{customer.data?.LegalName ?? "—"}</strong>
-            </span>
-            <span>
-              Status: <strong>{document.Status}</strong>
-            </span>
-            <span>
-              Issue date: <strong>{new Date(document.IssueDate).toLocaleDateString()}</strong>
-            </span>
-            {isIndia ? (
+      <div className={hasSideCard ? styles.grid : undefined} style={hasSideCard ? undefined : { maxWidth: 960 }}>
+        {document.Status === "DRAFT" ? (
+          <div className={layout.panel}>
+            <div className={styles.metaRow}>
               <span>
-                Place of supply: <strong>{document.PlaceOfSupplyStateCode}</strong>
+                Customer: <strong>{customer.data?.LegalName ?? "—"}</strong>
               </span>
-            ) : null}
-          </div>
-
-          {lines.length === 0 ? (
-            <p className={layout.emptyState}>No items on this document.</p>
-          ) : (
-            <div className={ui.tableScroll} tabIndex={0}>
-              <table className={ui.table}>
-                <thead>
-                  <tr>
-                    <th scope="col">#</th>
-                    <th scope="col">{isIndia ? "HSN/SAC" : t("tax.category")}</th>
-                    <th scope="col">Qty</th>
-                    <th scope="col">Rate</th>
-                    <th scope="col">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l) => (
-                    <tr key={l.ID}>
-                      <td className="num">{l.LineNumber}</td>
-                      <td>{l.HSNSACCode}</td>
-                      <td className="num">{l.Quantity}</td>
-                      <td className="num">{formatMoney(l.UnitPrice)}</td>
-                      <td className="num">{formatMoney(l.LineTotal)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <span>
+                Issue date: <strong>{new Date(document.IssueDate).toLocaleDateString()}</strong>
+              </span>
             </div>
-          )}
-          <div className={styles.totalRow}>
-            <span>Grand total</span>
-            <span className="num">{document.GrandTotalAmount ? formatMoney(document.GrandTotalAmount) : "—"}</span>
+            {lines.length === 0 ? (
+              <p className={layout.emptyState}>No items on this document.</p>
+            ) : (
+              <div className={ui.tableScroll} tabIndex={0}>
+                <table className={ui.table}>
+                  <thead>
+                    <tr>
+                      <th scope="col">#</th>
+                      <th scope="col">{isIndia ? "HSN/SAC" : t("tax.category")}</th>
+                      <th scope="col">Qty</th>
+                      <th scope="col">Rate</th>
+                      <th scope="col">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((l) => (
+                      <tr key={l.ID}>
+                        <td className="num">{l.LineNumber}</td>
+                        <td>{l.HSNSACCode}</td>
+                        <td className="num">{l.Quantity}</td>
+                        <td className="num">{formatMoney(l.UnitPrice)}</td>
+                        <td className="num">{formatMoney(l.LineTotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className={layout.subtitle}>Totals and tax are worked out when the sale is finalized.</p>
           </div>
-        </div>
+        ) : (
+          <InvoicePaper documentId={document.ID} company={org.legalEntities?.find((le) => le.ID === document.LegalEntityID)} stamp={document.Status === "CANCELLED" ? "Cancelled" : undefined} />
+        )}
 
         {isIndia && document.Status === "FINALIZED" && EWB_ELIGIBLE_TYPES.has(document.DocumentType) ? (
           <EwayBillCard documentId={document.ID} />
@@ -262,6 +249,13 @@ export function SalesDetailPage({ id }: { id: string }) {
       {document.Status === "FINALIZED" && PAYABLE_TYPES.has(document.DocumentType) ? (
         <PaymentPanel documentId={document.ID} partyId={document.CustomerPartyID} grandTotal={document.GrandTotalAmount} direction="RECEIVE" />
       ) : null}
+
+      <DocumentStatusPicker documentId={document.ID} />
+      {document.Status === "FINALIZED" && (document.DocumentType === "TAX_INVOICE" || document.DocumentType === "POS_INVOICE" || document.DocumentType === "DEBIT_NOTE") ? <PaymentLinksPanel documentId={document.ID} outstanding /> : null}
+      {document.Status === "FINALIZED" ? <SignatureRequestPanel documentId={document.ID} /> : null}
+      {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? <RepeatInvoiceForm documentId={document.ID} /> : null}
+      {document.Status !== "DRAFT" ? <EmailDocumentPanel documentType="sales_document" documentId={document.ID} subject={`${document.DocumentNumber}`} /> : null}
+      {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}
 
       <CreateReturnModal open={returnModalOpen} onOpenChange={setReturnModalOpen} document={document} lines={lines} />
       <CancelDocumentModal open={cancelModalOpen} onOpenChange={setCancelModalOpen} document={document} />

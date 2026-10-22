@@ -208,3 +208,15 @@ export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M5 12l5 5L20 7" />
   </Icon>
 );
+
+export const PhoneIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" />
+  </Icon>
+);
+
+export const MailIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M3 6h18v12H3z M3 7l9 6 9-6" />
+  </Icon>
+);

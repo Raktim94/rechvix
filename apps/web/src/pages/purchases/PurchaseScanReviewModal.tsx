@@ -6,6 +6,7 @@ import { api, ApiError } from "../../lib/api-client";
 import type { ParsedBill, ParsedBillLine } from "../../lib/billParser";
 import { createPartyWithDetails } from "../../lib/parties";
 import type { Party } from "../../lib/partyTypes";
+import { useOrgContext } from "../../lib/useOrgContext";
 import styles from "./PurchaseScanReviewModal.module.css";
 
 interface ProductOption {
@@ -226,6 +227,8 @@ export function PurchaseScanReviewModal({
   committing?: boolean;
   onCommitted: (result: { supplierId: string; lines: ResolvedScanLine[] }) => void;
 }) {
+  const org = useOrgContext();
+  const isIndia = (org.legalEntity?.CountryCode || "IN") === "IN";
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [gstin, setGstin] = useState("");
@@ -385,7 +388,7 @@ export function PurchaseScanReviewModal({
                       <div className={styles.matchCardTitle}>{p.LegalName}</div>
                       <div className={styles.matchCardMeta}>
                         Existing supplier{p.Phone ? ` · ${p.Phone}` : ""}
-                        {gstinMatchedParty?.ID === p.ID ? " · GSTIN matches exactly" : ""}
+                        {gstinMatchedParty?.ID === p.ID ? ` · ${isIndia ? "GSTIN" : "Tax ID"} matches exactly` : ""}
                       </div>
                     </div>
                   </button>
@@ -427,7 +430,7 @@ export function PurchaseScanReviewModal({
                 <input id="scan-phone" className={ui.input} value={phone} onChange={(e) => setPhone(e.target.value)} disabled={supplierMode === "existing"} />
               </div>
               <div className={ui.field}>
-                <label htmlFor="scan-gstin">GSTIN</label>
+                <label htmlFor="scan-gstin">{isIndia ? "GSTIN" : "Tax ID"}</label>
                 <input id="scan-gstin" className={ui.input} value={gstin} onChange={(e) => setGstin(e.target.value)} maxLength={15} disabled={supplierMode === "existing"} />
               </div>
             </div>

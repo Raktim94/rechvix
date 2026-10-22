@@ -1279,13 +1279,15 @@ export function SettingsPage() {
         <InvoiceBrandingForm key={`${org.legalEntity.ID}-${org.legalEntity.UpdatedAt}`} legalEntity={org.legalEntity} />
       ) : null}
 
-      <div className={layout.panel} hidden={!!org.legalEntity && org.legalEntity.CountryCode !== "IN"}>
-        <h2>GST &amp; e-Way Bill</h2>
-        <p className={layout.emptyState} style={{ textAlign: "left", padding: 0 }}>
-          Tax rates, e-Way Bill mode, vehicles, and transporters live on the{" "}
-          <Link to="/gst">GST / Tax</Link> page.
-        </p>
-      </div>
+      {org.legalEntity && org.legalEntity.CountryCode === "IN" ? (
+        <div className={layout.panel}>
+          <h2>GST &amp; e-Way Bill</h2>
+          <p className={layout.emptyState} style={{ textAlign: "left", padding: 0 }}>
+            Tax rates, e-Way Bill mode, vehicles, and transporters live on the{" "}
+            <Link to="/gst">GST / Tax</Link> page.
+          </p>
+        </div>
+      ) : null}
 
       {org.legalEntity ? <BranchesPanel legalEntityId={org.legalEntity.ID} /> : null}
 

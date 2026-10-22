@@ -48,6 +48,26 @@ export function formatMoney(m: Money): string {
   return formatterFor(m.currency).format(n);
 }
 
+const wholeCache = new Map<string, Intl.NumberFormat>();
+
+/** For headline figures: whole currency units (₹3,29,595), because cents add noise at a glance. Exact amounts elsewhere still use formatMoney. */
+export function formatMoneyWhole(m: Money): string {
+  const n = Number(m.amount);
+  if (Number.isNaN(n)) return `${m.amount} ${m.currency}`;
+  const locale = formatLocale();
+  const key = `${locale}|${m.currency}`;
+  let f = wholeCache.get(key);
+  if (!f) {
+    try {
+      f = new Intl.NumberFormat(locale, { style: "currency", currency: m.currency, currencyDisplay: "symbol", maximumFractionDigits: 0, minimumFractionDigits: 0 });
+    } catch {
+      return formatMoney(m);
+    }
+    wholeCache.set(key, f);
+  }
+  return f.format(n);
+}
+
 /** True if the amount is exactly zero (string comparison-safe for "0", "0.00", "-0.00"). */
 export function isZeroMoney(m: Money): boolean {
   return Number(m.amount) === 0;

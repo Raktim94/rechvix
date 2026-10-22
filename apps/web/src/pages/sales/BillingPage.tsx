@@ -800,10 +800,12 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                         #
                       </th>
                       <th scope="col">Item</th>
-                      <th scope="col">HSN/SAC</th>
-                      <th scope="col" className={styles.colRight}>
-                        GST %
-                      </th>
+                      <th scope="col">{isIndia ? "HSN/SAC" : "Tax category"}</th>
+                      {isIndia ? (
+                        <th scope="col" className={styles.colRight}>
+                          GST %
+                        </th>
+                      ) : null}
                       <th scope="col" className={styles.colRight}>
                         Qty
                       </th>
@@ -821,7 +823,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                   </thead>
                   <tbody>
                     <tr>
-                      <td colSpan={9} className={styles.gridEmpty}>
+                      <td colSpan={isIndia ? 9 : 8} className={styles.gridEmpty}>
                         {documentId ? "Scan a barcode or search above to add the first item." : "Pick a customer above, then scan or search to add items."}
                       </td>
                     </tr>
@@ -837,10 +839,12 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                         #
                       </th>
                       <th scope="col">Item</th>
-                      <th scope="col">HSN/SAC</th>
-                      <th scope="col" className={styles.colRight}>
-                        GST %
-                      </th>
+                      <th scope="col">{isIndia ? "HSN/SAC" : "Tax category"}</th>
+                      {isIndia ? (
+                        <th scope="col" className={styles.colRight}>
+                          GST %
+                        </th>
+                      ) : null}
                       <th scope="col" className={styles.colRight}>
                         Qty
                       </th>
@@ -862,9 +866,11 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                         <td className={`num ${styles.colNum}`}>{l.LineNumber}</td>
                         <td className={styles.itemCell}>{nameByVariant[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
                         <td className={styles.hsnCell}>{l.HSNSACCode || "—"}</td>
-                        <td className={`num ${styles.colRight}`}>
-                          <LineGstRate hsnSacCode={l.HSNSACCode} />
-                        </td>
+                        {isIndia ? (
+                          <td className={`num ${styles.colRight}`}>
+                            <LineGstRate hsnSacCode={l.HSNSACCode} />
+                          </td>
+                        ) : null}
                         <td className={`num ${styles.colRight}`}>
                           <EditableQty line={l} disabled={updateLine.isPending} onCommit={(quantity) => updateLine.mutate({ line: l, quantity })} />
                         </td>

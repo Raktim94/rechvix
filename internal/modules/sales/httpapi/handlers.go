@@ -62,6 +62,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/sales/documents/bill-delivery-notes", h.billDeliveryNotes)
 	r.Post("/sales/documents/{id}/cancel", h.cancelDocument)
 	r.Get("/sales/documents/{id}/print", h.printDocument)
+	r.Get("/sales/documents/{id}/preview", h.previewDocument)
 	r.Get("/sales/billing-lookup", h.billingLookup)
 	r.Get("/sales/exchange-rate", h.lastExchangeRate)
 }

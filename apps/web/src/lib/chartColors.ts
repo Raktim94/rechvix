@@ -18,6 +18,8 @@ export interface ChartPalette {
   accent: string;
   warning: string;
   negative: string;
+  /** Context series (the previous period): present but never competing with the main one. */
+  muted: string;
   text: string;
   grid: string;
   categorical: readonly [string, string, string, string, string, string];
@@ -27,6 +29,7 @@ const lightPalette: ChartPalette = {
   accent: "#0f6e5c",
   warning: "#906409",
   negative: "#b3452f",
+  muted: "#9aa59e",
   text: "#5b6b62",
   grid: "#dbdfd8",
   categorical: ["#0f6e5c", "#906409", "#2f6fb3", "#b3452f", "#6a4fb0", "#5b6b62"],
@@ -36,6 +39,7 @@ const darkPalette: ChartPalette = {
   accent: "#29c191",
   warning: "#e0b355",
   negative: "#e2896a",
+  muted: "#5f7167",
   text: "#9db0a4",
   grid: "#2b3632",
   categorical: ["#29c191", "#e0b355", "#6badf0", "#e2896a", "#b39ae0", "#9db0a4"],

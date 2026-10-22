@@ -37,3 +37,9 @@ export function setDefaultPrintTemplate(value: string) {
     // Per-browser convenience only — nothing breaks if this can't persist.
   }
 }
+
+/** The first layout is called a GST invoice only for Indian companies; elsewhere it is a plain tax invoice. */
+export function printTemplatesFor(isIndia: boolean): PrintTemplateOption[] {
+  if (isIndia) return PRINT_TEMPLATES;
+  return PRINT_TEMPLATES.map((t) => (t.value === "A4_GST_INVOICE" ? { ...t, label: "Tax invoice (A4)" } : t));
+}

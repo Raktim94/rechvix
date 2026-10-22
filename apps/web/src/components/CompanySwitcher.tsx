@@ -6,6 +6,8 @@ import modal from "./Modal.module.css";
 import ui from "./ui.module.css";
 import { api, ApiError } from "../lib/api-client";
 import { GST_STATE_CODES } from "../lib/gstStateCodes";
+import { countryName, sortByName } from "../lib/names";
+import { useCountries } from "../lib/reference";
 import { useOrgContext } from "../lib/useOrgContext";
 import { slugCode } from "../lib/slug";
 
@@ -24,7 +26,12 @@ interface BranchResponse {
  * backend endpoint — every call already existed. */
 function NewCompanyModal({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (legalEntityId: string) => void }) {
   const queryClient = useQueryClient();
+  const org = useOrgContext();
+  const activeCountry = org.legalEntity?.CountryCode || "IN";
+  const countries = useCountries();
   const [legalName, setLegalName] = useState("");
+  // A second company starts in the same country as the active one; GST (state, GSTIN) only applies to India.
+  const [countryCode, setCountryCode] = useState(activeCountry);
   const [stateCode, setStateCode] = useState("");
   const [gstin, setGstin] = useState("");
   const [branchName, setBranchName] = useState("Head Office");
@@ -33,11 +40,12 @@ function NewCompanyModal({ open, onOpenChange, onCreated }: { open: boolean; onO
   useEffect(() => {
     if (!open) return;
     setLegalName("");
+    setCountryCode(activeCountry);
     setStateCode("");
     setGstin("");
     setBranchName("Head Office");
     setWarehouseName("Main Warehouse");
-  }, [open]);
+  }, [open, activeCountry]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,14 +56,16 @@ function NewCompanyModal({ open, onOpenChange, onCreated }: { open: boolean; onO
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onOpenChange]);
 
+  const isIndia = countryCode === "IN";
+  const country = countries.data?.find((c) => c.code === countryCode);
   const create = useMutation({
     mutationFn: async () => {
       const legalEntity = await api.post<LegalEntityResponse>("/legal-entities", {
         legal_name: legalName,
-        country_code: "IN",
-        base_currency_code: "INR",
-        gst_state_code: stateCode,
-        gstin: gstin || undefined,
+        country_code: countryCode,
+        base_currency_code: isIndia ? "INR" : country?.default_currency || org.organisation?.DefaultCurrencyCode || "USD",
+        gst_state_code: isIndia ? stateCode : undefined,
+        gstin: isIndia ? gstin || undefined : undefined,
       });
       const branch = await api.post<BranchResponse>("/branches", {
         legal_entity_id: legalEntity.ID,
@@ -93,7 +103,7 @@ function NewCompanyModal({ open, onOpenChange, onCreated }: { open: boolean; onO
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (legalName.trim() && stateCode) create.mutate();
+            if (legalName.trim() && (!isIndia || stateCode)) create.mutate();
           }}
         >
           <div className={modal.body}>
@@ -102,25 +112,39 @@ function NewCompanyModal({ open, onOpenChange, onCreated }: { open: boolean; onO
               <input id="new-company-name" className={ui.input} autoFocus value={legalName} onChange={(e) => setLegalName(e.target.value)} required />
             </div>
             <div className={ui.field}>
-              <label htmlFor="new-company-state">Business state*</label>
-              <select id="new-company-state" className={ui.select} value={stateCode} onChange={(e) => setStateCode(e.target.value)} required>
-                <option value="" disabled>
-                  Select a state…
-                </option>
-                {GST_STATE_CODES.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.name}
+              <label htmlFor="new-company-country">Country*</label>
+              <select id="new-company-country" className={ui.select} value={countryCode} onChange={(e) => setCountryCode(e.target.value)}>
+                {sortByName(countries.data ?? [], (c) => countryName(c.code, c.name)).map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {countryName(c.code, c.name)}
                   </option>
                 ))}
               </select>
-              <p className={ui.muted} style={{ marginTop: 4 }}>
-                Determines intra- vs. inter-state tax on this company's invoices — required even if not GST-registered.
-              </p>
             </div>
-            <div className={ui.field}>
-              <label htmlFor="new-company-gstin">GSTIN (optional)</label>
-              <input id="new-company-gstin" className={ui.input} placeholder="Leave blank if not GST-registered" value={gstin} onChange={(e) => setGstin(e.target.value)} maxLength={15} />
-            </div>
+            {isIndia ? (
+              <>
+                <div className={ui.field}>
+                  <label htmlFor="new-company-state">Business state*</label>
+                  <select id="new-company-state" className={ui.select} value={stateCode} onChange={(e) => setStateCode(e.target.value)} required>
+                    <option value="" disabled>
+                      Select a state…
+                    </option>
+                    {GST_STATE_CODES.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className={ui.muted} style={{ marginTop: 4 }}>
+                    Determines intra- vs. inter-state tax on this company's invoices — required even if not GST-registered.
+                  </p>
+                </div>
+                <div className={ui.field}>
+                  <label htmlFor="new-company-gstin">GSTIN (optional)</label>
+                  <input id="new-company-gstin" className={ui.input} placeholder="Leave blank if not GST-registered" value={gstin} onChange={(e) => setGstin(e.target.value)} maxLength={15} />
+                </div>
+              </>
+            ) : null}
             <div className={ui.formGrid}>
               <div className={ui.field}>
                 <label htmlFor="new-company-branch">First branch name</label>
@@ -144,7 +168,7 @@ function NewCompanyModal({ open, onOpenChange, onCreated }: { open: boolean; onO
             <button type="button" className={ui.btnSecondary} onClick={() => onOpenChange(false)}>
               Cancel
             </button>
-            <button type="submit" className={ui.btnPrimary} disabled={!legalName.trim() || !stateCode || create.isPending}>
+            <button type="submit" className={ui.btnPrimary} disabled={!legalName.trim() || (isIndia && !stateCode) || create.isPending}>
               {create.isPending ? "Creating…" : "Create company"}
             </button>
           </div>

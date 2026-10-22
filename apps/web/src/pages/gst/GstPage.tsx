@@ -713,6 +713,21 @@ function IndiaGstPage() {
 export function GstPage() {
   const org = useOrgContext();
   const le = org.legalEntity;
-  if (le && le.CountryCode && le.CountryCode !== "IN") return <TaxPage legalEntity={le} />;
+  // Wait for the company before choosing a regime: mounting the India page first
+  // fired every GST request (rates, vehicles, e-Way Bills) for companies abroad.
+  if (!le) {
+    return (
+      <div className={layout.page}>
+        {org.isError ? (
+          <p className={layout.errorState} role="alert">
+            Couldn't load your company. Check your connection and reload.
+          </p>
+        ) : (
+          <div className={layout.skeleton} style={{ height: 240 }} aria-hidden="true" />
+        )}
+      </div>
+    );
+  }
+  if (le.CountryCode && le.CountryCode !== "IN") return <TaxPage legalEntity={le} />;
   return <IndiaGstPage />;
 }

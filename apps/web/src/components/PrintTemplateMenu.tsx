@@ -2,7 +2,8 @@ import { LANGUAGES } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import styles from "./PrintTemplateMenu.module.css";
 import ui from "./ui.module.css";
-import { getDefaultPrintTemplate, PRINT_TEMPLATES, setDefaultPrintTemplate } from "../lib/printTemplates";
+import { getDefaultPrintTemplate, printTemplatesFor, setDefaultPrintTemplate } from "../lib/printTemplates";
+import { useOrgContext } from "../lib/useOrgContext";
 import { getDefaultPrintTheme, PRINT_THEMES, setDefaultPrintTheme } from "../lib/printThemes";
 
 /** Backend already renders 11 print layouts (internal/modules/sales/
@@ -15,6 +16,8 @@ import { getDefaultPrintTheme, PRINT_THEMES, setDefaultPrintTheme } from "../lib
  * are independent choices, so this is two small radio-groups in one
  * dropdown rather than a combinatorial list. */
 export function PrintTemplateMenu({ documentId }: { documentId: string }) {
+  const org = useOrgContext();
+  const templates = printTemplatesFor((org.legalEntity?.CountryCode || "IN") === "IN");
   const [open, setOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(getDefaultPrintTemplate);
   const [selectedTheme, setSelectedTheme] = useState(getDefaultPrintTheme);
@@ -59,7 +62,7 @@ export function PrintTemplateMenu({ documentId }: { documentId: string }) {
           <li className={styles.sectionTitle} role="presentation">
             Layout
           </li>
-          {PRINT_TEMPLATES.map((t) => (
+          {templates.map((t) => (
             <li key={t.value}>
               <button
                 type="button"
