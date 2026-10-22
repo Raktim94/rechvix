@@ -14,4 +14,5 @@ $failed = $false
 try { & $scriptFile } catch { $failed = $true }
 if (-not $failed) { throw 'Failed WinGet installation must not report success.' }
 Remove-Item Function:winget
+$global:LASTEXITCODE = 0
 Write-Host 'PASS: exact Store package/source, no implicit agreement acceptance, failure propagates.'
