@@ -25,7 +25,7 @@ cat > "$scratch/bin/sleep" <<'MOCK'
 exit 0
 MOCK
 chmod +x "$scratch/bin/"*
-export PATH="$scratch/bin:$PATH" TEST_LOG="$scratch/log"
+export PATH="$scratch/bin:$PATH" TEST_LOG="$scratch/log" RECHVIX_INSTALL_DIR=rechvix
 cd "$scratch/repo"
 bash ./install.sh > "$scratch/output"
 test "$(stat -c %a deploy/compose/.env)" = 600
