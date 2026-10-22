@@ -1,3 +1,11 @@
+## Unreleased — 22 October 2026 audit
+
+- CRM opportunity owner picker and audited assignment, adapting Zulivio's organisation-scoped reference checks. Foreign-tenant customer/owner references are rejected on creation and update.
+- CRM quotations carry the selected customer and quotation type into the document workspace.
+- Ageing totals retain the organisation's base currency outside the scoped query (fixes GBP/EUR/USD balances falling back to INR).
+- Fresh-install quickstart refuses existing directories and no longer installs privileged packages. Generated secrets are private; installation reports ready only after Compose and HTTP readiness succeed.
+- Added isolated GitHub-runner fresh-install smoke test. No database migration or new application dependency.
+
 # Changelog
 
 ## 0.15.1

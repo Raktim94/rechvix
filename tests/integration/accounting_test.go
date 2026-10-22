@@ -922,3 +922,18 @@ func TestAccounting_FiscalPeriod_LockLifecycleAndOverride(t *testing.T) {
 		t.Fatal("expected the period to be unlocked after SetPeriodLock(false)")
 	}
 }
+
+func TestAgeingPreservesScopedLedgerCurrency(t *testing.T) {
+	ctx := context.Background()
+	_, _, acct, _ := newTestAccountingServices(t)
+	fx := spainFixture(t, ctx, acct)
+	bucket, err := acct.GetAgeing(ctx, fx.Principal, fx.CustomerID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, amount := range []money.Money{bucket.Current, bucket.Days1To30, bucket.Days31To60, bucket.Days61To90, bucket.Days90Plus, bucket.Total} {
+		if amount.Currency() != "EUR" {
+			t.Fatalf("EUR customer ageing leaked fallback currency: %s", amount.Currency())
+		}
+	}
+}

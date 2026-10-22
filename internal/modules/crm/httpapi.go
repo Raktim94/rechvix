@@ -21,6 +21,8 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 
 func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/crm/stages", h.stages)
+	r.Get("/crm/owners", h.owners)
+	r.Post("/crm/opportunities/{id}/assign", h.assign)
 	r.Get("/crm/opportunities", h.list)
 	r.Post("/crm/opportunities", h.create)
 	r.Get("/crm/opportunities/{id}", h.get)
@@ -295,4 +297,30 @@ func (h *Handlers) tasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"tasks": rows})
+}
+
+func (h *Handlers) owners(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.svc.Owners(r.Context(), principal(r))
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"owners": rows})
+}
+func (h *Handlers) assign(w http.ResponseWriter, r *http.Request) {
+	id, ok := pid(w, r)
+	if !ok {
+		return
+	}
+	body, ok := decode[struct {
+		OwnerUserID *uuid.UUID `json:"owner_user_id"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.Assign(r.Context(), principal(r), id, body.OwnerUserID); err != nil {
+		fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

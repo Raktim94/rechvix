@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	contactsapp "rechvix/internal/modules/contacts/app"
@@ -107,6 +108,68 @@ func TestCRM_LeadToCustomerThroughThePipeline(t *testing.T) {
 		t.Fatalf("another organisation cannot read it: %v", err)
 	}
 	if err := svc.Delete(ctx, fx.Principal, opp.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCRM_AssignmentRejectsForeignReferences(t *testing.T) {
+	ctx := context.Background()
+	owner := setupStaffPrincipal(t, ctx)
+	other := setupStaffPrincipal(t, ctx)
+	svc := newCRM(t)
+	in := crm.Input{Title: "Service renewal", CompanyName: "Workshop", Currency: "GBP", OwnerUserID: &owner.UserID}
+	opp, err := svc.Create(ctx, owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners, err := svc.Owners(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range owners {
+		if user.ID == other.UserID {
+			t.Fatal("foreign owner disclosed")
+		}
+	}
+	if len(owners) != 1 || owners[0].ID != owner.UserID {
+		t.Fatalf("owner list: %+v", owners)
+	}
+	if err := svc.Assign(ctx, owner, opp.ID, &other.UserID); !errors.Is(err, crm.ErrInvalid) {
+		t.Fatalf("foreign assignment: %v", err)
+	}
+	if err := svc.Assign(ctx, other, opp.ID, &other.UserID); !errors.Is(err, crm.ErrNotFound) {
+		t.Fatalf("foreign opportunity: %v", err)
+	}
+	in.OwnerUserID = &other.UserID
+	if _, err := svc.Create(ctx, owner, in); !errors.Is(err, crm.ErrInvalid) {
+		t.Fatalf("foreign create: %v", err)
+	}
+	if _, err := svc.Update(ctx, owner, opp.ID, in); !errors.Is(err, crm.ErrInvalid) {
+		t.Fatalf("foreign update: %v", err)
+	}
+	in.OwnerUserID = &owner.UserID
+	foreignParty := uuid.New()
+	if err := sharedPool.RunScoped(ctx, other.OrganisationID, func(ctx context.Context) error {
+		_, err := sharedPool.Q(ctx).Exec(ctx, `INSERT INTO parties (id, organisation_id, party_type, legal_name, currency_code) VALUES ($1,$2,'CUSTOMER','Foreign workshop','GBP')`, foreignParty, other.OrganisationID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	in.PartyID = &foreignParty
+	if _, err := svc.Create(ctx, owner, in); !errors.Is(err, crm.ErrInvalid) {
+		t.Fatalf("foreign customer create: %v", err)
+	}
+	if _, err := svc.Update(ctx, owner, opp.ID, in); !errors.Is(err, crm.ErrInvalid) {
+		t.Fatalf("foreign customer update: %v", err)
+	}
+	if err := svc.Assign(ctx, owner, opp.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := svc.Get(ctx, owner, opp.ID)
+	if err != nil || saved.OwnerUserID != nil {
+		t.Fatalf("unassign: %+v %v", saved, err)
+	}
+	if err := svc.Assign(ctx, owner, opp.ID, &owner.UserID); err != nil {
 		t.Fatal(err)
 	}
 }

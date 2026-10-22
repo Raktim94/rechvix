@@ -214,6 +214,79 @@ func nz(s string) *string {
 	return &s
 }
 
+// validateReferences adapts Zulivio's organisation-scoped assignment checks to
+// Rechvix's non-owning PostgreSQL runtime role. Run inside RunScoped: foreign
+// keys alone do not stop references to another tenant's otherwise hidden rows.
+func (s *Service) validateReferences(ctx context.Context, orgID uuid.UUID, in Input) error {
+	for _, ref := range []struct {
+		id             *uuid.UUID
+		query, message string
+	}{
+		{in.OwnerUserID, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND organisation_id = $2 AND status = 'ACTIVE')`, "choose an active owner in this organisation"},
+		{in.PartyID, `SELECT EXISTS (SELECT 1 FROM parties WHERE id = $1 AND organisation_id = $2)`, "choose a customer in this organisation"},
+	} {
+		if ref.id == nil {
+			continue
+		}
+		var exists bool
+		if err := s.pool.Q(ctx).QueryRow(ctx, ref.query, *ref.id, orgID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("%w: %s", ErrInvalid, ref.message)
+		}
+	}
+	return nil
+}
+
+type Owner struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+func (s *Service) Owners(ctx context.Context, principal permissions.Principal) ([]Owner, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	out := []Owner{}
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		rows, err := s.pool.Q(ctx).Query(ctx, `SELECT id, full_name FROM users WHERE organisation_id = $1 AND status = 'ACTIVE' ORDER BY full_name, id`, principal.OrganisationID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var o Owner
+			if err := rows.Scan(&o.ID, &o.Name); err != nil {
+				return err
+			}
+			out = append(out, o)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+func (s *Service) Assign(ctx context.Context, principal permissions.Principal, id uuid.UUID, owner *uuid.UUID) error {
+	if err := s.manage(ctx, principal); err != nil {
+		return err
+	}
+	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.validateReferences(ctx, principal.OrganisationID, Input{OwnerUserID: owner}); err != nil {
+			return err
+		}
+		tag, err := s.pool.Q(ctx).Exec(ctx, `UPDATE crm_opportunities SET owner_user_id = $2, updated_at = now() WHERE id = $1`, id, owner)
+		if err != nil {
+			return err
+		}
+		if tag == 0 {
+			return ErrNotFound
+		}
+		return s.audit.Record(ctx, audit.Entry{OrganisationID: principal.OrganisationID, ActorUserID: &principal.UserID, ActorType: audit.ActorUser,
+			Action: "crm.opportunity_assigned", EntityType: "crm_opportunity", EntityID: &id, AfterState: map[string]any{"owner_user_id": owner}, At: s.now()})
+	})
+}
+
 func (s *Service) Create(ctx context.Context, principal permissions.Principal, in Input) (*Opportunity, error) {
 	if err := s.manage(ctx, principal); err != nil {
 		return nil, err
@@ -223,6 +296,9 @@ func (s *Service) Create(ctx context.Context, principal permissions.Principal, i
 	}
 	id, _ := uuid.NewV7()
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.validateReferences(ctx, principal.OrganisationID, in); err != nil {
+			return err
+		}
 		if err := s.ensureStages(ctx, principal.OrganisationID); err != nil {
 			return err
 		}
@@ -271,6 +347,9 @@ func (s *Service) Update(ctx context.Context, principal permissions.Principal, i
 		return nil, err
 	}
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if err := s.validateReferences(ctx, principal.OrganisationID, in); err != nil {
+			return err
+		}
 		tag, err := s.pool.Q(ctx).Exec(ctx, `
 			UPDATE crm_opportunities SET title = $2, party_id = $3, company_name = $4, contact_name = $5, contact_email = $6, contact_phone = $7,
 				value_amount = $8, currency_code = $9, owner_user_id = $10, expected_close = $11, source = $12, notes = $13, updated_at = now()

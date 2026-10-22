@@ -25,3 +25,11 @@ Decision key: Copy (verbatim, notice kept) · Adapt (port idea+UI, rewrite for P
 | 12 | Competitor (STEL) features page | backlog only | Do-not-use content | trademarks/text not reusable | legal | — |
 
 Rule: no Prisma/SQLite schema, no NestJS dependency, no copied competitor assets.
+
+## 22 October verification (supersedes the stale Phase 0 missing-module assumptions)
+
+- Existing Rechvix implementations inspected: `internal/modules/crm`, `recurring`, `fieldservice`, `esign`, `onlinepay`, `shop`, `staff`, and the sales composer. Their database acceptance tests are in `tests/integration/*_test.go`; baseline 201 tests passed on a fresh local PostgreSQL 18.6.
+- Zulivio `assignments.service.ts` organisation/owner reference checks adapted to CRM Create/Update and audited Assign. Added `/crm/owners`, `/crm/opportunities/{id}/assign`, active owner UI and foreign-reference regression tests. No dependencies or migrations added. Attribution retained in NOTICE.md.
+- CRM→quotation now carries the selected customer and QUOTATION type into the existing document workspace, rather than opening an empty tax invoice.
+- Mavri document composer/share/recurring concepts already have corresponding Rechvix modules. No SQLite/Prisma/NestJS schema or duplicate money model is introduced.
+- Still missing: Zulivio hierarchy-aware assignment and automatic rules, breaks/shifts; full Mavri template/workflow parity is not claimed. See audit-2026-10-22.md for evidence and limits.

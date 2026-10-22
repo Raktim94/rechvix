@@ -15,3 +15,8 @@ GNU Affero General Public License for more details.
 
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Workflow adaptation references (same maintainer, AGPL-3.0):
+- Zulivio, Raktim94/zulivio: organisation-scoped owner/reference validation and assignment workflow semantics, adapted to Rechvix Go/PostgreSQL in internal/modules/crm. No NestJS/Prisma dependency or schema was copied.
+- Mavri, Raktim94/mavri: document-first workflow and recurring-billing reference, mapped in docs/reuse-matrix.md. The Rechvix implementation retains its own accounting, identity and PostgreSQL model.
+- IBM Plex font files on the product website retain their SIL Open Font License in public/fonts/IBM-Plex-OFL.txt (website repository).

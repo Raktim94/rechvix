@@ -1,0 +1,61 @@
+name: Fresh installer smoke test
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - install.sh
+      - scripts/quickstart.sh
+      - scripts/test-installer.sh
+      - .github/workflows/installer-smoke.yml
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RECHVIX_INSTALL_DIR: ${{ runner.temp }}/fresh-rechvix
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell safety regressions
+        run: bash scripts/test-installer.sh
+      - name: Fresh clone, build and start in isolated runner
+        run: |
+          bash scripts/quickstart.sh
+          test "$(git -C "$RECHVIX_INSTALL_DIR" rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(stat -c %a "$RECHVIX_INSTALL_DIR/deploy/compose/.env")" = 600
+      - name: Verify setup and runtime database boundary
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          base = 'http://localhost:8080/api/v1'
+          with urllib.request.urlopen(base + '/auth/bootstrap') as response:
+              assert json.load(response)['available'] is True
+          fixture = {'organisation_name':'Installer smoke','default_currency_code':'GBP','default_timezone':'Europe/London','legal_entity_name':'Installer smoke','country_code':'GB','branch_code':'HQ','branch_name':'Head office','warehouse_code':'MAIN','warehouse_name':'Stores','owner_email':'installer@example.test','owner_full_name':'Test Owner','owner_password':'Temporary isolated smoke 994!'}
+          request = urllib.request.Request(base + '/auth/bootstrap', data=json.dumps(fixture).encode(), headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(request) as response:
+              assert response.status == 201
+          login = urllib.request.Request(base + '/auth/login', data=json.dumps({'email':fixture['owner_email'],'password':fixture['owner_password']}).encode(), headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(login) as response:
+              assert response.status == 200
+              assert response.headers.get('Set-Cookie')
+          PY
+          cd "$RECHVIX_INSTALL_DIR/deploy/compose"
+          test "$(docker compose exec -T postgres psql -U billing_migrator -d billing -Atc "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname='billing_app'")" = f
+          test "$(docker compose exec -T postgres psql -U billing_migrator -d billing -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tableowner='billing_app'")" = 0
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          if [ -d "$RECHVIX_INSTALL_DIR/deploy/compose" ]; then
+            cd "$RECHVIX_INSTALL_DIR/deploy/compose"
+            docker compose ps
+            docker compose logs --tail 80 app worker migrate
+          fi
+      - name: Remove disposable runner stack
+        if: always()
+        run: |
+          if [ -f "$RECHVIX_INSTALL_DIR/deploy/compose/.env" ]; then
+            cd "$RECHVIX_INSTALL_DIR/deploy/compose"
+            docker compose down --volumes
+          fi

@@ -12,7 +12,9 @@ Run it on your own server with Docker Compose or CasaOS/ZimaOS, and use the resp
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
 
-**[Read the complete tutorial: every page, with 48 screenshots](tutorial.md)** · [Install Rechvix](#install-rechvix) · [Try the hosted app](https://rechvix.nodedr.com/) · [Tax and accountant exports](#tax-calculation-and-accountant-exports) · [Documentation](#documentation)
+**[Product website](https://rechvix.nodedr.com/) · [Country and currency support](https://rechvix.nodedr.com/tax-support) · [CRM workflows](https://rechvix.nodedr.com/crm-software)**
+
+**[Read the complete tutorial: every page, with 48 screenshots](tutorial.md)** · [Install Rechvix](#install-rechvix) · [Explore the product website](https://rechvix.nodedr.com/) · [Tax and accountant exports](#tax-calculation-and-accountant-exports) · [Documentation](#documentation)
 
 ## What you can do with Rechvix
 
@@ -77,7 +79,7 @@ The ZIP package includes an XLSX workbook, CSV registers, exact-decimal source J
 With Docker installed, inspect [install.sh](install.sh), then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Raktim94/rechvix/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Raktim94/rechvix/main/scripts/quickstart.sh | bash
 ```
 
 The installer clones the repository, generates the Compose secrets and starts PostgreSQL, migrations, the app and the worker. Open the URL it prints and complete `/setup`. Review TLS, secure cookies, backups and bootstrap settings before exposing an installation publicly. The [deployment guide](docs/operations/deployment.md) explains operator responsibilities and manual installation.
@@ -202,3 +204,14 @@ Start with **[tutorial.md: every page and 48 screenshots](tutorial.md)**. The ol
 ## Project and license
 
 Built by **[NodeDR Infotech Private Limited](https://www.nodedr.com/)**. Maintainer: **[Raktim Ranjit](https://www.raktimranjit.com/)**. [Project case study](https://www.raktimranjit.com/projects/rechvix) · [Issues and bug reports](https://github.com/Raktim94/rechvix/issues) · [AGPL-3.0 license](LICENSE).
+
+
+## Installation safety and requirements
+
+The one-command quickstart requires Docker Engine with Compose v2 (or Docker Desktop), git and curl on Linux/macOS. It creates a fresh checkout, refuses existing directories, generates private `.env` secrets, waits for Compose health and verifies the application's bootstrap HTTP endpoint before reporting readiness. It does not install privileged packages, grant Docker-group access or silently upgrade an existing database. Read the script before executing it. For an existing installation, back up first and follow the deployment guide. Windows PowerShell/WSL automation is an advanced route and has not been tested on Windows in the October 22 audit; the Microsoft Store desktop app is the separate desktop option.
+
+## CRM and workforce integration scope
+
+Rechvix already implements a staged CRM pipeline, activities, lead-to-customer conversion, staff attendance and assigned calendar tasks, alongside recurring billing, document sharing and payment workflows. Opportunity ownership can be assigned to an active user in the same organisation, with an audit event. CRM links open a quotation for the chosen customer. The reference checks reject foreign-tenant customer and owner IDs.
+
+The implementation adapts relevant Zulivio and Mavri workflows to Go/PostgreSQL. It is not full feature parity: Zulivio reporting hierarchies, assignment rules, breaks/shifts and advanced workforce tracking remain outside the shipped scope. See [reuse matrix](docs/reuse-matrix.md) and [current acceptance evidence](docs/audit-2026-10-22.md). No blanket country tax-compliance claim is made; see [tax regimes](docs/tax-regimes.md).

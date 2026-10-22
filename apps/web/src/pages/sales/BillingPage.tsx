@@ -163,7 +163,7 @@ function LineGstRate({ hsnSacCode }: { hsnSacCode: string }) {
  * (SalesDetailPage's "Continue billing" button routes back here with the
  * existing id).
  */
-export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string }) {
+export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocumentType }: { resumeDocumentId?: string; initialCustomerId?: string; initialDocumentType?: "QUOTATION" }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const org = useOrgContext();
@@ -182,7 +182,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
 
 
   const [documentId, setDocumentId] = useState<string | undefined>(resumeDocumentId);
-  const [documentType, setDocumentType] = useState<DocumentType>("TAX_INVOICE");
+  const [documentType, setDocumentType] = useState<DocumentType>(resumeDocumentId ? "TAX_INVOICE" : initialDocumentType ?? "TAX_INVOICE");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customer, setCustomer] = useState<Party | null>(null);
   const [showCustomerResults, setShowCustomerResults] = useState(false);
@@ -253,6 +253,19 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
       .catch(() => setCustomer({ ID: partyId } as Party));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.data]);
+
+  const launchCustomer = useQuery({
+    queryKey: ["crm-launch-customer", initialCustomerId],
+    queryFn: () => api.get<Party>(`/contacts/parties/${initialCustomerId}`),
+    enabled: !!initialCustomerId && !resumeDocumentId,
+    retry: false,
+  });
+  const appliedLaunch = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!launchCustomer.data || resumeDocumentId || appliedLaunch.current === initialCustomerId) return;
+    appliedLaunch.current = initialCustomerId;
+    setCustomer(launchCustomer.data);
+  }, [launchCustomer.data, initialCustomerId, resumeDocumentId]);
 
   const customerSearch = useQuery({
     queryKey: ["party-search", customerQuery],
@@ -573,6 +586,7 @@ export function BillingPage({ resumeDocumentId }: { resumeDocumentId?: string })
             ) : (
               <div className={styles.customerSearchRow}>
                 <div className={styles.customerSearchWrap}>
+                  {launchCustomer.isError ? <p role="alert">The CRM customer could not be loaded. Search for a customer below, or <button type="button" onClick={() => void launchCustomer.refetch()}>retry</button>.</p> : null}
                   <input
                     id="customer-search"
                     ref={customerSearchRef}

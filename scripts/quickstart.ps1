@@ -14,9 +14,7 @@
 # Usage (run in PowerShell):
 #   irm https://raw.githubusercontent.com/Raktim94/rechvix/main/scripts/quickstart.ps1 | iex
 #
-# Safe to re-run: every step only acts if the previous one didn't already
-# succeed, and an existing checkout inside WSL2 is updated in place rather
-# than re-cloned.
+# Fresh installs only. The Linux installer refuses existing directories.
 #
 # One real limitation this script can't script around: if WSL2 has never
 # been turned on on this PC before, Windows needs ONE restart to finish
@@ -85,8 +83,9 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     }
 }
 
-Write-Host "==> Installing and starting Rechvix inside WSL2 (Docker Engine and git are installed automatically in there if needed)..."
-wsl.exe -d $distroName -u root -- bash -lc "curl -fsSL $linuxQuickstartUrl | bash"
+Write-Host "==> Installing and starting Rechvix inside WSL2 (Docker Compose v2, git and curl must already be installed in the WSL distribution)..."
+wsl.exe -d $distroName -- bash -lc "set -o pipefail; curl -fsSL $linuxQuickstartUrl | bash"
+if ($LASTEXITCODE -ne 0) { throw "Linux installation failed. Review the error above; Rechvix is not ready." }
 
 Write-Host ""
 Write-Host "Rechvix is up and running." -ForegroundColor Green

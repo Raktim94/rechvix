@@ -9,7 +9,7 @@ import layout from "../DashboardPage.module.css";
 interface Stage { id: string; name: string; sort_order: number; kind: string }
 interface Opp {
   id: string; title: string; party_id?: string; customer_name?: string; company_name?: string; contact_name?: string; contact_email?: string; contact_phone?: string;
-  value: string; currency: string; stage_id: string; stage_kind: string; expected_close?: string; source?: string; notes?: string; open_tasks: number;
+  owner_user_id?: string; value: string; currency: string; stage_id: string; stage_kind: string; expected_close?: string; source?: string; notes?: string; open_tasks: number;
 }
 interface Activity { id: string; kind: string; subject: string; notes?: string; due_at?: string; done_at?: string; created_at: string; opportunity_title?: string; opportunity_id: string }
 
@@ -34,9 +34,11 @@ function OppDetail({ opp, stages, onClose }: { opp: Opp; stages: Stage[]; onClos
   });
   const toggle = useMutation({ mutationFn: (a: Activity) => api.post(`/crm/activities/${a.id}/${a.done_at ? "reopen" : "done"}`), onSuccess: refresh });
   const move = useMutation({ mutationFn: (stageId: string) => api.post(`/crm/opportunities/${opp.id}/move`, { stage_id: stageId }), onSuccess: refresh });
+  const owners = useQuery({ queryKey: ["crm-owners"], queryFn: () => api.getListField<{ id: string; name: string }>("/crm/owners", "owners") });
+  const assign = useMutation({ mutationFn: (owner: string) => api.post(`/crm/opportunities/${opp.id}/assign`, { owner_user_id: owner || null }), onSuccess: refresh });
   const makeCustomer = useMutation({ mutationFn: () => api.post(`/crm/opportunities/${opp.id}/make-customer`), onSuccess: refresh });
   const remove = useMutation({ mutationFn: () => api.delete(`/crm/opportunities/${opp.id}`), onSuccess: () => { refresh(); onClose(); } });
-  const err = [add, toggle, move, makeCustomer, remove].find((m) => m.isError)?.error;
+  const err = [add, toggle, move, assign, makeCustomer, remove].find((m) => m.isError)?.error;
   return (
     <section className={layout.panel} aria-labelledby="opp-heading">
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -53,9 +55,17 @@ function OppDetail({ opp, stages, onClose }: { opp: Opp; stages: Stage[]; onClos
             {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
+        <div className={ui.field}>
+          <label htmlFor="opp-owner">Opportunity owner</label>
+          <select id="opp-owner" className={ui.input} value={opp.owner_user_id ?? ""} disabled={owners.isPending || owners.isError || assign.isPending} onChange={(e) => assign.mutate(e.target.value)}>
+            <option value="">Unassigned</option>
+            {owners.data?.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
+          </select>
+          {owners.isError ? <p role="alert">Owners could not be loaded. <button type="button" onClick={() => void owners.refetch()}>Retry</button></p> : null}
+        </div>
       </div>
       <div className={ui.formActions} style={{ justifyContent: "flex-start", flexWrap: "wrap", gap: 8 }}>
-        {opp.party_id ? <Link to="/sales/new" className={ui.btnPrimary}>Create a quotation</Link> : <button type="button" className={ui.btnPrimary} disabled={makeCustomer.isPending} onClick={() => makeCustomer.mutate()}>Make this a customer</button>}
+        {opp.party_id ? <Link to="/sales/new" search={{ customer: opp.party_id, kind: "QUOTATION" }} className={ui.btnPrimary}>Create a quotation</Link> : <button type="button" className={ui.btnPrimary} disabled={makeCustomer.isPending} onClick={() => makeCustomer.mutate()}>Make this a customer</button>}
         {opp.party_id ? <Link to="/contacts/$id" params={{ id: opp.party_id }} className={ui.btnSecondary}>Open customer</Link> : null}
         <button type="button" className={ui.btnGhost} onClick={() => { if (window.confirm("Delete this opportunity and its activities?")) remove.mutate(); }}>Delete</button>
       </div>

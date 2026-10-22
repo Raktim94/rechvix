@@ -162,12 +162,14 @@ const salesNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sales/new",
   beforeLoad: requireAuth,
-  validateSearch: (search: Record<string, unknown>): { resume?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { resume?: string; customer?: string; kind?: "QUOTATION" } => ({
     resume: typeof search.resume === "string" ? search.resume : undefined,
+    customer: typeof search.customer === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.customer) ? search.customer : undefined,
+    kind: search.kind === "QUOTATION" ? "QUOTATION" : undefined,
   }),
   component: withShell(() => {
-    const { resume } = useSearch({ from: salesNewRoute.id });
-    return <BillingPage resumeDocumentId={resume} />;
+    const { resume, customer, kind } = useSearch({ from: salesNewRoute.id });
+    return <BillingPage resumeDocumentId={resume} initialCustomerId={customer} initialDocumentType={kind} />;
   }),
 });
 

@@ -30,7 +30,7 @@ require_cmd docker "Install Docker: https://docs.docker.com/get-docker/ (macOS: 
 if ! docker compose version >/dev/null 2>&1; then
   if command -v docker-compose >/dev/null 2>&1; then
     warn "Using legacy 'docker-compose' — consider upgrading to the 'docker compose' plugin (Compose v2)."
-    COMPOSE="docker-compose"
+    die "Docker Compose v2 is required; upgrade before installing."
   else
     die "Docker Compose not found. Install Docker Desktop, or the 'docker compose' plugin: https://docs.docker.com/compose/install/"
   fi
@@ -47,13 +47,11 @@ if [ -f "go.mod" ] && grep -q '^module rechvix' go.mod 2>/dev/null; then
   log "Already inside the rechvix repo — using the current directory."
   REPO_DIR="$(pwd)"
 elif [ -d "$INSTALL_DIR/.git" ]; then
-  log "Found existing clone at ./$INSTALL_DIR — pulling latest main."
-  git -C "$INSTALL_DIR" pull --ff-only
-  REPO_DIR="$(pwd)/$INSTALL_DIR"
+  die "$INSTALL_DIR already exists. Follow the backup and upgrade guide; no files were changed."
 else
   log "Cloning $REPO_URL into ./$INSTALL_DIR ..."
   git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
-  REPO_DIR="$(pwd)/$INSTALL_DIR"
+  REPO_DIR="$(cd "$INSTALL_DIR" && pwd)"
 fi
 
 cd "$REPO_DIR/deploy/compose"
@@ -73,7 +71,9 @@ else
   gen_secret() { openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
   gen_key()    { openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64; }
 
+  umask 077
   cp .env.example .env
+  chmod 600 .env
   # macOS/BSD sed needs `-i ''`; GNU sed needs `-i` with no argument — detect.
   SED_INPLACE=(-i)
   if [[ "$(uname)" == "Darwin" ]]; then SED_INPLACE=(-i ''); fi
@@ -87,8 +87,20 @@ HTTP_PORT="$(grep -E '^HTTP_PORT=' .env | cut -d= -f2)"
 HTTP_PORT="${HTTP_PORT:-8080}"
 
 log "Starting Rechvix (postgres, migrate, app, worker) via $COMPOSE ..."
-$COMPOSE up -d --build
+$COMPOSE up -d --build --wait --wait-timeout 180
 
-log "Done. Open http://localhost:${HTTP_PORT}/setup to create your organisation."
+# Compose health and an actual HTTP response must both pass before reporting success.
+ready=false
+for ((attempt=0; attempt<30; attempt++)); do
+  if curl --fail --silent --max-time 5 "http://localhost:${HTTP_PORT}/api/v1/auth/bootstrap" >/dev/null; then
+    ready=true
+    break
+  fi
+  sleep 2
+done
+if [ "$ready" != true ]; then
+  die "Containers started, but the app did not become ready. Check: $COMPOSE logs app migrate worker"
+fi
+log "Ready. Open http://localhost:${HTTP_PORT}/setup to create your organisation."
 log "Secrets and settings live in: $REPO_DIR/deploy/compose/.env"
 log "Logs: cd $REPO_DIR/deploy/compose && $COMPOSE logs -f"

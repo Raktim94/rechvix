@@ -821,8 +821,10 @@ func (s *Service) GetAgeing(ctx context.Context, principal permissions.Principal
 		return domain.AgeingBucket{}, err
 	}
 	var rows []domain.LedgerRow
+	var ledgerCurrency string
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
+		ledgerCurrency = money.LedgerCurrency(ctx)
 		rows, err = s.journalLines.ListByPartyUpTo(ctx, principal.OrganisationID, partyID, asOf)
 		return err
 	})
@@ -855,7 +857,7 @@ func (s *Service) GetAgeing(ctx context.Context, principal permissions.Principal
 	}
 	sort.Slice(open, func(i, j int) bool { return open[i].date.Before(open[j].date) })
 
-	zero, err := money.Zero(money.LedgerCurrency(ctx))
+	zero, err := money.Zero(ledgerCurrency)
 	if err != nil {
 		return domain.AgeingBucket{}, err
 	}
@@ -865,7 +867,7 @@ func (s *Service) GetAgeing(ctx context.Context, principal permissions.Principal
 			continue
 		}
 		days := int(asOf.Sub(od.date).Hours() / 24)
-		amt, err := money.New(od.amount, money.LedgerCurrency(ctx))
+		amt, err := money.New(od.amount, ledgerCurrency)
 		if err != nil {
 			return domain.AgeingBucket{}, err
 		}
