@@ -119,6 +119,9 @@ func (s *Service) MarkAttendance(ctx context.Context, principal permissions.Prin
 		Status: p.Status, Notes: p.Notes, MarkedBy: principal.UserID, CreatedAt: now, UpdatedAt: now,
 	}
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if _, err := s.members.GetByID(ctx, principal.OrganisationID, p.StaffMemberID); err != nil {
+			return err
+		}
 		if err := s.attendance.Upsert(ctx, r); err != nil {
 			return err
 		}
@@ -170,6 +173,11 @@ func (s *Service) CreateTask(ctx context.Context, principal permissions.Principa
 		AssignedTo: p.AssignedTo, Status: domain.TaskPending, CreatedBy: principal.UserID, CreatedAt: now,
 	}
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if p.AssignedTo != nil {
+			if _, err := s.members.GetByID(ctx, principal.OrganisationID, *p.AssignedTo); err != nil {
+				return err
+			}
+		}
 		return s.tasks.Create(ctx, t)
 	})
 	if err != nil {

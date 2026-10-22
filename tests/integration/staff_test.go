@@ -193,3 +193,30 @@ func TestStaff_RLS_BlocksCrossOrganisationReads(t *testing.T) {
 	}
 	assertInvisibleToOtherOrg(t, ctx, "tasks", task.ID, principalB.OrganisationID)
 }
+
+// Foreign staff identifiers must not create dangling cross-organisation work records.
+func TestStaff_RejectsForeignStaffReferences(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestStaffService(t)
+	owner := setupStaffPrincipal(t, ctx)
+	other := setupStaffPrincipal(t, ctx)
+	member, err := svc.CreateStaffMember(ctx, other, staffapp.CreateStaffMemberParams{Name: "Other business member"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	date := mustDate(t, "2026-10-22")
+	if _, err := svc.MarkAttendance(ctx, owner, staffapp.MarkAttendanceParams{StaffMemberID: member.ID, AttendanceDate: date, Status: staffdomain.AttendancePresent}); err != staffdomain.ErrNotFound {
+		t.Fatalf("foreign attendance: got %v, want not found", err)
+	}
+	if _, err := svc.CreateTask(ctx, owner, staffapp.CreateTaskParams{Title: "Foreign assignment", DueDate: date, AssignedTo: &member.ID}); err != staffdomain.ErrNotFound {
+		t.Fatalf("foreign task: got %v, want not found", err)
+	}
+	records, err := svc.ListAttendance(ctx, owner, date, date)
+	if err != nil || len(records) != 0 {
+		t.Fatalf("rejected attendance persisted: %v, %v", records, err)
+	}
+	tasks, err := svc.ListTasks(ctx, owner, date, date)
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("rejected task persisted: %v, %v", tasks, err)
+	}
+}
