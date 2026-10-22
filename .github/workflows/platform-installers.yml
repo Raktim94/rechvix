@@ -1,0 +1,29 @@
+name: Platform installer contracts
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/install-windows.ps1
+      - scripts/test-windows-installer.ps1
+      - scripts/test-installer.sh
+      - install.sh
+      - .github/workflows/platform-installers.yml
+permissions:
+  contents: read
+jobs:
+  unix-contract:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/test-installer.sh
+  windows-contract:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native Store installer contract and failure behavior
+        shell: pwsh
+        run: ./scripts/test-windows-installer.ps1

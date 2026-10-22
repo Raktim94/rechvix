@@ -28,7 +28,11 @@ chmod +x "$scratch/bin/"*
 export PATH="$scratch/bin:$PATH" TEST_LOG="$scratch/log" RECHVIX_INSTALL_DIR=rechvix
 cd "$scratch/repo"
 bash ./install.sh > "$scratch/output"
-test "$(stat -c %a deploy/compose/.env)" = 600
+if [ "$(uname -s)" = Darwin ]; then
+  test "$(stat -f %Lp deploy/compose/.env)" = 600
+else
+  test "$(stat -c %a deploy/compose/.env)" = 600
+fi
 ! grep -E 'CHANGE_ME|changeme' deploy/compose/.env
 cp deploy/compose/.env "$scratch/original.env"
 bash ./install.sh > /dev/null

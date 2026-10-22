@@ -4,6 +4,7 @@ import { useState } from "react";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
+import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 
 interface Stage { id: string; name: string; sort_order: number; kind: string }
@@ -109,25 +110,27 @@ function OppDetail({ opp, stages, onClose }: { opp: Opp; stages: Stage[]; onClos
 }
 
 export function CrmPage() {
+  const org = useOrgContext();
+  const defaultCurrency = org.organisation?.DefaultCurrencyCode ?? "INR";
   const qc = useQueryClient();
   const stages = useQuery({ queryKey: ["crm", "stages"], queryFn: () => api.getListField<Stage>("/crm/stages", "stages") });
   const opps = useQuery({ queryKey: ["crm", "opps"], queryFn: () => api.getListField<Opp>("/crm/opportunities", "opportunities") });
   const tasks = useQuery({ queryKey: ["crm", "tasks"], queryFn: () => api.getListField<Activity>("/crm/tasks", "tasks") });
   const [selected, setSelected] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: "", company: "", contact: "", email: "", phone: "", value: "", currency: "EUR" });
+  const [form, setForm] = useState({ title: "", company: "", contact: "", email: "", phone: "", value: "", currency: "" });
   const create = useMutation({
-    mutationFn: () => api.post<Opp>("/crm/opportunities", { title: form.title, company_name: form.company, contact_name: form.contact, contact_email: form.email, contact_phone: form.phone, value: form.value || "0", currency: form.currency }),
+    mutationFn: () => api.post<Opp>("/crm/opportunities", { title: form.title, company_name: form.company, contact_name: form.contact, contact_email: form.email, contact_phone: form.phone, value: form.value || "0", currency: form.currency || defaultCurrency }),
     onSuccess: (o) => { setForm({ ...form, title: "", company: "", contact: "", email: "", phone: "", value: "" }); void qc.invalidateQueries({ queryKey: ["crm"] }); setSelected(o.id); },
   });
   const current = (opps.data ?? []).find((o) => o.id === selected);
-  const totalOpen = (opps.data ?? []).filter((o) => o.stage_kind === "OPEN").reduce((n, o) => n + Number(o.value), 0);
+  const openCount = (opps.data ?? []).filter((o) => o.stage_kind === "OPEN").length;
 
   return (
     <div className={layout.page}>
       <div className={layout.heading}>
         <div>
           <h1>CRM</h1>
-          <p className={layout.subtitle}>Leads and deals, from first contact to a customer. {totalOpen > 0 ? `Open pipeline: ${formatMoney({ amount: String(totalOpen), currency: opps.data?.[0]?.currency ?? "EUR" })}.` : ""}</p>
+          <p className={layout.subtitle}>Leads and deals, from first contact to a customer. {openCount > 0 ? `${openCount} open ${openCount === 1 ? "opportunity" : "opportunities"}. Values retain their own currency.` : ""}</p>
         </div>
       </div>
 
@@ -141,7 +144,7 @@ export function CrmPage() {
             <div className={ui.field}><label htmlFor="o-email">Email</label><input id="o-email" type="email" className={ui.input} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div className={ui.field}><label htmlFor="o-phone">Phone</label><input id="o-phone" className={ui.input} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
             <div className={ui.field}><label htmlFor="o-value">Expected value</label><input id="o-value" inputMode="decimal" className={ui.input} value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} /></div>
-            <div className={ui.field}><label htmlFor="o-cur">Currency</label><input id="o-cur" className={ui.input} maxLength={3} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></div>
+            <div className={ui.field}><label htmlFor="o-cur">Currency</label><input id="o-cur" className={ui.input} maxLength={3} value={form.currency || defaultCurrency} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></div>
           </div>
           <div className={ui.formActions} style={{ justifyContent: "flex-start" }}>
             <button type="submit" className={ui.btnPrimary} disabled={!form.title.trim() || (!form.company.trim() && !form.contact.trim()) || create.isPending}>Add lead</button>

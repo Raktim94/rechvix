@@ -215,3 +215,13 @@ The one-command quickstart requires Docker Engine with Compose v2 (or Docker Des
 Rechvix already implements a staged CRM pipeline, activities, lead-to-customer conversion, staff attendance and assigned calendar tasks, alongside recurring billing, document sharing and payment workflows. Opportunity ownership can be assigned to an active user in the same organisation, with an audit event. CRM links open a quotation for the chosen customer. The reference checks reject foreign-tenant customer and owner IDs.
 
 The implementation adapts relevant Zulivio and Mavri workflows to Go/PostgreSQL. It is not full feature parity: Zulivio reporting hierarchies, assignment rules, breaks/shifts and advanced workforce tracking remain outside the shipped scope. See [reuse matrix](docs/reuse-matrix.md) and [current acceptance evidence](docs/audit-2026-10-22.md). No blanket country tax-compliance claim is made; see [tax regimes](docs/tax-regimes.md).
+
+### Windows desktop, one command
+
+Run in PowerShell (WinGet/App Installer required):
+
+```powershell
+irm https://rechvix.nodedr.com/install.ps1 | iex
+```
+
+[Read the native Windows script](scripts/install-windows.ps1) first. It installs the verified Microsoft Store product `9NMPSP7CR5RW` using WinGet, preserves agreement prompts and propagates installation failures. This is the desktop app with bundled server/database; it does not need WSL or Docker. The separate legacy WSL server bootstrap is an advanced route requiring its Linux Docker prerequisites.
