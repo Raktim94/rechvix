@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+case "$1" in
+remove) [ -d /run/systemd/system ] && systemctl daemon-reload || true ;;
+purge)
+  [ -d /run/systemd/system ] && systemctl daemon-reload || true
+  # Deliberately kept: the "billing" database and /etc/rechvix. Removing a package must never delete business
+  # records, and the encryption key in the configuration cannot be recreated.
+  echo "rechvix: the database \"billing\" and /etc/rechvix/rechvix.env were kept. Remove them by hand only after a backup." >&2
+  ;;
+esac
+exit 0

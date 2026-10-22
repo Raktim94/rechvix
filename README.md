@@ -74,6 +74,16 @@ The ZIP package includes an XLSX workbook, CSV registers, exact-decimal source J
 
 ## Install Rechvix
 
+### Ubuntu and Debian (native package)
+
+One command installs the `.deb` for your CPU (amd64 or arm64), sets up PostgreSQL and the database, and starts Rechvix on port 8090. Supported: Ubuntu 24.04 and Debian 12 or newer (PostgreSQL 15 or newer), with systemd.
+
+```bash
+curl -fsSL https://rechvix.nodedr.com/install-linux.sh | sudo bash
+```
+
+Open `http://<your-server>:8090` and complete `/setup`. Manage it with `rechvix status | url | logs | backup`. Configuration and the encryption key are in `/etc/rechvix/rechvix.env`; keep a private copy. Removing the package keeps your database and key on purpose. The package is built by `.github/workflows/deb.yml`, which installs, uses, upgrades, removes and purges it on Ubuntu (amd64, arm64) and Debian before every release. You can also download the `.deb` and its `.sha256` from the [releases page](https://github.com/Raktim94/rechvix/releases) and run `sudo apt install ./rechvix_<version>_<arch>.deb`.
+
 ### Docker Compose on your own server
 
 With Docker installed, inspect [install.sh](install.sh), then run:

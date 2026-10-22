@@ -1,0 +1,18 @@
+Package: rechvix
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: Raktim Ranjit <raktim@nodedr.com>
+Section: misc
+Priority: optional
+Depends: postgresql (>= 15), postgresql-client (>= 15), openssl, adduser, ca-certificates, systemd | systemd-sysv
+Homepage: https://rechvix.nodedr.com
+Installed-Size: @SIZE@
+Description: Open-source business software: invoicing, CRM, stock and accounts
+ Rechvix connects invoicing, CRM, multi-warehouse inventory, purchasing,
+ payments and double-entry accounting, with tax workpapers for India, Spain,
+ the United Kingdom and the United States. It runs on your own server with a
+ local PostgreSQL database. The web interface is served on port 8090.
+ .
+ This package installs the server, the background worker and the web
+ application, creates the database and its two roles, and starts both
+ services. Licensed under the GNU AGPL-3.0.

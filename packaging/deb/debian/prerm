@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+case "$1" in
+remove|upgrade|deconfigure)
+  if [ -d /run/systemd/system ]; then systemctl stop rechvix-worker.service rechvix.service >/dev/null 2>&1 || true; fi
+  ;;
+esac
+exit 0

@@ -1,0 +1,27 @@
+[Unit]
+Description=Rechvix server (invoicing, CRM, stock and accounts)
+Documentation=https://rechvix.nodedr.com/install
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=rechvix
+Group=rechvix
+EnvironmentFile=/etc/rechvix/rechvix.env
+Environment=WEB_DIST_DIR=/usr/share/rechvix/web
+ExecStart=/usr/lib/rechvix/server
+Restart=on-failure
+RestartSec=3
+StateDirectory=rechvix
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

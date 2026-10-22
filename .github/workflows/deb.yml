@@ -1,0 +1,129 @@
+name: Debian package
+
+# Builds the Ubuntu/Debian package (amd64 and arm64) and proves it works: installs it on a real machine with
+# systemd, creates a business, signs in, writes data, reinstalls, removes and purges it (scripts/test-deb.sh).
+# A release is published only by running this workflow by hand with a version: it attaches the .deb files and
+# their SHA-256 checksums to the GitHub release v<version>, which scripts/install-linux.sh downloads.
+
+on:
+  pull_request:
+    paths: ["packaging/deb/**", "scripts/test-deb.sh", "scripts/install-linux.sh", ".github/workflows/deb.yml", "apps/**", "internal/**", "migrations/**", "go.mod"]
+  push:
+    branches: [main]
+    paths: ["packaging/deb/**", "scripts/test-deb.sh", "scripts/install-linux.sh", ".github/workflows/deb.yml"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build and publish, for example 0.15.2. Leave empty to build and test only."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deb-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.27.3"
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with: { go-version: "${{ env.GO_VERSION }}", cache: true }
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: npm, cache-dependency-path: apps/web/package-lock.json }
+      - name: Build the web app
+        working-directory: apps/web
+        run: npm ci && npm run build
+      - name: Build the package
+        run: |
+          VERSION="${{ github.event.inputs.version }}"; VERSION="${VERSION#v}"
+          [ -n "$VERSION" ] || VERSION="$(sed -n 's/^const Version = "\(.*\)"/\1/p' internal/platform/version/version.go)"
+          packaging/deb/build.sh "$VERSION" "${{ matrix.arch }}"
+          dpkg-deb -I dist/*.deb
+      - uses: actions/upload-artifact@v4
+        with: { name: "deb-${{ matrix.arch }}", path: "dist/*", if-no-files-found: error }
+
+  shell-checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Scripts parse and lint
+        run: |
+          sudo apt-get install -y -qq shellcheck >/dev/null
+          for f in packaging/deb/debian/postinst packaging/deb/debian/prerm packaging/deb/debian/postrm packaging/deb/files/rechvix scripts/test-deb.sh scripts/install-linux.sh packaging/deb/build.sh; do bash -n "$f"; done
+          shellcheck -S error packaging/deb/debian/postinst packaging/deb/debian/prerm packaging/deb/debian/postrm packaging/deb/files/rechvix scripts/install-linux.sh packaging/deb/build.sh
+      - name: systemd units are valid
+        run: systemd-analyze verify packaging/deb/files/rechvix.service packaging/deb/files/rechvix-worker.service 2>&1 | grep -v -E "rechvix.env|/usr/lib/rechvix|User=rechvix|postgresql" || true
+
+  # Install, functionality, upgrade, remove and purge, on a real Ubuntu 24.04 machine (PostgreSQL 16).
+  test-ubuntu:
+    name: Install and remove (Ubuntu 24.04, ${{ matrix.arch }})
+    needs: build
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with: { name: "deb-${{ matrix.arch }}", path: dist }
+      - name: Verify checksum
+        run: cd dist && sha256sum -c ./*.sha256
+      - name: Install, use, upgrade, remove, purge
+        run: sudo DEB="$PWD/$(ls dist/*.deb)" scripts/test-deb.sh
+
+  # Same checks on Debian 12 (PostgreSQL 15), in a container that runs systemd.
+  test-debian:
+    name: Install and remove (Debian 12)
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with: { name: deb-amd64, path: dist }
+      - name: Run the package checks in Debian 12
+        run: |
+          docker run -d --name deb12 --tmpfs /tmp --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host jrei/systemd-debian:12
+          sleep 5
+          docker exec deb12 mkdir -p /opt/t
+          docker cp "$(ls dist/*.deb)" deb12:/opt/t/rechvix.deb
+          docker cp scripts/test-deb.sh deb12:/opt/t/
+          # A container cannot apply the unit's sandboxing; RELAX_SANDBOX relaxes only that, for this test.
+          docker exec -e DEB=/opt/t/rechvix.deb -e RELAX_SANDBOX=1 deb12 bash /opt/t/test-deb.sh
+
+  publish:
+    name: Publish release assets
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+    needs: [build, shell-checks, test-ubuntu, test-debian]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with: { pattern: "deb-*", path: dist, merge-multiple: true }
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"; VERSION="${VERSION#v}"; TAG="v$VERSION"
+          cp scripts/install-linux.sh dist/install-linux.sh
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            awk -v v="$VERSION" '$0 ~ "^## "v"$"{f=1;next} /^## /{f=0} f' CHANGELOG.md > notes.md
+            printf '\n### Install on Ubuntu or Debian (amd64, arm64)\n\n```\ncurl -fsSL https://rechvix.nodedr.com/install-linux.sh | sudo bash\n```\n\nDocker, CasaOS and the Windows app are described at https://rechvix.nodedr.com/install.\n' >> notes.md
+            gh release create "$TAG" dist/* --target "${{ github.sha }}" --title "Rechvix $VERSION" --notes-file notes.md
+          fi

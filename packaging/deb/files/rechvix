@@ -1,0 +1,23 @@
+#!/bin/sh
+# Small helper for a package install of Rechvix. Run `rechvix help`.
+set -eu
+ENV=/etc/rechvix/rechvix.env
+port() { sed -n 's/^HTTP_PORT=//p' "$ENV" 2>/dev/null | head -n1; }
+case "${1:-help}" in
+  status) systemctl --no-pager status rechvix rechvix-worker postgresql ;;
+  url)    printf 'http://%s:%s\n' "$(hostname -I 2>/dev/null | awk '{print $1}')" "$(port)" ;;
+  logs)   shift; exec journalctl -u rechvix -u rechvix-worker "$@" ;;
+  restart) systemctl restart rechvix rechvix-worker ;;
+  backup) # Full logical backup of the database to a file; the encryption key in /etc/rechvix must be kept with it.
+    out="${2:-rechvix-$(date +%Y%m%d-%H%M%S).dump}"
+    [ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo rechvix backup [file]" >&2; exit 1; }
+    runuser -u postgres -- pg_dump -Fc billing > "$out"
+    echo "Wrote $out. Also keep a copy of $ENV: without its AEAD_ENCRYPTION_KEY, stored integration credentials cannot be read."
+    ;;
+  version) dpkg-query -W -f='${Version}\n' rechvix ;;
+  *) cat <<USAGE
+rechvix status | url | logs [journalctl options] | restart | backup [file] | version
+Config: $ENV   Data: PostgreSQL database "billing"
+USAGE
+  ;;
+esac

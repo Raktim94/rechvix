@@ -1,0 +1,101 @@
+#!/bin/sh
+# Creates the service user, the two database roles and the database, writes the configuration with
+# freshly generated secrets (only if it does not exist yet), applies migrations and starts the services.
+# Every step is safe to run again, so upgrades reuse it unchanged. The database is never dropped.
+set -e
+
+ENV=/etc/rechvix/rechvix.env
+DB=billing
+
+case "$1" in
+configure)
+  getent group rechvix >/dev/null || addgroup --system rechvix >/dev/null
+  getent passwd rechvix >/dev/null || adduser --system --ingroup rechvix --home /var/lib/rechvix --no-create-home --shell /usr/sbin/nologin rechvix >/dev/null
+
+  # PostgreSQL has to be running to create the roles. On a fresh install of the postgresql package it is
+  # started by that package; in a container or chroot without systemd, start the first cluster by hand.
+  start_pg() {
+    if command -v pg_lsclusters >/dev/null 2>&1; then
+      pg_lsclusters -h | awk '$4=="down"{print $1, $2}' | while read -r v n; do pg_ctlcluster "$v" "$n" start 2>/dev/null || true; done
+    fi
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      runuser -u postgres -- psql -Atqc 'select 1' >/dev/null 2>&1 && return 0
+      sleep 1
+    done
+    echo "rechvix: PostgreSQL is not accepting connections; install finished but the database was not prepared." >&2
+    echo "         Start PostgreSQL, then run: sudo dpkg-reconfigure rechvix" >&2
+    exit 1
+  }
+  start_pg
+
+  if [ ! -f "$ENV" ]; then
+    gen() { openssl rand -base64 33 | tr -d '/+=\n' | cut -c1-32; }
+    MIGRATOR_PW=$(gen); APP_PW=$(gen); KEY=$(openssl rand -base64 32)
+    install -d -m 0750 -o root -g rechvix /etc/rechvix
+    umask 027
+    cat > "$ENV" <<CONF
+# Rechvix configuration, written once on first install. Keep a private copy: AEAD_ENCRYPTION_KEY cannot be
+# regenerated, and without it stored integration credentials (email, payment providers) cannot be read.
+HTTP_PORT=8090
+# Set to true once the site is served over HTTPS (for example behind a reverse proxy).
+SESSION_COOKIE_SECURE=false
+ENABLE_BOOTSTRAP=true
+DATABASE_AUTO_MIGRATE=false
+LOG_LEVEL=info
+AEAD_ENCRYPTION_KEY=$KEY
+DATABASE_DSN=postgres://billing_app:$APP_PW@127.0.0.1:5432/$DB?sslmode=disable
+BACKUP_DATABASE_DSN=postgres://billing_migrator:$MIGRATOR_PW@127.0.0.1:5432/$DB?sslmode=disable
+MIGRATE_DATABASE_DSN=postgres://billing_migrator:$MIGRATOR_PW@127.0.0.1:5432/$DB?sslmode=disable
+# Optional: public link base for emailed documents, and email (SMTP). Leave empty to keep them off.
+PUBLIC_BASE_URL=
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=
+SMTP_TLS=starttls
+CONF
+    chown root:rechvix "$ENV"; chmod 0640 "$ENV"
+    FRESH=1
+  fi
+
+  # Passwords for the roles come from the configuration file, so a re-run keeps them in step.
+  val() { sed -n "s#^$1=##p" "$ENV" | head -n1; }
+  dsn_pw() { val "$1" | sed -n 's#^postgres://[^:]*:\([^@]*\)@.*#\1#p'; }
+  MIGRATOR_PW=$(dsn_pw MIGRATE_DATABASE_DSN); APP_PW=$(dsn_pw DATABASE_DSN)
+
+  psql_pg() { runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qAt "$@"; }
+  psql_pg -d postgres <<SQL
+DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='billing_migrator') THEN CREATE ROLE billing_migrator LOGIN PASSWORD '$MIGRATOR_PW'; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='billing_app') THEN CREATE ROLE billing_app LOGIN PASSWORD '$APP_PW'; END IF;
+END \$\$;
+SQL
+  # A fresh install sets the passwords; a re-run leaves roles an operator may have changed alone.
+  if [ "${FRESH:-}" = 1 ]; then
+    psql_pg -d postgres -c "ALTER ROLE billing_migrator PASSWORD '$MIGRATOR_PW'" -c "ALTER ROLE billing_app PASSWORD '$APP_PW'" >/dev/null
+  fi
+  if [ "$(psql_pg -d postgres -c "SELECT 1 FROM pg_database WHERE datname='$DB'")" != 1 ]; then
+    runuser -u postgres -- createdb -O billing_migrator "$DB"
+  fi
+
+  # Apply schema changes as the table-owning role (the runtime role must not own tables: row-level security).
+  if ! runuser -u rechvix -- env DATABASE_DSN="$(val MIGRATE_DATABASE_DSN)" /usr/lib/rechvix/server -migrate; then
+    echo "rechvix: database migration failed. The services were not started; see the message above." >&2
+    exit 1
+  fi
+
+  if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    systemctl enable rechvix.service rechvix-worker.service >/dev/null 2>&1 || true
+    systemctl restart rechvix.service rechvix-worker.service || true
+    PORT=$(val HTTP_PORT)
+    echo
+    echo "Rechvix is installed. Open http://localhost:${PORT:-8090} (or this machine's address) and complete /setup."
+    echo "Commands: rechvix status | url | logs | backup.  Keep a copy of $ENV."
+  else
+    echo "Rechvix is installed. No systemd here, so the services were not started; run /usr/lib/rechvix/server with $ENV."
+  fi
+  ;;
+esac
+exit 0

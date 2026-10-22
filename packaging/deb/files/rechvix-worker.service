@@ -1,0 +1,26 @@
+[Unit]
+Description=Rechvix background worker (reminders, recurring invoices, backups, outbox)
+Documentation=https://rechvix.nodedr.com/install
+After=rechvix.service postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=rechvix
+Group=rechvix
+EnvironmentFile=/etc/rechvix/rechvix.env
+ExecStart=/usr/lib/rechvix/worker
+Restart=on-failure
+RestartSec=3
+StateDirectory=rechvix
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
