@@ -1,6 +1,12 @@
 name: Fresh installer smoke test
 on:
   workflow_dispatch:
+    inputs:
+      installer_source:
+        description: Bootstrap source to test in the isolated runner
+        type: choice
+        options: [repository, website]
+        default: repository
   push:
     branches: [main]
     paths:
@@ -14,6 +20,8 @@ jobs:
   install:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      INSTALLER_SOURCE: ${{ inputs.installer_source || 'repository' }}
     steps:
       - uses: actions/checkout@v4
       - name: Set isolated installation directory
@@ -22,7 +30,11 @@ jobs:
         run: bash scripts/test-installer.sh
       - name: Fresh clone, build and start in isolated runner
         run: |
-          bash scripts/quickstart.sh
+          if [ "$INSTALLER_SOURCE" = website ]; then
+            curl -fsSL https://rechvix.nodedr.com/install.sh | bash
+          else
+            bash scripts/quickstart.sh
+          fi
           test "$(git -C "$RECHVIX_INSTALL_DIR" rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(stat -c %a "$RECHVIX_INSTALL_DIR/deploy/compose/.env")" = 600
       - name: Verify setup and runtime database boundary
