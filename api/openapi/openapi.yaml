@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rechvix API
-  version: "0.1.0"
+  version: "0.15.1"
   description: >
     Multi-company, multi-branch, multi-warehouse billing, inventory,
     accounting, and India-GST tax-management API. This spec is generated
@@ -12,13 +12,12 @@ info:
     error envelope, money shape, pagination status) that apply across
     every endpoint below rather than being repeated per-operation.
 
-    Status: complete — all 124 real routes across all 15 HTTP modules are
-    present and typed, mechanically verified against a grep of every
-    r.Get/Post/Put/Delete/Patch(...) registration in the codebase (exact
-    match, see the git history for this file). Kept current as endpoints
-    ship (docs/TODO.md's cross-cutting checklist item) — re-run that same
-    grep diff after adding or changing a route, don't just trust this
-    note.
+    Coverage: this contract includes the original modules and the CRM routes
+    reviewed on 22 October 2026. It is not a complete inventory of all newer
+    modules. Response casing follows each handler (legacy exported Go fields
+    versus explicit JSON tags); do not assume one casing across all modules.
+    See docs/api.md and the handlers for routes not yet represented here.
+
 servers:
   - url: /api/v1
     description: Same origin as the web app; also reachable directly on the configured HTTP_PORT.
@@ -2082,6 +2081,407 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: object, properties: { status: { type: string, example: deactivated } } } } } }
 
+  /crm/stages:
+    get:
+      tags:
+      - CRM
+      summary: List pipeline stages
+      description: Requires contacts.view. All data is scoped to the authenticated organisation.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - stages
+                properties:
+                  stages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CRMStage'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+  /crm/owners:
+    get:
+      tags:
+      - CRM
+      summary: List active opportunity owners (ID and name only)
+      description: Requires contacts.view. All data is scoped to the authenticated organisation.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - owners
+                properties:
+                  owners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CRMOwner'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+  /crm/opportunities:
+    get:
+      tags:
+      - CRM
+      summary: List opportunities
+      description: Requires contacts.view. All data is scoped to the authenticated organisation.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - opportunities
+                properties:
+                  opportunities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CRMOpportunity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+    post:
+      tags:
+      - CRM
+      summary: Create opportunity
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CRMOpportunityInput'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CRMOpportunity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+  /crm/opportunities/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get opportunity
+      description: Requires contacts.view. All data is scoped to the authenticated organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CRMOpportunity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+    put:
+      tags:
+      - CRM
+      summary: Update opportunity
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CRMOpportunityInput'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CRMOpportunity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+    delete:
+      tags:
+      - CRM
+      summary: Delete opportunity and its activities
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Completed
+        '400':
+          description: Invalid input or foreign reference
+        '403':
+          description: Permission denied
+        '404':
+          description: Not found in this organisation
+  /crm/opportunities/{id}/assign:
+    post:
+      tags:
+      - CRM
+      summary: Assign or clear the active opportunity owner
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner_user_id:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+              additionalProperties: false
+      responses:
+        '204':
+          description: Completed
+        '400':
+          description: Invalid input or foreign reference
+        '403':
+          description: Permission denied
+        '404':
+          description: Not found in this organisation
+  /crm/opportunities/{id}/move:
+    post:
+      tags:
+      - CRM
+      summary: Move opportunity to a stage
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - stage_id
+              properties:
+                stage_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CRMOpportunity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+  /crm/opportunities/{id}/make-customer:
+    post:
+      tags:
+      - CRM
+      summary: Convert lead to customer (repeated calls reuse the linked party)
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CRMOpportunity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+  /crm/opportunities/{id}/activities:
+    get:
+      tags:
+      - CRM
+      summary: List opportunity activities
+      description: Requires contacts.view. All data is scoped to the authenticated organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - activities
+                properties:
+                  activities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CRMActivity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+    post:
+      tags:
+      - CRM
+      summary: Add activity or follow-up task
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CRMActivityInput'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CRMActivity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+  /crm/activities/{id}/done:
+    post:
+      tags:
+      - CRM
+      summary: Complete activity
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Completed
+        '400':
+          description: Invalid input or foreign reference
+        '403':
+          description: Permission denied
+        '404':
+          description: Not found in this organisation
+  /crm/activities/{id}/reopen:
+    post:
+      tags:
+      - CRM
+      summary: Reopen activity
+      description: Requires contacts.manage. All data is scoped to the authenticated
+        organisation.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Completed
+        '400':
+          description: Invalid input or foreign reference
+        '403':
+          description: Permission denied
+        '404':
+          description: Not found in this organisation
+  /crm/tasks:
+    get:
+      tags:
+      - CRM
+      summary: List open follow-up tasks
+      description: Requires contacts.view. All data is scoped to the authenticated organisation.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tasks
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CRMActivity'
+        '403':
+          description: Permission denied
+        '404':
+          description: Record not found in this organisation
+
 components:
   parameters:
     ReportFilterFrom:
@@ -2825,3 +3225,154 @@ components:
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
 
+
+    CRMOwner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    CRMStage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sort_order:
+          type: integer
+        kind:
+          type: string
+    CRMOpportunity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        party_id:
+          type: string
+          format: uuid
+        customer_name:
+          type: string
+        company_name:
+          type: string
+        contact_name:
+          type: string
+        contact_email:
+          type: string
+        contact_phone:
+          type: string
+        value:
+          type: string
+          description: Exact decimal amount
+        currency:
+          type: string
+        stage_id:
+          type: string
+          format: uuid
+        stage_kind:
+          type: string
+          enum:
+          - OPEN
+          - WON
+          - LOST
+        owner_user_id:
+          type: string
+          format: uuid
+        expected_close:
+          type: string
+          format: date
+        source:
+          type: string
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+        open_tasks:
+          type: integer
+    CRMOpportunityInput:
+      type: object
+      required:
+      - title
+      - currency
+      properties:
+        title:
+          type: string
+        party_id:
+          type: string
+          format: uuid
+        company_name:
+          type: string
+        contact_name:
+          type: string
+        contact_email:
+          type: string
+        contact_phone:
+          type: string
+        value:
+          type: string
+          description: Exact decimal amount
+        currency:
+          type: string
+        owner_user_id:
+          type: string
+          format: uuid
+        expected_close:
+          type: string
+          format: date
+        source:
+          type: string
+        notes:
+          type: string
+      additionalProperties: false
+    CRMActivityInput:
+      type: object
+      required:
+      - kind
+      - subject
+      properties:
+        kind:
+          type: string
+        subject:
+          type: string
+        notes:
+          type: string
+        due_at:
+          type: string
+          description: Date in YYYY-MM-DD or timestamp accepted by the handler
+      additionalProperties: false
+    CRMActivity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        opportunity_id:
+          type: string
+          format: uuid
+        opportunity_title:
+          type: string
+        kind:
+          type: string
+        subject:
+          type: string
+        notes:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+        done_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
