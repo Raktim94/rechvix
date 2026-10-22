@@ -1,4 +1,4 @@
-## Unreleased — 22 October 2026 audit
+## 0.15.2
 
 - Dashboard redesigned around one question, "what needs me today?": the period's sales with a comparison to the previous period and an insight headline, a "Needs your attention" list (overdue receivables, overdue CRM follow-ups, low stock, absent staff, tasks), and a ledger strip of today's sales, collections, receivable (with overdue share), payable and stock value. Period selector (7/30/90 days), refresh and freshness note. Headline figures show whole currency units.
 - CRM rebuilt: summary strip, search, owner filter, board and list views, drag-to-move with rollback and keyboard stage buttons, call/WhatsApp/email on each deal, a side sheet for the deal and its activity, overdue follow-up highlighting, and a visible error with retry for each fetch (a failed load used to leave a skeleton on screen forever). Adapts Zulivio's lead card, stage strip and follow-up conventions.
