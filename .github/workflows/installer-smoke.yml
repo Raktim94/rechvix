@@ -14,10 +14,10 @@ jobs:
   install:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      RECHVIX_INSTALL_DIR: ${{ runner.temp }}/fresh-rechvix
     steps:
       - uses: actions/checkout@v4
+      - name: Set isolated installation directory
+        run: echo "RECHVIX_INSTALL_DIR=$RUNNER_TEMP/fresh-rechvix" >> "$GITHUB_ENV"
       - name: Shell safety regressions
         run: bash scripts/test-installer.sh
       - name: Fresh clone, build and start in isolated runner
