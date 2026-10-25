@@ -2,6 +2,12 @@ package httpx
 
 import "net/http"
 
+// contentSecurityPolicy stays same-origin. The extra grants exist only for
+// in-browser bill scanning (tesseract.js): a WASM core compiled from our own
+// files, a worker, and image previews from blob:/data: URLs.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; " +
+	"worker-src 'self' blob:; img-src 'self' data: blob:; frame-ancestors 'none'"
+
 // SecurityHeaders sets the response headers required by brief §59. CSP is
 // deliberately restrictive by default (same-origin only); a deployment
 // serving the SPA from a different origin than the API, or embedding
@@ -10,7 +16,7 @@ import "net/http"
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")

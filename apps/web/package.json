@@ -4,12 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "npm run ocr:assets && vite",
+    "build": "npm run ocr:assets && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "node --test src/lib/*.test.ts",
-    "i18n:check": "node scripts/check-locales.mjs"
+    "i18n:check": "node scripts/check-locales.mjs",
+    "ocr:assets": "node scripts/copy-ocr-assets.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
@@ -31,6 +32,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import ui from "../../components/ui.module.css";
 import { parseBillText, type ParsedBill } from "../../lib/billParser";
-import { getOcrProvider, runOcr } from "../../lib/ocr";
+import { runOcr } from "../../lib/ocr";
 import { useOrgContext } from "../../lib/useOrgContext";
 import { PurchaseScanReviewModal } from "./PurchaseScanReviewModal";
 import { commitScanErrorMessage, useCommitScanToPurchase } from "./useCommitScanToPurchase";
@@ -33,7 +33,7 @@ export function ScanBillButton() {
     setScanProgress(0);
     setScanError(null);
     try {
-      const text = await runOcr(file, getOcrProvider(), setScanProgress);
+      const text = await runOcr(file, setScanProgress);
       setParsedBill(parseBillText(text));
       setReviewOpen(true);
     } catch (err) {

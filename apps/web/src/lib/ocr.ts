@@ -1,83 +1,98 @@
-/** Two interchangeable OCR backends for the "scan a distributor bill"
- * feature (PurchasesPage) — the user picks which one in Settings.
+/** Reads a photo of a distributor bill with tesseract.js, entirely in this
+ * browser tab: nothing about the scan leaves the device. The worker, WASM
+ * core and English language data are served from this origin under /ocr
+ * (copied from node_modules by scripts/copy-ocr-assets.mjs), because the
+ * server's CSP only allows same-origin loads.
  *
- * "offline": tesseract.js, a WASM OCR engine that actually runs the
- * recognition in this browser tab, not on a remote server — consistent
- * with this app's "no external connection required to run your
- * business" principle. Its worker/core/traineddata files are still
- * fetched from a CDN on first use (bundling ~15MB of language data into
- * the app itself was judged not worth it here) — a real, one-time
- * network dependency, just not a per-scan one, and not an OCR *service*
- * call: nothing about the recognition itself leaves this device.
- *
- * "puter": Puter.js (js.puter.com) — a free, keyless, serverless OCR
- * call (puter.ai.img2txt) that sends the image to Puter's own backend.
- * Meaningfully more accurate on messy handwritten bills, at the cost of
- * a real per-scan external network call. Off by default; the user opts
- * in from Settings.
+ * Phone photos are large and low-contrast, which is what makes raw
+ * tesseract output poor, so the image is downscaled and converted to a
+ * contrast-stretched greyscale before recognition.
  */
-export type OcrProvider = "offline" | "puter";
+import type { Worker } from "tesseract.js";
 
-const STORAGE_KEY = "rechvix.ocrProvider";
+const OCR_BASE = "/ocr";
+const MAX_SIDE = 2200;
 
-export function getOcrProvider(): OcrProvider {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "puter" || stored === "offline") return stored;
-  } catch {
-    // Falls through to the privacy-preserving default below.
+let workerPromise: Promise<Worker> | null = null;
+let progressHandler: ((fraction: number) => void) | undefined;
+
+function getWorker(): Promise<Worker> {
+  workerPromise ??= import("tesseract.js")
+    .then(({ createWorker, OEM }) =>
+      createWorker("eng", OEM.LSTM_ONLY, {
+        workerPath: `${OCR_BASE}/worker.min.js`,
+        corePath: OCR_BASE,
+        langPath: OCR_BASE,
+        workerBlobURL: false,
+        logger: (m) => {
+          if (m.status === "recognizing text" && typeof m.progress === "number") progressHandler?.(m.progress);
+        },
+      }),
+    )
+    .catch((err) => {
+      console.error("OCR worker failed to start", err);
+      workerPromise = null;
+      throw err;
+    });
+  return workerPromise;
+}
+
+async function preprocess(image: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(image, { imageOrientation: "from-image" });
+  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return image;
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const data = ctx.getImageData(0, 0, width, height);
+  const px = data.data;
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < px.length; i += 4) {
+    const g = Math.round(px[i]! * 0.299 + px[i + 1]! * 0.587 + px[i + 2]! * 0.114);
+    px[i] = g;
+    hist[g]!++;
   }
-  return "offline";
-}
-
-export function setOcrProvider(provider: OcrProvider) {
-  try {
-    localStorage.setItem(STORAGE_KEY, provider);
-  } catch {
-    // Per-browser preference only — nothing breaks if this can't persist.
+  // Stretch between the 1st and 99th percentile so faint ink on grey paper gets full contrast.
+  const total = width * height;
+  let lo = 0;
+  let hi = 255;
+  for (let acc = 0; lo < 255 && (acc += hist[lo]!) < total * 0.01; lo++);
+  for (let acc = 0; hi > 0 && (acc += hist[hi]!) < total * 0.01; hi--);
+  const range = Math.max(1, hi - lo);
+  for (let i = 0; i < px.length; i += 4) {
+    const v = Math.max(0, Math.min(255, ((px[i]! - lo) * 255) / range));
+    px[i] = px[i + 1] = px[i + 2] = v;
   }
+  ctx.putImageData(data, 0, 0);
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b ?? image), "image/png"));
 }
 
-let puterLoadPromise: Promise<void> | null = null;
-
-function loadPuterScript(): Promise<void> {
-  if (puterLoadPromise) return puterLoadPromise;
-  puterLoadPromise = new Promise((resolve, reject) => {
-    if ((window as unknown as { puter?: unknown }).puter) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://js.puter.com/v2/";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Could not load Puter.js — check your internet connection."));
-    document.head.appendChild(script);
-  });
-  return puterLoadPromise;
-}
-
-interface PuterGlobal {
-  ai: { img2txt: (image: File | Blob | string) => Promise<string> };
-}
-
-async function runPuterOcr(image: File): Promise<string> {
-  await loadPuterScript();
-  const puter = (window as unknown as { puter?: PuterGlobal }).puter;
-  if (!puter) throw new Error("Puter.js did not load correctly.");
-  return puter.ai.img2txt(image);
-}
-
-async function runOfflineOcr(image: File, onProgress?: (fraction: number) => void): Promise<string> {
-  const { recognize } = await import("tesseract.js");
-  const result = await recognize(image, "eng", {
-    logger: (m) => {
-      if (m.status === "recognizing text" && typeof m.progress === "number") onProgress?.(m.progress);
-    },
-  });
-  return result.data.text;
-}
-
-export async function runOcr(image: File, provider: OcrProvider, onProgress?: (fraction: number) => void): Promise<string> {
-  return provider === "puter" ? runPuterOcr(image) : runOfflineOcr(image, onProgress);
+export async function runOcr(image: File, onProgress?: (fraction: number) => void): Promise<string> {
+  let prepared: Blob = image;
+  try {
+    prepared = await preprocess(image);
+  } catch {
+    // Unsupported format for decoding here (e.g. HEIC) — let the engine try the original.
+  }
+  let worker: Worker;
+  try {
+    worker = await getWorker();
+  } catch {
+    throw new Error("The text reader could not start. Reload the page and try again.");
+  }
+  progressHandler = onProgress;
+  try {
+    const result = await worker.recognize(prepared);
+    const text = result.data.text.trim();
+    if (!text) throw new Error("No text found in this image. Try a sharper, well-lit photo of the bill.");
+    return text;
+  } finally {
+    progressHandler = undefined;
+  }
 }
