@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to build and publish, for example 0.15.2. Leave empty to build and test only."
+        description: "Version to build and publish, for example 0.16.0. Leave empty to build and test only."
         required: false
         default: ""
 

@@ -104,7 +104,7 @@ Use the platform's custom Compose installation workflow with:
 https://raw.githubusercontent.com/Raktim94/rechvix/main/casaos/docker-compose.yml
 ```
 
-The current manifest pins **0.15.2** for the server, migration and worker services, with images published for **amd64 and arm64**. It generates database/encryption secrets on first boot. Open `http://<your-server>:8090`, then complete setup.
+The current manifest pins **0.16.0** for the server, migration and worker services, with images published for **amd64 and arm64**. It generates database/encryption secrets on first boot. Open `http://<your-server>:8090`, then complete setup.
 
 Back up both `/DATA/AppData/rechvix/postgres` and `/DATA/AppData/rechvix/secrets`. Keep the secrets when upgrading; removing the application data can destroy records or make encrypted data unrecoverable. Consult the [CasaOS manifest](casaos/docker-compose.yml) and [deployment guide](docs/operations/deployment.md) for the current configuration.
 
