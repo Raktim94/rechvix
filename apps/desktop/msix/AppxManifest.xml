@@ -31,7 +31,7 @@
 
   <Identity
     Name="NODEDRINFOTECHLIMITED.Rechvix"
-    Version="0.2.0.0"
+    Version="0.3.0.0"
     Publisher="CN=11C721FC-E399-4888-B532-7BFCD5C491B3"
     ProcessorArchitecture="x64" />
 

@@ -110,6 +110,15 @@ if (-not $bootstrapBody.available) {
 }
 Write-Host "    OK: account creation is available on first launch, no pre-existing data" -ForegroundColor Green
 
+Write-Host "==> Bill scanning assets are served from the app itself (no CDN)" -ForegroundColor Cyan
+foreach ($asset in @("worker.min.js", "eng.traineddata.gz", "tesseract-core-simd-lstm.wasm.js")) {
+  $r = Invoke-WebRequest "http://127.0.0.1:$httpPort/ocr/$asset" -UseBasicParsing
+  if ($r.StatusCode -ne 200 -or $r.RawContentLength -lt 50000) { throw "OCR asset /ocr/$asset missing or truncated (HTTP $($r.StatusCode), $($r.RawContentLength) bytes) — scanning a bill would fail offline." }
+}
+$csp = (Invoke-WebRequest "http://127.0.0.1:$httpPort/" -UseBasicParsing).Headers["Content-Security-Policy"]
+if ($csp -notmatch "wasm-unsafe-eval" -or $csp -notmatch "worker-src 'self' blob:") { throw "CSP does not allow the OCR worker/WASM: $csp" }
+Write-Host "    OK: OCR engine, language data and CSP are in place" -ForegroundColor Green
+
 Write-Host "==> Minimize" -ForegroundColor Cyan
 [Win32]::ShowWindow($hwnd, $SW_MINIMIZE) | Out-Null
 Wait-ForCondition "IsIconic true" { [Win32]::IsIconic($hwnd) }
