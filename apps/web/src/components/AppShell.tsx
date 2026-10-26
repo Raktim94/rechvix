@@ -86,6 +86,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // On phones the nav is a horizontally scrolling tab bar: keep the current page's tab in view.
+  useEffect(() => {
+    document.querySelector<HTMLElement>(`.${styles.navLinkActive}`)?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [pathname]);
+
   return (
     <div className={styles.shell}>
       <a href="#main-content" className={styles.skipLink}>

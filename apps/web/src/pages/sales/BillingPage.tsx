@@ -532,7 +532,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
         <div>
           <h1>{resumeDocumentId ? "Continue sale" : "New sale"}</h1>
           <p className={layout.subtitle}>Scan a barcode or search by product name — stock and price show instantly.</p>
-          <p className={ui.muted} style={{ marginTop: 2 }}>
+          <p className={`${ui.muted} ${styles.kbdHint}`} style={{ marginTop: 2 }}>
             <kbd>F2</kbd> search product · <kbd>F3</kbd> search customer · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> finalize
           </p>
         </div>

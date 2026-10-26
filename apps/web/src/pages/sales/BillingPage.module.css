@@ -6,7 +6,20 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
-  align-items: end;
+  align-items: start;
+}
+
+/* Customer gets a full row so the search box, "+ New" and "Walk-in" read as
+   one control group; the document settings sit on the row below it. */
+.headerGrid > .customerField {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
+.headerGrid > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 200px;
 }
 
 @media (max-width: 1023px) {
@@ -22,11 +35,15 @@
 .customerSearchRow {
   display: flex;
   gap: var(--space-2);
-  align-items: flex-start;
+  align-items: stretch;
   /* The search input plus "+ New" and "Walk-in / Cash sale" no longer fit
      on one line once the field's own column gets narrow (tablet widths,
      or a long customer match in the input) — wrap instead of overlapping. */
   flex-wrap: wrap;
+}
+
+.customerSearchWrap input {
+  width: 100%;
 }
 
 .customerSearchWrap {
@@ -332,3 +349,10 @@
 }
 
 .headerGrid select, .headerGrid input, .headerGrid > button {min-height:44px}
+
+/* Keyboard shortcuts mean nothing on a phone. */
+@media (max-width: 1023px) {
+  .kbdHint {
+    display: none;
+  }
+}
