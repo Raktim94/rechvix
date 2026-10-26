@@ -25,9 +25,9 @@ export function getDefaultPrintTheme(): string {
     if (stored && PRINT_THEMES.some((t) => t.value === stored)) return stored;
   } catch {
     // Storage can throw in a locked-down browser context — falling back
-    // to the same default the backend itself uses either way.
+    // to the app default (Modern).
   }
-  return "CLASSIC";
+  return "MODERN";
 }
 
 export function setDefaultPrintTheme(value: string) {

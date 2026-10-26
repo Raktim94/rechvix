@@ -143,6 +143,9 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 	pdf.SetAutoPageBreak(true, 10)
 	pdf.AddPageFormat("P", lo.size)
 	pdf.SetMargins(8, 8, 8)
+	if !lo.narrow {
+		pdf.SetMargins(proMargin, 10, proMargin)
+	}
 	pdf.SetLineWidth(st.ruleWidth)
 
 	// See encoding.go: built-in fonts + converted text when everything fits
@@ -166,15 +169,19 @@ func RenderPDF(tpl Template, th Theme, data InvoiceData) ([]byte, error) {
 		title = lb.DocType(title)
 	}
 
-	if err := drawVerifactuQR(pdf, data, lo, st); err != nil {
+	if lo.narrow {
+		if err := drawVerifactuQR(pdf, data, lo, st); err != nil {
+			return nil, err
+		}
+		drawHeader(pdf, data, lo, st, title, lb)
+		drawParties(pdf, data, lo, st, lb)
+		drawItemTable(pdf, data, lo, st, lb)
+		drawTotals(pdf, data, lo, st, lb)
+		if lo.showBankBlock && (data.Seller.BankAccount != "" || (!data.GenericTax && data.Seller.UPIID != "")) {
+			drawBankBlock(pdf, data, st, lb)
+		}
+	} else if err := drawProDocument(pdf, data, lo, st, title, lb); err != nil {
 		return nil, err
-	}
-	drawHeader(pdf, data, lo, st, title, lb)
-	drawParties(pdf, data, lo, st, lb)
-	drawItemTable(pdf, data, lo, st, lb)
-	drawTotals(pdf, data, lo, st, lb)
-	if lo.showBankBlock && (data.Seller.BankAccount != "" || (!data.GenericTax && data.Seller.UPIID != "")) {
-		drawBankBlock(pdf, data, st, lb)
 	}
 	if lo.showTerms && data.TermsAndConditions != "" {
 		pdf.Ln(2)
