@@ -193,7 +193,9 @@ func provisionAppRole(ctx context.Context, migratorDSN string) error {
 		`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'billing_app') THEN CREATE ROLE billing_app WITH LOGIN PASSWORD 'billing_app_pw'; END IF; END $$`,
 		`GRANT USAGE ON SCHEMA public TO billing_app`,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO billing_app`,
+		`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO billing_app`, // as migration 0029 does in production
 		`GRANT EXECUTE ON FUNCTION auth_lookup_user_by_email(text) TO billing_app`,
+		`GRANT EXECUTE ON FUNCTION sync_linked_orgs() TO billing_app`,
 	}
 	for _, stmt := range statements {
 		if _, err := conn.Exec(ctx, stmt); err != nil {

@@ -6,7 +6,7 @@ import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import layout from "../DashboardPage.module.css";
 
-/** internal/modules/identity/domain's 7-scope list (APIScope) — the exact
+/** internal/modules/identity/domain's scope list (APIScope) — the exact
  * set app.Service.CreateAPIKey validates against. */
 const API_SCOPES = [
   { value: "products:read", label: "Products — read" },
@@ -16,6 +16,7 @@ const API_SCOPES = [
   { value: "invoices:read", label: "Invoices — read" },
   { value: "invoices:write", label: "Invoices — write" },
   { value: "reports:read", label: "Reports — read" },
+  { value: "sync:readwrite", label: "Sync a desktop install — products and contacts, both ways" },
 ] as const;
 
 /** Only the webhook events a backend module actually fires today

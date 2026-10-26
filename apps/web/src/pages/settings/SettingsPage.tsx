@@ -3,6 +3,7 @@ import { OnlinePaymentsSettings } from "../../components/OnlinePayPanels";
 import { PriceRulePanel } from "../../components/PriceRulePanel";
 import { DocumentStatusSettings } from "../../components/DocumentStatuses";
 import { RemindersPanel } from "../../components/RemindersPanel";
+import { SyncPanel } from "../../components/SyncPanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -1261,6 +1262,7 @@ export function SettingsPage() {
       <DocumentStatusSettings />
 
       <RemindersPanel />
+      <SyncPanel />
 
       <ChangePasswordPanel />
 

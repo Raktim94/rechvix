@@ -13,6 +13,14 @@
 
 # Changelog
 
+## 0.16.0
+
+- Scanning a bill now works: the OCR engine (worker, WASM core, English language data) is served by the app itself instead of a CDN that the server's content security policy blocked. Photos are downscaled and contrast-stretched before reading. The online Puter option is removed (it sent bills to a third party and could not run under the policy).
+- Invoice PDFs redesigned: two-column header with logo, title and document details, two-column parties, item rows that grow to fit long descriptions (they were cut off) and no longer overflow the page margin on Indian invoices, a totals box with a highlighted grand total, and a payment block with bank details and, for Indian invoices with a UPI id, a scannable UPI QR for the amount. "Modern" is the default design. Adapts Mavri's invoice layout.
+- New-sale screen: customer row first, aligned fields, keyboard hints hidden on phones; the mobile tab bar scrolls with a fade edge and keeps the current tab in view.
+- Two-way sync of products and contacts between a desktop install and a central server (Settings, Sync with your server; ADR 0008). Migration 0062, API scope `sync:readwrite`. Sales, stock and accounting are not synced yet.
+- Windows package 0.3.0.0; the install test now also checks that the OCR files are served and the policy allows them.
+
 ## 0.15.1
 
 - VERI*FACTU is Spain only: a company whose country is not Spain never records, even if the switch was left on (previously it could only be enabled for Spain but kept recording if the country changed afterwards).

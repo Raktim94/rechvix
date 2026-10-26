@@ -88,6 +88,7 @@ const (
 	ScopeInvoicesRead   APIScope = "invoices:read"
 	ScopeInvoicesWrite  APIScope = "invoices:write"
 	ScopeReportsRead    APIScope = "reports:read"
+	ScopeSync           APIScope = "sync:readwrite"
 )
 
 // ValidScopes is the complete, closed vocabulary — CreateAPIKey rejects
@@ -100,7 +101,7 @@ var ValidScopes = map[APIScope]bool{
 	ScopeProductsRead: true, ScopeInventoryRead: true,
 	ScopeCustomersRead: true, ScopeCustomersWrite: true,
 	ScopeInvoicesRead: true, ScopeInvoicesWrite: true,
-	ScopeReportsRead: true,
+	ScopeReportsRead: true, ScopeSync: true,
 }
 
 type APIKey struct {

@@ -34,6 +34,7 @@ import (
 	contactshttp "rechvix/internal/modules/contacts/httpapi"
 	contactspg "rechvix/internal/modules/contacts/pg"
 	"rechvix/internal/modules/crm"
+	"rechvix/internal/modules/datasync"
 	"rechvix/internal/modules/docstatus"
 	einvoiceapp "rechvix/internal/modules/einvoice/app"
 	einvoicehttp "rechvix/internal/modules/einvoice/httpapi"
@@ -531,6 +532,8 @@ func run() error {
 	salesSvc.WithESign(esignSvc)
 	onlinepaySvc := onlinepay.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)
 	shopSvc := shop.NewService(pool, salesSvc, catalogueSvc, contactsSvc, notificationsSvc, onlinepaySvc, esignSvc, salesDocRenderer{sales: salesSvc}, permissionsChecker, auditRecorder)
+	datasyncSvc := datasync.NewService(pool, permissionsChecker, auditRecorder, aead, logger)
+	go datasyncSvc.Run(ctx, time.Minute)
 	remindersSvc := reminders.NewService(pool, notificationsSvc, permissionsChecker, auditRecorder, logger)
 
 	router := httpx.NewRouter(httpx.RouterConfig{AllowedOrigins: cfg.Server.AllowedOrigins, Logger: logger})
@@ -648,6 +651,7 @@ func run() error {
 			shop.NewHandlers(shopSvc).Mount(r)
 			sepa.NewHandlers(sepa.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
+			datasync.NewHandlers(datasyncSvc).Mount(r)
 			recurring.NewHandlers(recurringSvc).Mount(r)
 			pricerules.NewHandlers(priceRulesSvc).Mount(r)
 			stockprojection.NewHandlers(stockprojection.NewService(pool, permissionsChecker)).Mount(r)

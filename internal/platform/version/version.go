@@ -3,4 +3,4 @@
 package version
 
 // Version is the Rechvix release this binary was built from.
-const Version = "0.15.2"
+const Version = "0.16.0"

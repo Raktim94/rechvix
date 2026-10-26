@@ -17,6 +17,7 @@ var APIScopePermissions = map[string][]string{
 	"invoices:read":   {"sales.view"},
 	"invoices:write":  {"sales.view", "sales.create", "sales.edit_draft"},
 	"reports:read":    {"reports.view"},
+	"sync:readwrite":  {"sync.manage"},
 }
 
 // PermissionsForScopes expands a list of API-key scope strings into the
