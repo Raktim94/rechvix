@@ -19,6 +19,20 @@ body,
   height: 100%;
 }
 
+/* The app shell is exactly one viewport tall and scrolls inside <main>, so
+   the document itself must never scroll or rubber-band: overscroll past
+   the top or bottom would otherwise expose whatever sits behind the app
+   (a white strip, most visibly on phones and trackpads). The html
+   background means that even a bounce shows the app colour, not white. */
+html {
+  background: var(--color-bg);
+  overscroll-behavior: none;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);

@@ -9,7 +9,7 @@ import { api } from "../lib/api-client";
 import { toLocalIsoDate } from "../lib/calendarGrid";
 import { chartPalette } from "../lib/chartColors";
 import { buildSeries, formatPercent, isoDay, percentChange, sum, type DayPoint } from "../lib/dashboardMath";
-import { formatMoney, formatMoneyWhole, isZeroMoney, moneyToApproxNumber, type Money } from "../lib/money";
+import { currencySymbol, formatMoney, formatMoneyWhole, isZeroMoney, moneyToApproxNumber, type Money } from "../lib/money";
 import { useOrgContext } from "../lib/useOrgContext";
 import { withLegalEntity } from "../lib/useReportTable";
 import { useTheme } from "../theme/ThemeProvider";
@@ -626,12 +626,18 @@ function ReceivablePayableChart({ receivable, payable, dark }: { receivable: Mon
     </table>
   );
 
+  // Compact figures ("2.5L", "98K") keep both the bar labels and the axis
+  // readable on a 375px screen; the exact amounts are in the table above
+  // for assistive tech and in the tooltip.
+  const compact = (v: number) => new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(v);
   const option = {
-    grid: { left: 84, right: 48, top: 16, bottom: 16 },
+    grid: { left: 8, right: 8, top: 16, bottom: 8, containLabel: true },
     xAxis: {
       type: "value" as const,
+      splitNumber: 3,
+      max: (v: { max: number }) => v.max * 1.35, // room for the value label beside the longest bar
       splitLine: { lineStyle: { color: gridColor } },
-      axisLabel: { color: textColor, fontFamily: "IBM Plex Mono" },
+      axisLabel: { color: textColor, fontFamily: "IBM Plex Mono", hideOverlap: true, formatter: compact },
     },
     yAxis: {
       type: "category" as const,
@@ -653,7 +659,7 @@ function ReceivablePayableChart({ receivable, payable, dark }: { receivable: Mon
           position: "right" as const,
           color: textColor,
           fontFamily: "IBM Plex Mono",
-          formatter: (p: { value: number }) => formatMoney({ amount: String(p.value), currency: receivable.currency }),
+          formatter: (p: { value: number }) => `${currencySymbol(receivable.currency)}${compact(p.value)}`,
         },
       },
     ],

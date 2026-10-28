@@ -40,5 +40,6 @@ export function percentChange(current: number, previous: number): number | null 
 /** "12%" / "0.4%" — one decimal only when the figure is under 10, so 12.4 reads "12%". */
 export function formatPercent(p: number): string {
   const abs = Math.abs(p);
+  if (abs > 999) return ">999%"; // a jump from a tiny base reads as noise, not insight
   return `${abs < 10 ? abs.toFixed(1).replace(/\.0$/, "") : Math.round(abs)}%`;
 }

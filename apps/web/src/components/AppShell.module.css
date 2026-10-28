@@ -33,6 +33,9 @@
      reachable without scrolling. Caught via an actual 375px screenshot,
      not assumed from reading the CSS. */
   height: 100%;
+  /* dvh tracks a phone browser's collapsing toolbar; plain 100% leaves a
+     gap (the page background) under the shell while the toolbar is hidden. */
+  height: 100dvh;
 }
 
 @media (max-width: 767px) {
@@ -426,7 +429,17 @@
 
 .main {
   grid-area: main;
+  /* Positioned so absolutely-placed descendants (visually-hidden text, chart
+     tooltips) are clipped by this scroll area. Without it they use the page
+     as their containing block, hang below the shell and make the whole
+     document scroll, which shows as a white strip under the dashboard. */
+  position: relative;
   overflow-y: auto;
+  /* A wide child must never widen the scroll area sideways (that reveals
+     the background beside the shell), and a scroll that hits the end
+     stays inside <main> instead of chaining to the page. */
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   min-height: 0;
   padding: var(--space-6) var(--space-5);
   background: var(--color-bg);
