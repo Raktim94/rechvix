@@ -198,3 +198,81 @@ func TestShop_CatalogOrderAndClientArea(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestShop_OrderFulfilmentFlowAndInvoice(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, acct, _ := newTestAccountingServices(t)
+	fx := spainFixture(t, ctx, acct)
+	checker := permissions.NewChecker(permissions.NewPGStore(sharedPool), sharedPool)
+	rec := audit.NewPGRecorder(sharedPool)
+	pricing := pricingapp.NewService(sharedPool, pricingpg.NewPriceListRepo(sharedPool), pricingpg.NewPriceListItemRepo(sharedPool), checker, rec)
+	list, err := pricing.EnsureDefaultPriceList(ctx, fx.Principal, "EUR")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pricing.SetPrice(ctx, fx.Principal, pricingapp.SetPriceParams{PriceListID: list.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS, Price: priceEUR(t, "25.00")}); err != nil {
+		t.Fatal(err)
+	}
+	mail := &captureMail{}
+	notif, _ := newNotifications(t, mail)
+	contacts := contactsapp.NewService(sharedPool, contactspg.NewPartyRepo(sharedPool), contactspg.NewAddressRepo(sharedPool), contactspg.NewTaxRegistrationRepo(sharedPool), checker, rec)
+	rend := &fakeRenderer{version: "v1"}
+	es := esignapp.NewService(sharedPool, rend, nil, checker, rec)
+	svc := shop.NewService(sharedPool, salesSvc, newTestCatalogueService(t), contacts, notif, onlinepayapp.NewService(sharedPool, acct, nil, checker, rec), es, rend, checker, rec)
+
+	slug := "flow-" + strings.ToLower(uuid.NewString()[:8])
+	if err := svc.SaveSettings(ctx, fx.Principal, shop.Settings{Enabled: true, Slug: slug, Title: "Flow", LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPublished(ctx, fx.Principal, fx.VariantID, true, "Pump 25", ""); err != nil {
+		t.Fatal(err)
+	}
+	o, err := svc.PlaceOrder(ctx, slug, "198.51.100.40", shop.OrderInput{Name: "Ana Ruiz", Email: "ana@example.org", Lines: []shop.OrderLine{{VariantID: fx.VariantID, Quantity: 2}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The flow cannot be skipped, and an unconfirmed order cannot be invoiced.
+	if err := svc.SetOrderStatus(ctx, fx.Principal, o.ID, "DISPATCHED"); !errors.Is(err, shop.ErrNotFound) {
+		t.Fatalf("NEW -> DISPATCHED must be refused: %v", err)
+	}
+	if err := svc.SetOrderStatus(ctx, fx.Principal, o.ID, "SHIPPED"); !errors.Is(err, shop.ErrInvalid) {
+		t.Fatalf("an unknown status: %v", err)
+	}
+	if _, err := svc.CreateInvoice(ctx, fx.Principal, o.ID); !errors.Is(err, shop.ErrInvalid) {
+		t.Fatalf("invoicing a NEW order: %v", err)
+	}
+	if err := svc.SetOrderStatus(ctx, fx.Principal, o.ID, "CONFIRMED"); err != nil {
+		t.Fatal(err)
+	}
+
+	inv, err := svc.CreateInvoice(ctx, fx.Principal, o.ID)
+	if err != nil {
+		t.Fatalf("invoice: %v", err)
+	}
+	again, err := svc.CreateInvoice(ctx, fx.Principal, o.ID)
+	if err != nil || again != inv {
+		t.Fatalf("invoicing twice returns the same invoice: %v %v %v", inv, again, err)
+	}
+	d, lines, err := salesSvc.GetDocument(ctx, fx.Principal, inv)
+	if err != nil || d.DocumentType != "TAX_INVOICE" || d.Status != "DRAFT" || len(lines) != 1 || !lines[0].Quantity.Equal(decimal.NewFromInt(2)) {
+		t.Fatalf("a draft invoice with the order's lines: %+v lines=%d %v", d, len(lines), err)
+	}
+
+	// Once invoiced, the order is cancelled by cancelling the invoice, not from the shop screen.
+	if err := svc.SetOrderStatus(ctx, fx.Principal, o.ID, "CANCELLED"); !errors.Is(err, shop.ErrNotFound) {
+		t.Fatalf("cancelling an invoiced order: %v", err)
+	}
+	for _, next := range []string{"PROCESSING", "DISPATCHED", "DELIVERED"} {
+		if err := svc.SetOrderStatus(ctx, fx.Principal, o.ID, next); err != nil {
+			t.Fatalf("-> %s: %v", next, err)
+		}
+	}
+	orders, _ := svc.Orders(ctx, fx.Principal)
+	if len(orders) != 1 || orders[0].Status != "DELIVERED" || orders[0].InvoiceID == nil || *orders[0].InvoiceID != inv {
+		t.Fatalf("the order shows its status and invoice: %+v", orders)
+	}
+	if err := svc.SetOrderStatus(ctx, fx.Principal, o.ID, "CANCELLED"); !errors.Is(err, shop.ErrNotFound) {
+		t.Fatalf("a delivered order is final: %v", err)
+	}
+}

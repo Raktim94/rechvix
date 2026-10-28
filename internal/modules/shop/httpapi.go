@@ -30,6 +30,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Put("/shop/products/{id}", h.setProduct)
 	r.Get("/shop/orders", h.orders)
 	r.Post("/shop/orders/{id}/status", h.orderStatus)
+	r.Post("/shop/orders/{id}/invoice", h.orderInvoice)
 }
 
 // MountPublic registers the visitor-facing routes: catalogue, orders and the client area.
@@ -188,6 +189,20 @@ func (h *Handlers) orderStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.orders(w, r)
+}
+
+func (h *Handlers) orderInvoice(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	invoiceID, err := h.svc.CreateInvoice(r.Context(), principal(r), id)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"invoice_document_id": invoiceID})
 }
 
 func (h *Handlers) catalog(w http.ResponseWriter, r *http.Request) {

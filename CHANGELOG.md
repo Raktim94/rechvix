@@ -13,6 +13,10 @@
 
 # Changelog
 
+## 0.18.0
+
+- Online shop orders now follow a fulfilment flow: New, Confirmed, Processing, Dispatched, Delivered, or Cancelled until dispatch. The orders list in Settings has a tab per stage with counts, the next step on every order, a WhatsApp message to the customer, and **Create invoice**, which makes a draft tax invoice from the order (once; asking again opens the same one) and opens it. Finalizing that invoice in Sales is what takes the goods out of stock. An order that has an invoice is cancelled by cancelling the invoice. New `POST /shop/orders/{id}/invoice`; migration 0063 is additive (wider status list, `invoice_document_id`, `status_changed_at`).
+
 ## 0.17.1
 
 - Fixed the dashboard (and any long page) scrolling past its end and exposing a white strip: content positioned absolutely inside a page, such as screen-reader tables and chart internals, was escaping the scroll area and making the whole document taller than the window. The scroll area now contains it, the shell height follows a phone browser's collapsing toolbar, and scrolling no longer chains to the page.

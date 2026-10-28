@@ -103,7 +103,9 @@ type OrderView struct {
 	Currency   string     `json:"currency"`
 	Status     string     `json:"status"`
 	DocumentID *uuid.UUID `json:"sales_document_id,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	// InvoiceID is the draft (or finalized) invoice made from this order; stock leaves the warehouse when that invoice is finalized.
+	InvoiceID *uuid.UUID `json:"invoice_document_id,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type PortalDoc struct {
@@ -296,7 +298,7 @@ func (s *Service) Orders(ctx context.Context, principal permissions.Principal) (
 	}
 	out := []OrderView{}
 	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		rows, err := s.pool.Q(ctx).Query(ctx, `SELECT id, reference, customer_name, customer_email, COALESCE(customer_phone, ''), COALESCE(delivery_address, ''), COALESCE(notes, ''), total_estimate::text, currency_code, status, sales_document_id, created_at
+		rows, err := s.pool.Q(ctx).Query(ctx, `SELECT id, reference, customer_name, customer_email, COALESCE(customer_phone, ''), COALESCE(delivery_address, ''), COALESCE(notes, ''), total_estimate::text, currency_code, status, sales_document_id, invoice_document_id, created_at
 			FROM shop_orders WHERE organisation_id = $1 ORDER BY created_at DESC LIMIT 200`, principal.OrganisationID)
 		if err != nil {
 			return err
@@ -304,7 +306,7 @@ func (s *Service) Orders(ctx context.Context, principal permissions.Principal) (
 		defer rows.Close()
 		for rows.Next() {
 			var o OrderView
-			if err := rows.Scan(&o.ID, &o.Reference, &o.Customer, &o.Email, &o.Phone, &o.Address, &o.Notes, &o.Total, &o.Currency, &o.Status, &o.DocumentID, &o.CreatedAt); err != nil {
+			if err := rows.Scan(&o.ID, &o.Reference, &o.Customer, &o.Email, &o.Phone, &o.Address, &o.Notes, &o.Total, &o.Currency, &o.Status, &o.DocumentID, &o.InvoiceID, &o.CreatedAt); err != nil {
 				return err
 			}
 			if d, err := decimal.NewFromString(o.Total); err == nil {
@@ -317,15 +319,39 @@ func (s *Service) Orders(ctx context.Context, principal permissions.Principal) (
 	return out, err
 }
 
+// orderNext is the fulfilment flow: an order is confirmed, prepared, sent and delivered, and can be cancelled until it has been dispatched.
+var orderNext = map[string][]string{
+	"NEW":        {"CONFIRMED", "CANCELLED"},
+	"CONFIRMED":  {"PROCESSING", "CANCELLED"},
+	"PROCESSING": {"DISPATCHED", "CANCELLED"},
+	"DISPATCHED": {"DELIVERED"},
+}
+
+// ordersMovingTo lists the statuses an order may be in for it to move to status.
+func ordersMovingTo(status string) []string {
+	var from []string
+	for f, tos := range orderNext {
+		for _, t := range tos {
+			if t == status {
+				from = append(from, f)
+			}
+		}
+	}
+	return from
+}
+
 func (s *Service) SetOrderStatus(ctx context.Context, principal permissions.Principal, id uuid.UUID, status string) error {
 	if err := s.permissions.HasAny(ctx, principal, "sales.view"); err != nil {
 		return err
 	}
-	if status != "CONFIRMED" && status != "CANCELLED" {
-		return fmt.Errorf("%w: status must be confirmed or cancelled", ErrInvalid)
+	from := ordersMovingTo(status)
+	if len(from) == 0 {
+		return fmt.Errorf("%w: status must be confirmed, processing, dispatched, delivered or cancelled", ErrInvalid)
 	}
 	return s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		tag, err := s.pool.Q(ctx).Exec(ctx, `UPDATE shop_orders SET status = $2 WHERE id = $1 AND status = 'NEW'`, id, status)
+		// An order that already has an invoice is cancelled by cancelling the invoice, not from here.
+		tag, err := s.pool.Q(ctx).Exec(ctx, `UPDATE shop_orders SET status = $2, status_changed_at = now()
+			WHERE id = $1 AND status = ANY($3) AND ($2 <> 'CANCELLED' OR invoice_document_id IS NULL)`, id, status, from)
 		if err != nil {
 			return err
 		}
@@ -334,6 +360,55 @@ func (s *Service) SetOrderStatus(ctx context.Context, principal permissions.Prin
 		}
 		return nil
 	})
+}
+
+// CreateInvoice turns a confirmed order into a draft tax invoice (finalizing the underlying sales order first when needed) and
+// remembers it on the order. It is safe to call twice: the existing invoice is returned. Finalizing the invoice, in the Sales
+// screen, is what takes the goods out of stock and posts the accounts, so a person still reviews it once.
+func (s *Service) CreateInvoice(ctx context.Context, principal permissions.Principal, id uuid.UUID) (uuid.UUID, error) {
+	if err := s.permissions.HasAny(ctx, principal, "sales.view"); err != nil {
+		return uuid.Nil, err
+	}
+	var docID uuid.UUID
+	var invoiceID *uuid.UUID
+	var status string
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		return s.pool.Q(ctx).QueryRow(ctx, `SELECT sales_document_id, invoice_document_id, status FROM shop_orders WHERE id = $1 AND organisation_id = $2 AND sales_document_id IS NOT NULL`,
+			id, principal.OrganisationID).Scan(&docID, &invoiceID, &status)
+	})
+	if err != nil {
+		return uuid.Nil, ErrNotFound
+	}
+	if invoiceID != nil {
+		return *invoiceID, nil
+	}
+	if status == "NEW" || status == "CANCELLED" {
+		return uuid.Nil, fmt.Errorf("%w: confirm the order before invoicing it", ErrInvalid)
+	}
+	order, _, err := s.sales.GetDocument(ctx, principal, docID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if order.Status == salesdomain.StatusDraft {
+		if _, err := s.sales.FinalizeDocument(ctx, principal, docID); err != nil {
+			return uuid.Nil, fmt.Errorf("shop: finalizing the sales order: %w", err)
+		}
+	}
+	inv, err := s.sales.ConvertDocument(ctx, principal, docID, salesdomain.DocTaxInvoice, nil)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("shop: creating the invoice: %w", err)
+	}
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		if _, err := s.pool.Q(ctx).Exec(ctx, `UPDATE shop_orders SET invoice_document_id = $2 WHERE id = $1 AND invoice_document_id IS NULL`, id, inv.ID); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, audit.Entry{OrganisationID: principal.OrganisationID, ActorType: audit.ActorUser, ActorUserID: &principal.UserID, Action: "shop.order_invoiced",
+			EntityType: "sales_document", EntityID: &inv.ID, AfterState: map[string]any{"order_id": id}, At: s.now()})
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return inv.ID, nil
 }
 
 // ---- public
