@@ -1,3 +1,4 @@
+import { setRetailMode, useRetailMode } from "../../lib/retailMode";
 import { ShopAdmin } from "../../components/ShopAdmin";
 import { OnlinePaymentsSettings } from "../../components/OnlinePayPanels";
 import { PriceRulePanel } from "../../components/PriceRulePanel";
@@ -1146,6 +1147,7 @@ function InvoiceLanguageForm({ legalEntity }: { legalEntity: LegalEntity }) {
   return <section className={layout.panel} aria-labelledby="invoice-preferences">
     <h2 id="invoice-preferences">Language and currency</h2>
     <LanguageSelect />
+    <RetailModeToggle />
     <div className={ui.field} style={{ marginTop: 16 }}>
       <label htmlFor="preferred-invoice-currency">New invoice currency (this browser)</label>
       <select id="preferred-invoice-currency" className={ui.select} value={currency} disabled={currencies.isPending || currencies.isError} onChange={e => {
@@ -1267,6 +1269,23 @@ export function SettingsPage() {
       <ChangePasswordPanel />
 
       <TeamPanel />
+    </div>
+  );
+}
+
+/** Per-device switch that hides CRM, Service, Accounting, SEPA and
+ * Integrations from the menu for counter-billing shops. Nothing is
+ * deleted or disabled; the pages stay reachable and the switch is
+ * reversible. */
+function RetailModeToggle() {
+  const retail = useRetailMode();
+  return (
+    <div className={ui.field} style={{ marginTop: 16 }}>
+      <label htmlFor="retail-mode" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input id="retail-mode" type="checkbox" checked={retail} onChange={(e) => setRetailMode(e.target.checked)} />
+        Retail mode (this browser)
+      </label>
+      <p className={ui.muted}>Hides CRM, Service, Accounting, SEPA and Integrations from the menu so billing, items, parties and reports stay in front. Turn it off to see everything again.</p>
     </div>
   );
 }

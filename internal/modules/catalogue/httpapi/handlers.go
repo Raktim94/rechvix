@@ -558,8 +558,15 @@ func parseImportBody(w http.ResponseWriter, r *http.Request) ([]importer.Row, bo
 			return nil, false
 		}
 		return rows, true
+	case "tally":
+		rows, err := importer.ParseTally(r.Body, importer.TallyItems)
+		if err != nil {
+			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_TALLY_XML", "Could not read the uploaded file as a Tally XML master export: "+err.Error()))
+			return nil, false
+		}
+		return rows, true
 	default:
-		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FORMAT", `format query parameter must be "csv" or "xlsx".`))
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FORMAT", `format query parameter must be "csv", "xlsx" or "tally".`))
 		return nil, false
 	}
 }

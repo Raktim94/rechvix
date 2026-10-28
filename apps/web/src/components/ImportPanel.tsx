@@ -40,10 +40,11 @@ interface Inspection {
 const CONSTANT = "=";
 const NONE = "";
 
-function formatFor(file: File): "csv" | "xlsx" | null {
+function formatFor(file: File): "csv" | "xlsx" | "tally" | null {
   const ext = file.name.toLowerCase().split(".").pop();
   if (ext === "csv") return "csv";
   if (ext === "xlsx") return "xlsx";
+  if (ext === "xml") return "tally"; // Tally Prime / ERP 9 master export
   return null;
 }
 
@@ -130,7 +131,7 @@ export function ImportPanel({
     if (!f || !mapColumns) return;
     const format = formatFor(f);
     if (!format) {
-      setError("Please choose a .csv or .xlsx file.");
+      setError("Please choose a .csv, .xlsx or Tally .xml file.");
       return;
     }
     try {
@@ -148,7 +149,7 @@ export function ImportPanel({
     if (!file) return;
     const format = formatFor(file);
     if (!format) {
-      setError("Please choose a .csv or .xlsx file.");
+      setError("Please choose a .csv, .xlsx or Tally .xml file.");
       return;
     }
     setError(null);
@@ -204,7 +205,7 @@ export function ImportPanel({
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <input
               type="file"
-              accept=".csv,.xlsx"
+              accept=".csv,.xlsx,.xml"
               aria-label={`${title} file`}
               onChange={(e) => void chooseFile(e.target.files?.[0] ?? null)}
             />

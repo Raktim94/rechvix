@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import styles from "./CommandPalette.module.css";
 import { ContactsIcon, PricingIcon, PurchasesIcon, SalesIcon, SearchIcon, SettingsIcon } from "./icons";
 import { api } from "../lib/api-client";
-import { NAV_GROUPS } from "../nav";
+import { useRetailMode, visibleNavGroups } from "../lib/retailMode";
 import { navLabel } from "./navLabel";
 import { useOrgContext } from "../lib/useOrgContext";
 
@@ -26,6 +26,7 @@ const QUICK_ACTIONS = [
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const retail = useRetailMode();
   const country = useOrgContext().legalEntity?.CountryCode;
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -110,7 +111,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           ))}
         </Command.Group>
 
-        {NAV_GROUPS.map((group) => (
+        {visibleNavGroups(retail).map((group) => (
           <Command.Group key={group.titleKey} heading={t("palette.goTo", { group: t(group.titleKey) })}>
             {group.items.map((item) => (
               <Command.Item key={item.to} value={t("palette.goToItem", { item: navLabel(t, item, country) })} className={styles.item} onSelect={() => go(item.to)}>

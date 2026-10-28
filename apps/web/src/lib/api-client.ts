@@ -101,11 +101,14 @@ export const api = {
    * explicit Content-Type header below overrides `request`'s normal
    * "any body means application/json" default, since `init.headers` is
    * spread after it. */
-  uploadFile: <T>(path: string, file: File, format: "csv" | "xlsx", dryRun: boolean, extraQuery?: Record<string, string>) => {
+  uploadFile: <T>(path: string, file: File, format: "csv" | "xlsx" | "tally", dryRun: boolean, extraQuery?: Record<string, string>) => {
     const params = new URLSearchParams({ format, dry_run: String(dryRun), ...extraQuery });
     return request<T>(`${path}?${params.toString()}`, {
       method: "POST",
-      headers: { "Content-Type": format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      headers: {
+        "Content-Type":
+          format === "csv" ? "text/csv" : format === "tally" ? "text/xml" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
       body: file,
     });
   },

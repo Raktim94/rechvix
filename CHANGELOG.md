@@ -13,9 +13,11 @@
 
 # Changelog
 
-## Unreleased
+## 0.17.0
 
 - Bulk import of products and contacts now has a "Match your columns" step: headers from Vyapar, Tally, Marg or a hand-made sheet (Party Name, Phone No., Item Name, HSN, Sale Price, Tax Rate, Opening Stock and so on) are matched to Rechvix fields automatically and can be changed, skipped or set to one fixed value for every row (for example party type). Rupee signs, thousands separators (including 1,23,456.50) and a trailing % are cleaned from numeric columns. Files whose headers already use the old column names import exactly as before. New `POST /contacts/parties/import/inspect` and `POST /catalogue/products/import/inspect`; the import endpoints accept an optional `mapping` query parameter. No migration.
+- Tally Prime / ERP 9 master exports (.xml) import directly: Sundry Debtors and Creditors become customers and suppliers, stock items become products with unit, HSN, GST rate and opening quantity. Tally's UTF-16 files and stray control characters are handled. Choose the .xml file in the same import panel.
+- Retail mode (Settings, per browser): hides CRM, Service, Accounting, SEPA and Integrations from the menu and command palette for counter-billing shops. Nothing is removed and the switch is reversible.
 
 ## 0.16.0
 

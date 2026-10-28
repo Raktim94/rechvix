@@ -13,12 +13,13 @@ import { LanguageMenuItems } from "./LanguageMenuItems";
 import { navLabel } from "./navLabel";
 import { setFormatRegion } from "../i18n";
 import { useOrgContext } from "../lib/useOrgContext";
-import { NAV_GROUPS } from "../nav";
+import { useRetailMode, visibleNavGroups } from "../lib/retailMode";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { logout } = useAuth();
   const { t } = useTranslation();
+  const retail = useRetailMode();
   const { legalEntity } = useOrgContext();
   const country = legalEntity?.CountryCode;
   // Money/date formatting follows the active company's country (see i18n/index.ts).
@@ -102,7 +103,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           rechvix
         </div>
         <ul className={styles.navList}>
-          {NAV_GROUPS.map((group) => (
+          {visibleNavGroups(retail).map((group) => (
             <li key={group.titleKey} className={styles.navGroup}>
               <p className={styles.navGroupLabel} aria-hidden="true">
                 {t(group.titleKey)}

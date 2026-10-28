@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rechvix API
-  version: "0.16.0"
+  version: "0.17.0"
   description: >
     Multi-company, multi-branch, multi-warehouse billing, inventory,
     accounting, and India-GST tax-management API. This spec is generated
@@ -651,11 +651,13 @@ paths:
       tags: [Catalogue]
       summary: Bulk-import products from an uploaded CSV or XLSX file.
       parameters:
-        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx] } }
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx, tally] } }
+        - { name: mapping, in: query, schema: { type: string }, description: "JSON object of Rechvix field to file column; a value starting with = is a fixed value for every row. Omit to use the suggested mapping." }
         - { name: dry_run, in: query, schema: { type: boolean, default: false }, description: Validate and report without committing any row. }
       requestBody:
         required: true
         content:
+          text/xml: { schema: { type: string, format: binary } }
           text/csv: { schema: { type: string, format: binary } }
           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
       responses:
@@ -663,6 +665,22 @@ paths:
         "400":
           description: INVALID_CSV / INVALID_XLSX / INVALID_FORMAT.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /catalogue/products/import/inspect:
+    post:
+      tags: [Catalogue]
+      summary: Read an uploaded file's columns and suggest how they map to the products import fields. Writes nothing.
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx, tally] } }
+      requestBody:
+        required: true
+        content:
+          text/csv: { schema: { type: string, format: binary } }
+          text/xml: { schema: { type: string, format: binary } }
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+      responses:
+        "200": { description: "Headers, target fields, suggested mapping (field to header), first rows and total row count.", content: { application/json: { schema: { type: object } } } }
+
 
   /catalogue/variants:
     post:
@@ -835,11 +853,13 @@ paths:
       tags: [Contacts]
       summary: Bulk-import customers/suppliers from an uploaded CSV or XLSX file.
       parameters:
-        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx] } }
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx, tally] } }
+        - { name: mapping, in: query, schema: { type: string }, description: "JSON object of Rechvix field to file column; a value starting with = is a fixed value for every row. Omit to use the suggested mapping." }
         - { name: dry_run, in: query, schema: { type: boolean, default: false } }
       requestBody:
         required: true
         content:
+          text/xml: { schema: { type: string, format: binary } }
           text/csv: { schema: { type: string, format: binary } }
           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
       responses:
@@ -847,6 +867,22 @@ paths:
         "400":
           description: INVALID_CSV / INVALID_XLSX / INVALID_FORMAT.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /contacts/parties/import/inspect:
+    post:
+      tags: [Contacts]
+      summary: Read an uploaded file's columns and suggest how they map to the customers and suppliers import fields. Writes nothing.
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx, tally] } }
+      requestBody:
+        required: true
+        content:
+          text/csv: { schema: { type: string, format: binary } }
+          text/xml: { schema: { type: string, format: binary } }
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+      responses:
+        "200": { description: "Headers, target fields, suggested mapping (field to header), first rows and total row count.", content: { application/json: { schema: { type: object } } } }
+
 
   # ============================================================
   # PRICING — price lists and per-variant/unit price items
