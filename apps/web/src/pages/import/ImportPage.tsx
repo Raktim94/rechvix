@@ -126,6 +126,17 @@ export function ImportPage() {
         onImported={refresh("historical-invoices")}
       />
 
+      <h2 style={{ margin: "8px 0 0" }}>5. CRM leads (optional)</h2>
+      <ImportPanel
+        title="Leads and deals"
+        path="/crm/opportunities/import"
+        mapColumns
+        defaultOpen
+        columns={["company_name", "contact_name", "contact_phone", "contact_email", "value", "source", "stage", "owner", "expected_close", "notes"]}
+        sampleRows={[{ company_name: "Asha General Stores", contact_name: "Asha Verma", contact_phone: "9876543210", contact_email: "asha@example.com", value: "25000", source: "Website", stage: "New", owner: "", expected_close: "2026-12-31", notes: "Wants a quote" }]}
+        onImported={refresh("crm")}
+      />
+
       <HistoryRegister />
     </div>
   );

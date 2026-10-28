@@ -173,3 +173,56 @@ func TestCRM_AssignmentRejectsForeignReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCRM_ImportLeads_ValidatesDedupesAndPlacesStages(t *testing.T) {
+	ctx := context.Background()
+	_, _, acct, _ := newTestAccountingServices(t)
+	fx := spainFixture(t, ctx, acct)
+	svc := newCRM(t)
+	sfx := uuid.NewString()[:6]
+
+	if _, err := svc.Create(ctx, fx.Principal, crm.Input{Title: "Existing " + sfx, ContactName: "Old", ContactPhone: "98765 43210", Currency: "EUR"}); err != nil {
+		t.Fatal(err)
+	}
+	file := rowsOf(
+		map[string]string{"company_name": "Acme " + sfx, "contact_phone": "+91 99999 11111", "value": "1500.50", "stage": "Proposal", "expected_close": "31/12/2099"}, // ok, placed in Proposal
+		map[string]string{"contact_name": "Same phone", "contact_phone": "09876543210"},                                                                               // duplicate of the existing lead by phone
+		map[string]string{"company_name": "Acme " + sfx, "contact_phone": "+91 99999 11111"},                                                                          // duplicate of row 1 inside the file
+		map[string]string{"company_name": "Bad value " + sfx, "value": "lots"},                                                                                        // error
+		map[string]string{"company_name": "Bad stage " + sfx, "stage": "Nowhere"},                                                                                     // error
+		map[string]string{"value": "5"}, // error: nobody to talk to
+		map[string]string{"contact_name": "Plain " + sfx, "contact_email": "plain@example.org"}, // ok, defaults
+	)
+	dry, err := svc.Import(ctx, fx.Principal, file, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry.Valid != 2 || dry.Duplicates != 2 || dry.Errors != 3 || dry.Committed != 0 {
+		t.Fatalf("dry run = %+v", dry)
+	}
+	before, _ := svc.List(ctx, fx.Principal)
+	rep, err := svc.Import(ctx, fx.Principal, file, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Committed != 2 || rep.Duplicates != 2 || rep.Errors != 3 {
+		t.Fatalf("import = %+v", rep)
+	}
+	after, _ := svc.List(ctx, fx.Principal)
+	if len(after)-len(before) != 2 {
+		t.Fatalf("expected two new leads, got %d", len(after)-len(before))
+	}
+	var acme *crm.Opportunity
+	for i := range after {
+		if after[i].CompanyName == "Acme "+sfx {
+			acme = &after[i]
+		}
+	}
+	if acme == nil || acme.Title != "Acme "+sfx || acme.Value.String() != "1500.5" || acme.ExpectedClose == nil {
+		t.Fatalf("imported lead = %+v", acme)
+	}
+	again, _ := svc.Import(ctx, fx.Principal, file, false)
+	if again.Committed != 0 || again.Duplicates != 4 {
+		t.Fatalf("re-running the file must add nothing: %+v", again)
+	}
+}

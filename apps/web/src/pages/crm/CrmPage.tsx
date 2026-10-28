@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useAuth } from "../../auth/AuthProvider";
+import { ImportPanel } from "../../components/ImportPanel";
 import { PlusIcon, SearchIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
 import { api } from "../../lib/api-client";
@@ -215,6 +216,7 @@ export function CrmPage() {
   });
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [view, setViewState] = useState<View>(readView);
   const [query, setQuery] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -252,10 +254,27 @@ export function CrmPage() {
           <h1>CRM</h1>
           <p className={layout.subtitle}>Leads and deals, from first contact to a customer. Values keep their own currency.</p>
         </div>
-        <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
-          <PlusIcon /> New lead
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className={ui.btnSecondary} aria-expanded={importing} onClick={() => setImporting((v) => !v)}>
+            Import leads
+          </button>
+          <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
+            <PlusIcon /> New lead
+          </button>
+        </div>
       </div>
+
+      {importing ? (
+        <ImportPanel
+          title="Import leads from a file"
+          path="/crm/opportunities/import"
+          mapColumns
+          defaultOpen
+          columns={["company_name", "contact_name", "contact_phone", "contact_email", "value", "source", "stage", "owner", "expected_close", "notes"]}
+          sampleRows={[{ company_name: "Asha General Stores", contact_name: "Asha Verma", contact_phone: "9876543210", contact_email: "asha@example.com", value: "25000", source: "Website", stage: "New", owner: "", expected_close: "2026-12-31", notes: "Wants a quote for billing software" }]}
+          onImported={() => void qc.invalidateQueries({ queryKey: ["crm"] })}
+        />
+      ) : null}
 
       {opps.isPending || tasks.isPending ? (
         <div className={styles.skeletonRow} aria-hidden="true">
@@ -311,7 +330,7 @@ export function CrmPage() {
         <div className={layout.skeleton} style={{ height: 260 }} aria-hidden="true" />
       ) : all.length === 0 ? (
         <div className={layout.emptyState}>
-          <p style={{ marginBottom: 12 }}>No leads yet. Add the first one and move it across the board as the conversation moves on.</p>
+          <p style={{ marginBottom: 12 }}>No leads yet. Add the first one, or import a whole list from a spreadsheet, and move each across the board as the conversation moves on.</p>
           <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
             Add a lead
           </button>

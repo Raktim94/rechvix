@@ -12,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	httpx "rechvix/internal/platform/http"
+	"rechvix/internal/platform/importer"
 	"rechvix/internal/platform/permissions"
 )
 
@@ -35,6 +36,8 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/crm/activities/{id}/done", h.done)
 	r.Post("/crm/activities/{id}/reopen", h.reopen)
 	r.Get("/crm/tasks", h.tasks)
+	r.Post("/crm/opportunities/import", h.importLeads)
+	r.Post("/crm/opportunities/import/inspect", h.inspectLeads)
 }
 
 func fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -323,4 +326,46 @@ func (h *Handlers) assign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// readLeadRows parses a spreadsheet upload and applies the optional column mapping.
+func readLeadRows(w http.ResponseWriter, r *http.Request, apply bool) ([]importer.Row, bool) {
+	rows, err := importer.ParseFormat(r.URL.Query().Get("format"), http.MaxBytesReader(w, r.Body, 32<<20))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FILE", "Could not read the uploaded file: "+err.Error()))
+		return nil, false
+	}
+	if !apply {
+		return rows, true
+	}
+	mapping, err := importer.ParseMapping(r.URL.Query().Get("mapping"))
+	if err == nil {
+		rows, err = importer.ApplyMapping(rows, LeadFields, mapping)
+	}
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_MAPPING", err.Error()))
+		return nil, false
+	}
+	return rows, true
+}
+
+func (h *Handlers) inspectLeads(w http.ResponseWriter, r *http.Request) {
+	rows, ok := readLeadRows(w, r, false)
+	if !ok {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, importer.Inspect(rows, LeadFields))
+}
+
+func (h *Handlers) importLeads(w http.ResponseWriter, r *http.Request) {
+	rows, ok := readLeadRows(w, r, true)
+	if !ok {
+		return
+	}
+	rep, err := h.svc.Import(r.Context(), principal(r), rows, r.URL.Query().Get("dry_run") == "true")
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, rep)
 }

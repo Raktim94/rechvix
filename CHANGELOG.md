@@ -13,6 +13,10 @@
 
 # Changelog
 
+## 0.21.0
+
+- **Import leads into the CRM from a spreadsheet.** On the CRM screen, **Import leads** takes a CSV or Excel file (no key or account needed), matches your columns for you (Lead Name, Company, Mobile No., E-mail, Amount, Lead Source, Status and similar headers from other CRMs are recognised, and any match can be changed), shows a preview of every row, and writes nothing until you confirm. Each row can carry a company, contact person, phone, email, deal value (₹ and thousands separators are cleaned), currency, source, stage, owner (by name or email) and an expected close date (day-first dates work). A row without any name is reported as an error; a row whose phone, email or name and company already exists in the CRM, or earlier in the same file, is skipped as a duplicate, so a file can be re-run safely. The same panel is step 5 of the Import page. New `POST /crm/opportunities/import` and `/inspect`. No database migration.
+
 ## 0.20.0
 
 - **New purchase is now a full bill grid.** Pick the supplier (search by name or phone, or **+ Add party** without leaving), enter the supplier's bill number and date, then type items down the grid: item, quantity, unit, rate, discount % and amount, with a running total. Enter walks item → quantity → rate → discount → the next row, a new row appears by itself, Ctrl+Enter saves, and **Save as draft** keeps it for later. The item list shows sale price and stock as you type, and Enter always looks up exactly what was typed (so a barcode scanner or fast typist never gets a stale match). The discount is applied to the unit price. Leaving a half-filled bill asks first.
