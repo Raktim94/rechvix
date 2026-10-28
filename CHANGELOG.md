@@ -13,6 +13,11 @@
 
 # Changelog
 
+## 0.17.1
+
+- Fixed the dashboard (and any long page) scrolling past its end and exposing a white strip: content positioned absolutely inside a page, such as screen-reader tables and chart internals, was escaping the scroll area and making the whole document taller than the window. The scroll area now contains it, the shell height follows a phone browser's collapsing toolbar, and scrolling no longer chains to the page.
+- Dashboard: "Collect payments" (largest balances with a one-tap WhatsApp reminder) and "Running low" (items under their reorder level, with a link to create a purchase). The Receivable vs payable chart uses compact figures so labels are no longer cut off on phones, and a sales change above 999% reads ">999%".
+
 ## 0.17.0
 
 - Bulk import of products and contacts now has a "Match your columns" step: headers from Vyapar, Tally, Marg or a hand-made sheet (Party Name, Phone No., Item Name, HSN, Sale Price, Tax Rate, Opening Stock and so on) are matched to Rechvix fields automatically and can be changed, skipped or set to one fixed value for every row (for example party type). Rupee signs, thousands separators (including 1,23,456.50) and a trailing % are cleaned from numeric columns. Files whose headers already use the old column names import exactly as before. New `POST /contacts/parties/import/inspect` and `POST /catalogue/products/import/inspect`; the import endpoints accept an optional `mapping` query parameter. No migration.
