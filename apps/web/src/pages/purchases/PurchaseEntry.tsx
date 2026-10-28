@@ -121,9 +121,14 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
     if (el) el.focus();
     else requestAnimationFrame(() => cells.current.get(`${key}:${col}`)?.focus());
   }
+  function focusFirstItem() {
+    const first = rows[0];
+    if (first) focusCell(first.key, "item");
+  }
   function nextRow(key: number) {
     const i = rows.findIndex((r) => r.key === key);
-    if (i < rows.length - 1) return rows[i + 1].key;
+    const following = rows[i + 1];
+    if (following) return following.key;
     const fresh = blankRow();
     setRows((rs) => [...rs, fresh]);
     return fresh.key;
@@ -238,7 +243,8 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (i < COLS.length - 1) focusCell(key, COLS[i + 1]);
+        const nextCol = COLS[i + 1];
+        if (nextCol) focusCell(key, nextCol);
         else focusCell(nextRow(key), "item");
       }
     };
@@ -297,7 +303,7 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
                       if (supplierList[0]) {
                         setSupplier(supplierList[0]);
                         setSupplierOpen(false);
-                        focusCell(rows[0].key, "item");
+                        focusFirstItem();
                       } else if (supplierQuery.trim()) setAddSupplier(true);
                     }
                   }}
@@ -317,7 +323,7 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
                           onClick={() => {
                             setSupplier(p);
                             setSupplierOpen(false);
-                            focusCell(rows[0].key, "item");
+                            focusFirstItem();
                           }}
                         >
                           {p.LegalName}
@@ -457,7 +463,7 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
           </table>
         </div>
         <div className={styles.foot}>
-          <button type="button" className={ui.btnSecondary} onClick={() => focusCell(nextRow(rows[rows.length - 1].key), "item")}>
+          <button type="button" className={ui.btnSecondary} onClick={() => focusCell(nextRow(rows[rows.length - 1]?.key ?? 0), "item")}>
             + Add row
           </button>
           <dl className={styles.totals}>

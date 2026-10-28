@@ -79,7 +79,8 @@ export function QuickAddItemModal({
       return;
     }
     if (!unitId || !units.data.some((u) => u.ID === unitId)) {
-      setUnitId((units.data.find((u) => u.Code === "PCS") ?? units.data[0]).ID);
+      const pick = units.data.find((u) => u.Code === "PCS") ?? units.data[0];
+      if (pick) setUnitId(pick.ID);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, units.data]);
