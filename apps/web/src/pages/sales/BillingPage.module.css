@@ -106,6 +106,12 @@
 
 .searchInputWrap {
   position: relative;
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+.searchInputWrap > input {
+  flex: 1;
 }
 
 .searchInputIcon {

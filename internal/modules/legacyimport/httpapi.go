@@ -2,6 +2,7 @@ package legacyimport
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,9 +43,22 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
+// readRows parses the body: a spreadsheet, or (format=tally) a Tally day-book
+// export, where the kind query parameter picks Sales or Purchase vouchers.
+func readRows(r *http.Request, body io.Reader) ([]importer.Row, error) {
+	if r.URL.Query().Get("format") == "tally" {
+		k := importer.TallySalesVouchers
+		if strings.EqualFold(r.URL.Query().Get("kind"), "PURCHASE") {
+			k = importer.TallyPurchaseVouchers
+		}
+		return importer.ParseTally(body, k)
+	}
+	return importer.ParseFormat(r.URL.Query().Get("format"), body)
+}
+
 // mapped reads the upload, then applies the optional mapping query parameter (or the suggested mapping).
 func mapped(w http.ResponseWriter, r *http.Request, fields []importer.Field) ([]importer.Row, bool) {
-	rows, err := importer.ParseFormat(r.URL.Query().Get("format"), http.MaxBytesReader(w, r.Body, 32<<20))
+	rows, err := readRows(r, http.MaxBytesReader(w, r.Body, 32<<20))
 	if err != nil {
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FILE", "Could not read the uploaded file: "+err.Error()))
 		return nil, false
@@ -62,7 +76,7 @@ func mapped(w http.ResponseWriter, r *http.Request, fields []importer.Field) ([]
 
 func (h *Handlers) inspect(fields []importer.Field) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := importer.ParseFormat(r.URL.Query().Get("format"), http.MaxBytesReader(w, r.Body, 32<<20))
+		rows, err := readRows(r, http.MaxBytesReader(w, r.Body, 32<<20))
 		if err != nil {
 			httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FILE", "Could not read the uploaded file: "+err.Error()))
 			return

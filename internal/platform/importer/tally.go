@@ -16,6 +16,10 @@ type TallyKind string
 const (
 	TallyParties TallyKind = "parties" // Sundry Debtors / Creditors ledgers
 	TallyItems   TallyKind = "items"   // stock items
+
+	// Day-book vouchers: one past invoice per Sales or Purchase voucher.
+	TallySalesVouchers    TallyKind = "sales-vouchers"
+	TallyPurchaseVouchers TallyKind = "purchase-vouchers"
 )
 
 // node is a loosely-typed XML element: Tally's exports nest the same tag
@@ -84,8 +88,11 @@ func ParseTally(r io.Reader, kind TallyKind) ([]Row, error) {
 	dec.Strict = false
 
 	want := "LEDGER"
-	if kind == TallyItems {
+	switch kind {
+	case TallyItems:
 		want = "STOCKITEM"
+	case TallySalesVouchers, TallyPurchaseVouchers:
+		want = "VOUCHER"
 	}
 	var rows []Row
 	var stack []*node
@@ -121,9 +128,14 @@ func ParseTally(r io.Reader, kind TallyKind) ([]Row, error) {
 				continue
 			}
 			var fields map[string]string
-			if kind == TallyItems {
+			switch kind {
+			case TallyItems:
 				fields = tallyItem(n)
-			} else {
+			case TallySalesVouchers:
+				fields = tallyVoucher(n, "sales")
+			case TallyPurchaseVouchers:
+				fields = tallyVoucher(n, "purchase")
+			default:
 				fields = tallyParty(n)
 			}
 			if fields != nil {
@@ -187,5 +199,42 @@ func tallyItem(n *node) map[string]string {
 	return map[string]string{
 		"name": name, "base_uom_code": n.val("BASEUNITS"), "hsn_sac_code": n.val("HSNCODE"),
 		"gst_rate": CleanNumber(rate), "opening_qty": qty,
+	}
+}
+
+// tallyVoucher reads one Sales or Purchase voucher as a past invoice. The
+// total is the party ledger's own entry (what the party owes or is owed,
+// tax included). Settlement vouchers (Receipt/Payment) are separate
+// vouchers in Tally and are not read, so paid is left empty and the
+// invoice arrives fully due; cancelled and optional vouchers are skipped.
+func tallyVoucher(n *node, want string) map[string]string {
+	if !strings.EqualFold(strings.TrimSpace(n.attrs["VCHTYPE"]), want) && !strings.EqualFold(n.val("VOUCHERTYPENAME"), want) {
+		return nil
+	}
+	if strings.EqualFold(n.val("ISCANCELLED"), "Yes") || strings.EqualFold(n.val("ISOPTIONAL"), "Yes") {
+		return nil
+	}
+	party := n.val("PARTYLEDGERNAME")
+	if party == "" {
+		party = n.val("PARTYNAME")
+	}
+	total := ""
+	var walk func(*node)
+	walk = func(x *node) {
+		if (x.name == "ALLLEDGERENTRIES.LIST" || x.name == "LEDGERENTRIES.LIST") && total == "" && strings.EqualFold(x.val("LEDGERNAME"), party) {
+			total = strings.TrimPrefix(CleanNumber(x.val("AMOUNT")), "-")
+		}
+		for _, c := range x.children {
+			walk(c)
+		}
+	}
+	walk(n)
+	date := n.val("DATE")
+	if len(date) == 8 {
+		date = date[:4] + "-" + date[4:6] + "-" + date[6:]
+	}
+	return map[string]string{
+		"party_name": party, "document_number": n.val("VOUCHERNUMBER"), "document_date": date,
+		"total": total, "notes": n.val("NARRATION"),
 	}
 }

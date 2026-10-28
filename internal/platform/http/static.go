@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,10 @@ func MountSPA(r chi.Router, dir string) {
 	if err != nil || !info.IsDir() {
 		return
 	}
+
+	// The install manifest is a real file; give it its proper type rather than
+	// whatever the host's mime table (often none) says.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 
 	fileServer := http.FileServer(http.Dir(dir))
 	indexPath := filepath.Join(dir, "index.html")

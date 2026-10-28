@@ -46,7 +46,7 @@ export function ImportPage() {
           </div>
           <div>
             <h3 style={{ fontSize: "1rem" }}>Tally Prime / ERP 9</h3>
-            <p className={ui.muted}>Export your masters as XML for contacts and stock items and choose the .xml file in steps 1 and 2. For balances and invoices, export a report to Excel or CSV.</p>
+            <p className={ui.muted}>Export your masters as XML for contacts and stock items (steps 1 and 2) and your Sales and Purchase day book as XML for past invoices (step 4). For party balances, export a report to Excel or CSV. Receipts and payments are separate vouchers in Tally, so invoices arrive fully due.</p>
           </div>
           <div>
             <h3 style={{ fontSize: "1rem" }}>Marg, Busy or a sheet</h3>
@@ -138,7 +138,25 @@ function HistoryRegister() {
     queryKey: ["historical-invoices", kind, q],
     queryFn: () => api.getListField<HistoricalInvoice>(`/migration/invoices?kind=${kind}&q=${encodeURIComponent(q)}`, "invoices"),
   });
-  const rows = list.data ?? [];
+  const [unpaidOnly, setUnpaidOnly] = useState(false);
+  const all = list.data ?? [];
+  const rows = unpaidOnly ? all.filter((r) => Number(r.due) > 0) : all;
+  // Age each unpaid invoice from its own date, so "who still owes me for
+  // which bill" is answerable from the imported history. This is a
+  // reference view: the books' balances come from the opening balances.
+  const now = Date.now();
+  const ageDays = (d: string) => Math.max(0, Math.floor((now - new Date(d).getTime()) / 86400000));
+  const buckets = [
+    { label: "0–30 days", min: 0, max: 30 },
+    { label: "31–60 days", min: 31, max: 60 },
+    { label: "61–90 days", min: 61, max: 90 },
+    { label: "Over 90 days", min: 91, max: Infinity },
+  ].map((b) => ({
+    ...b,
+    sale: all.filter((r) => r.kind === "SALE" && ageDays(r.document_date) >= b.min && ageDays(r.document_date) <= b.max).reduce((t, r) => t + Number(r.due), 0),
+    purchase: all.filter((r) => r.kind === "PURCHASE" && ageDays(r.document_date) >= b.min && ageDays(r.document_date) <= b.max).reduce((t, r) => t + Number(r.due), 0),
+  }));
+  const fmt = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <section className={layout.panel} aria-labelledby="register-heading">
@@ -150,7 +168,34 @@ function HistoryRegister() {
           <option value="SALE">Sales only</option>
           <option value="PURCHASE">Purchases only</option>
         </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="checkbox" checked={unpaidOnly} onChange={(e) => setUnpaidOnly(e.target.checked)} />
+          Unpaid only
+        </label>
       </div>
+      {all.some((r) => Number(r.due) > 0) ? (
+        <div className={ui.tableScroll} tabIndex={0} style={{ marginBottom: 12 }}>
+          <table className={ui.table}>
+            <caption className="srOnly">Unpaid imported invoices by age</caption>
+            <thead>
+              <tr>
+                <th scope="col">Age of invoice</th>
+                <th scope="col" className="num">Customers owe you</th>
+                <th scope="col" className="num">You owe suppliers</th>
+              </tr>
+            </thead>
+            <tbody>
+              {buckets.map((b) => (
+                <tr key={b.label}>
+                  <td>{b.label}</td>
+                  <td className="num">{fmt(b.sale)}</td>
+                  <td className="num">{fmt(b.purchase)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       {list.isPending ? (
         <div className={layout.skeleton} style={{ height: 96 }} aria-hidden="true" />
       ) : list.isError ? (
@@ -171,6 +216,7 @@ function HistoryRegister() {
                 <th scope="col">Name</th>
                 <th scope="col" className="num">Total</th>
                 <th scope="col" className="num">Due</th>
+                <th scope="col" className="num">Age (days)</th>
               </tr>
             </thead>
             <tbody>
@@ -182,6 +228,7 @@ function HistoryRegister() {
                   <td>{r.party_name}</td>
                   <td className="num">{r.total}</td>
                   <td className="num">{r.due}</td>
+                  <td className="num">{Number(r.due) > 0 ? ageDays(r.document_date) : "—"}</td>
                 </tr>
               ))}
             </tbody>

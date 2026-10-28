@@ -58,3 +58,28 @@ func TestParseTally_RejectsNonXML(t *testing.T) {
 		t.Fatal("empty accepted")
 	}
 }
+
+const tallyVouchers = `<ENVELOPE><BODY><IMPORTDATA><REQUESTDATA>
+<TALLYMESSAGE><VOUCHER VCHTYPE="Sales"><DATE>20260415</DATE><VOUCHERNUMBER>INV-7</VOUCHERNUMBER><PARTYLEDGERNAME>Asha Stores</PARTYLEDGERNAME><NARRATION>April</NARRATION>
+<ALLLEDGERENTRIES.LIST><LEDGERNAME>Asha Stores</LEDGERNAME><AMOUNT>-1,180.00</AMOUNT></ALLLEDGERENTRIES.LIST>
+<ALLLEDGERENTRIES.LIST><LEDGERNAME>Sales</LEDGERNAME><AMOUNT>1000.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER></TALLYMESSAGE>
+<TALLYMESSAGE><VOUCHER VCHTYPE="Sales"><ISCANCELLED>Yes</ISCANCELLED><PARTYLEDGERNAME>X</PARTYLEDGERNAME></VOUCHER></TALLYMESSAGE>
+<TALLYMESSAGE><VOUCHER VCHTYPE="Purchase"><DATE>20260416</DATE><VOUCHERNUMBER>P-1</VOUCHERNUMBER><PARTYLEDGERNAME>Bulk Co</PARTYLEDGERNAME>
+<ALLLEDGERENTRIES.LIST><LEDGERNAME>Bulk Co</LEDGERNAME><AMOUNT>500.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER></TALLYMESSAGE>
+<TALLYMESSAGE><VOUCHER VCHTYPE="Receipt"><PARTYLEDGERNAME>Asha Stores</PARTYLEDGERNAME></VOUCHER></TALLYMESSAGE>
+</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>`
+
+func TestParseTally_Vouchers(t *testing.T) {
+	sales, err := ParseTally(strings.NewReader(tallyVouchers), TallySalesVouchers)
+	if err != nil || len(sales) != 1 {
+		t.Fatalf("sales=%v err=%v", sales, err)
+	}
+	f := sales[0].Fields
+	if f["party_name"] != "Asha Stores" || f["document_number"] != "INV-7" || f["document_date"] != "2026-04-15" || f["total"] != "1180.00" || f["notes"] != "April" {
+		t.Fatalf("sales voucher = %v", f)
+	}
+	purchases, err := ParseTally(strings.NewReader(tallyVouchers), TallyPurchaseVouchers)
+	if err != nil || len(purchases) != 1 || purchases[0].Fields["total"] != "500.00" {
+		t.Fatalf("purchases=%v err=%v", purchases, err)
+	}
+}

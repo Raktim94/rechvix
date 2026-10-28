@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { QuickAddItemModal, type NewItem } from "../../components/QuickAddItemModal";
 import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
 import { SearchIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
@@ -199,6 +200,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
   const [taxDetails, setTaxDetails] = useState<TaxDetails>(EMPTY_TAX_DETAILS);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [newItemOpen, setNewItemOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<BillingLookupResult[]>([]);
   // A sales line carries only its ProductVariantID — there's no
@@ -463,6 +465,14 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
     });
   }
 
+  // A just-created item goes straight onto the bill at its sale rate.
+  function addNewItem(item: NewItem) {
+    setNameByVariant((cur) => ({ ...cur, [item.variantId]: item.name }));
+    addLine.mutate({ productVariantId: item.variantId, unitId: item.unitId, quantity: "1", unitPrice: item.salePrice || "0" });
+    setProductQuery("");
+    searchInputRef.current?.focus();
+  }
+
   // A barcode scanner types the whole code then sends Enter itself —
   // waiting for the debounced dropdown and a manual "Add" click on
   // every single scan is exactly the friction a scanner is supposed to
@@ -481,6 +491,10 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
       setProductResults(results);
       if (results.length === 1 && results[0]) {
         await handleAddProduct(results[0]);
+      } else if (results.length === 0) {
+        // Nothing matches what was typed or scanned: offer to create it
+        // right here instead of leaving the cashier at a dead end.
+        setNewItemOpen(true);
       }
     } catch {
       // Leave whatever's already shown — same "don't blank the screen
@@ -756,6 +770,9 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                 }}
                 autoComplete="off"
               />
+              <button type="button" className={ui.btnSecondary} disabled={!documentId} onClick={() => setNewItemOpen(true)}>
+                + Add new item
+              </button>
             </div>
             {productResults.length > 0 ? (
               <div className={styles.resultsTable}>
@@ -964,6 +981,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
           </div>
         </>
 
+      <QuickAddItemModal open={newItemOpen} onOpenChange={setNewItemOpen} defaultName={productQuery.trim()} onCreated={addNewItem} />
       <QuickAddPartyModal
         open={quickAddOpen}
         onOpenChange={setQuickAddOpen}

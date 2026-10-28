@@ -13,6 +13,7 @@ import { withLegalEntity } from "../../lib/useReportTable";
 import layout from "../DashboardPage.module.css";
 import { CancelPurchaseModal } from "./CancelPurchaseModal";
 import { ImportAiMarkdownButton } from "./ImportAiMarkdownButton";
+import { PurchaseEntry } from "./PurchaseEntry";
 import { PurchaseScanReviewModal, type ResolvedScanLine } from "./PurchaseScanReviewModal";
 
 type PurchaseStatus = "DRAFT" | "FINALIZED" | "CANCELLED";
@@ -218,6 +219,19 @@ export function PurchasesPage() {
       queryClient.invalidateQueries({ queryKey: ["purchase-documents"] });
     },
   });
+
+  if (creating && !activeDocId) {
+    return (
+      <PurchaseEntry
+        onBack={() => setCreating(false)}
+        onSaved={(id) => {
+          queryClient.invalidateQueries({ queryKey: ["purchase-documents"] });
+          setCreating(false);
+          setActiveDocId(id);
+        }}
+      />
+    );
+  }
 
   if (creating || activeDocId) {
     const lines = activeDoc.data?.lines ?? [];

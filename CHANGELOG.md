@@ -13,6 +13,15 @@
 
 # Changelog
 
+## 0.20.0
+
+- **New purchase is now a full bill grid.** Pick the supplier (search by name or phone, or **+ Add party** without leaving), enter the supplier's bill number and date, then type items down the grid: item, quantity, unit, rate, discount % and amount, with a running total. Enter walks item → quantity → rate → discount → the next row, a new row appears by itself, Ctrl+Enter saves, and **Save as draft** keeps it for later. The item list shows sale price and stock as you type, and Enter always looks up exactly what was typed (so a barcode scanner or fast typist never gets a stale match). The discount is applied to the unit price. Leaving a half-filled bill asks first.
+- **Add new item** in purchase and sales: item name, sale rate, MRP, HSN code, tax rate (GST %) and unit in one small form. Enter moves to the next field and saves from the last; **Save & add another** keeps the form open so several items can be created in a row. The item is saved to the catalogue (searchable and reusable straight away), its sale rate goes to the price list, and the tax rate is recorded for its HSN code if none is on file. On the sales screen it is added to the bill at its sale rate, and searching or scanning something that does not exist offers to create it.
+- **Tally day-book import**: Sales and Purchase vouchers in a Tally XML export become past invoices (original number, date, party and total, tax included). Cancelled and optional vouchers are skipped; receipts and payments are separate vouchers in Tally, so invoices arrive fully due.
+- **Imported invoices show what is still owed and for how long**: an "Unpaid only" filter, an age in days on every invoice, and an ageing table (0-30, 31-60, 61-90, over 90 days) for customers and suppliers. Still a reference view; the books' balances come from the opening balances.
+- **Install on a phone**: the web app has an install manifest and icons, so "Add to Home screen" opens Rechvix full screen like an app. It is a web app, not a store app.
+- No database migration.
+
 ## 0.19.0
 
 - **Import your data** (new menu item, `/import`): one guided page that takes a business over from Vyapar, Tally, Marg or a spreadsheet in the right order: customers and suppliers, items with opening stock, opening balances, then past invoices. Each step has the column-matching preview and never writes until confirmed.

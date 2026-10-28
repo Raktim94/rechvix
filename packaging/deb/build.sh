@@ -2,7 +2,7 @@
 # Builds rechvix_<version>_<arch>.deb.   Usage: packaging/deb/build.sh <version> <amd64|arm64>
 # Needs Go, a built web app in apps/web/dist (npm ci && npm run build in apps/web), and dpkg-deb.
 set -euo pipefail
-VERSION="${1:?version, e.g. 0.19.0}"; ARCH="${2:?amd64 or arm64}"
+VERSION="${1:?version, e.g. 0.20.0}"; ARCH="${2:?amd64 or arm64}"
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="${OUT_DIR:-$ROOT/dist}"; STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 [ -f "$ROOT/apps/web/dist/index.html" ] || { echo "apps/web/dist is missing: build the web app first" >&2; exit 1; }
