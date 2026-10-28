@@ -5,7 +5,7 @@
 #
 # Downloads the .deb for the latest release from GitHub, checks its SHA-256, and installs it with apt. The package
 # installs PostgreSQL if needed, creates the database, and starts Rechvix on port 8090.
-# Pin a version:  curl -fsSL https://rechvix.nodedr.com/install-linux.sh | sudo RECHVIX_VERSION=0.18.0 bash
+# Pin a version:  curl -fsSL https://rechvix.nodedr.com/install-linux.sh | sudo RECHVIX_VERSION=0.19.0 bash
 set -euo pipefail
 
 REPO="Raktim94/rechvix"
@@ -32,7 +32,7 @@ if [ -z "$VERSION" ]; then
   # The /releases/latest redirect has no API rate limit (shared networks get HTTP 403 from api.github.com); the API is the fallback.
   VERSION="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed -n 's|.*/releases/tag/v\{0,1\}||p' || true)"
   [ -n "$VERSION" ] || VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -n1)"
-  [ -n "$VERSION" ] || die "Could not determine the latest version. Set RECHVIX_VERSION, for example RECHVIX_VERSION=0.18.0."
+  [ -n "$VERSION" ] || die "Could not determine the latest version. Set RECHVIX_VERSION, for example RECHVIX_VERSION=0.19.0."
 fi
 VERSION="${VERSION#v}"
 FILE="rechvix_${VERSION}_${ARCH}.deb"

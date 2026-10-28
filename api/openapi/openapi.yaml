@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rechvix API
-  version: "0.18.0"
+  version: "0.19.0"
   description: >
     Multi-company, multi-branch, multi-warehouse billing, inventory,
     accounting, and India-GST tax-management API. This spec is generated
@@ -2531,6 +2531,92 @@ paths:
           description: Permission denied
         '404':
           description: Record not found in this organisation
+
+  /migration/opening-balances/import:
+    post:
+      tags: [Accounting]
+      summary: Import opening balances (what each customer owes you and you owe each supplier) as journal entries.
+      description: Posts Dr Accounts Receivable / Cr Opening Balance Equity for a receivable and Dr Opening Balance Equity / Cr Accounts Payable for a payable, tagged to the party. A party can have one opening balance; a repeat is reported as a duplicate. Requires accounting.post.
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx] } }
+        - { name: as_of, in: query, schema: { type: string, format: date }, description: Balance date; defaults to today. }
+        - { name: mapping, in: query, schema: { type: string }, description: "JSON object of field to file column; a value starting with = is a fixed value." }
+        - { name: dry_run, in: query, schema: { type: boolean, default: false } }
+      requestBody:
+        required: true
+        content:
+          text/csv: { schema: { type: string, format: binary } }
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ImportReport" } } } }
+
+  /migration/opening-balances/inspect:
+    post:
+      tags: [Accounting]
+      summary: Read an uploaded file's columns and suggest a mapping to the opening-balance fields. Writes nothing.
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx] } }
+      requestBody:
+        required: true
+        content:
+          text/csv: { schema: { type: string, format: binary } }
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+      responses:
+        "200": { description: Headers, fields, suggested mapping, sample rows and total., content: { application/json: { schema: { type: object } } } }
+
+  /migration/invoices/import:
+    post:
+      tags: [Accounting]
+      summary: Import past sales invoices or purchase bills into the history register.
+      description: Reference records only; they never change stock, tax returns or the ledger. Contacts must already exist. Invoice numbers are unique per kind.
+      parameters:
+        - { name: kind, in: query, required: true, schema: { type: string, enum: [SALE, PURCHASE] } }
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx] } }
+        - { name: mapping, in: query, schema: { type: string } }
+        - { name: dry_run, in: query, schema: { type: boolean, default: false } }
+      requestBody:
+        required: true
+        content:
+          text/csv: { schema: { type: string, format: binary } }
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ImportReport" } } } }
+
+  /migration/invoices/inspect:
+    post:
+      tags: [Accounting]
+      summary: Read an uploaded file's columns and suggest a mapping to the past-invoice fields. Writes nothing.
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [csv, xlsx] } }
+      requestBody:
+        required: true
+        content:
+          text/csv: { schema: { type: string, format: binary } }
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+      responses:
+        "200": { description: Headers, fields, suggested mapping, sample rows and total., content: { application/json: { schema: { type: object } } } }
+
+  /migration/invoices:
+    get:
+      tags: [Accounting]
+      summary: List the imported invoice history.
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [SALE, PURCHASE] } }
+        - { name: q, in: query, schema: { type: string }, description: Search by number or party name. }
+        - { name: limit, in: query, schema: { type: integer, maximum: 500 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { invoices: { type: array, items: { type: object } } } } } } }
+
+  /reports/sales/payment-modes:
+    get:
+      tags: [Reports]
+      summary: What customers paid by method (cash, UPI, card, bank transfer, cheque, other) in a period.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: legal_entity_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: "Table with columns Method, Receipts, Amount.", content: { application/json: { schema: { type: object } } } }
 
 components:
   parameters:

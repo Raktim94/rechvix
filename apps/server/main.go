@@ -59,6 +59,7 @@ import (
 	inventoryapp "rechvix/internal/modules/inventory/app"
 	inventoryhttp "rechvix/internal/modules/inventory/httpapi"
 	inventorypg "rechvix/internal/modules/inventory/pg"
+	"rechvix/internal/modules/legacyimport"
 	logisticsapp "rechvix/internal/modules/logistics/app"
 	logisticshttp "rechvix/internal/modules/logistics/httpapi"
 	logisticspg "rechvix/internal/modules/logistics/pg"
@@ -649,6 +650,7 @@ func run() error {
 			esignhttp.Mount(r)
 			onlinepay.NewHandlers(onlinepaySvc).Mount(r)
 			shop.NewHandlers(shopSvc).Mount(r)
+			legacyimport.NewHandlers(legacyimport.NewService(pool, accountingSvc, permissionsChecker, auditRecorder)).Mount(r)
 			sepa.NewHandlers(sepa.NewService(pool, accountingSvc, aead, permissionsChecker, auditRecorder)).Mount(r)
 			reminders.NewHandlers(remindersSvc).Mount(r)
 			datasync.NewHandlers(datasyncSvc).Mount(r)

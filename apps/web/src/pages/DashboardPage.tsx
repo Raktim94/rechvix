@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactECharts from "echarts-for-react";
 import styles from "./DashboardPage.module.css";
-import { DashboardFollowUps } from "../components/DashboardFollowUps";
+import { DashboardFollowUps, PaymentModesPanel } from "../components/DashboardFollowUps";
 import { QuickAccess } from "../components/QuickAccess";
 import { api } from "../lib/api-client";
 import { toLocalIsoDate } from "../lib/calendarGrid";
@@ -503,6 +503,8 @@ export function DashboardPage() {
         </div>
         <TodaySummaryPanel />
       </div>
+
+      <PaymentModesPanel days={days} legalEntityId={org.legalEntity?.ID} currency={currency} />
 
       <DashboardFollowUps legalEntityId={org.legalEntity?.ID} />
 

@@ -215,6 +215,24 @@ func (s *Service) LowStock(ctx context.Context, principal permissions.Principal,
 	return out, err
 }
 
+// PaymentModes reports what customers paid by cash, UPI, card, bank transfer and so on in the period.
+func (s *Service) PaymentModes(ctx context.Context, principal permissions.Principal, f domain.Filter) ([]domain.PaymentModeRow, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return nil, err
+	}
+	f, sees, err := s.resolvedFilter(ctx, principal, f)
+	if err != nil || !sees {
+		return nil, err
+	}
+	var out []domain.PaymentModeRow
+	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		var err error
+		out, err = s.repo.PaymentModes(ctx, scoped(principal, f))
+		return err
+	})
+	return out, err
+}
+
 func (s *Service) StockMovements(ctx context.Context, principal permissions.Principal, f domain.Filter) ([]domain.StockMovementRow, error) {
 	if err := s.view(ctx, principal); err != nil {
 		return nil, err

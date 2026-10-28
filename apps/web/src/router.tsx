@@ -9,6 +9,7 @@ import { readSessionHint } from "./auth/session";
 import {
   AccountingPage,
   BackupPage,
+  ImportPage,
   BillingPage,
   CalendarPage,
   CataloguePage,
@@ -217,6 +218,7 @@ const reportsRoute = realRoute("/reports", ReportsPage);
 const integrationsRoute = realRoute("/integrations", IntegrationsPage);
 const settingsRoute = realRoute("/settings", SettingsPage);
 const backupRoute = realRoute("/backup", BackupPage);
+const importRoute = realRoute("/import", ImportPage);
 const staffRoute = realRoute("/staff", StaffPage);
 const calendarRoute = realRoute("/calendar", CalendarPage);
 const crmRoute = realRoute("/crm", CrmPage);
@@ -252,6 +254,7 @@ const routeTree = rootRoute.addChildren([
   reportsRoute,
   integrationsRoute,
   backupRoute,
+  importRoute,
   staffRoute,
   calendarRoute,
   crmRoute,

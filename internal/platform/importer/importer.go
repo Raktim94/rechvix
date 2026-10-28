@@ -70,6 +70,18 @@ func ParseXLSX(r io.Reader) ([]Row, error) {
 	return toRows(header, rows[1:]), nil
 }
 
+// ParseFormat parses r according to format: "csv" or "xlsx".
+func ParseFormat(format string, r io.Reader) ([]Row, error) {
+	switch format {
+	case "csv":
+		return ParseCSV(r)
+	case "xlsx":
+		return ParseXLSX(r)
+	default:
+		return nil, fmt.Errorf("importer: format must be csv or xlsx")
+	}
+}
+
 func toRows(header []string, dataRows [][]string) []Row {
 	trimmedHeader := make([]string, len(header))
 	for i, h := range header {

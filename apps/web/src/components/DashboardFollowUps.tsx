@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { api } from "../lib/api-client";
-import { formatMoney, type Money } from "../lib/money";
+import { isoDay } from "../lib/dashboardMath";
+import { currencySymbol, formatMoney, type Money } from "../lib/money";
 import { useReportTable, withLegalEntity } from "../lib/useReportTable";
 import { whatsAppShareUrl } from "../lib/whatsapp";
 import styles from "../pages/DashboardPage.module.css";
@@ -117,6 +118,63 @@ function Reorder({ legalEntityId }: { legalEntityId: string | undefined }) {
           <p style={{ margin: "12px 0 0", display: "flex", gap: 16, flexWrap: "wrap" }}>
             <Link to="/purchases">Create a purchase →</Link>
             <Link to="/inventory">All stock →</Link>
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+const METHOD_LABEL: Record<string, string> = { CASH: "Cash", UPI: "UPI", CARD: "Card", BANK_TRANSFER: "Bank transfer", CHEQUE: "Cheque", OTHER: "Other" };
+// Colour-blind-safe pairing with a text label and percentage on every row, so colour is never the only signal.
+const METHOD_COLOUR = ["var(--color-accent)", "var(--color-warning, #9a6a00)", "#4a6fa5", "#8a5a8a", "#6b7d6b", "#999"];
+
+/** What customers paid in the chosen period, by method. Built from the receipts already recorded against invoices. */
+export function PaymentModesPanel({ days, legalEntityId, currency }: { days: number; legalEntityId: string | undefined; currency: string }) {
+  const end = new Date();
+  const from = isoDay(new Date(end.getFullYear(), end.getMonth(), end.getDate() - (days - 1)));
+  const to = isoDay(end);
+  const q = useReportTable(withLegalEntity(`/reports/sales/payment-modes?format=json&from=${from}&to=${to}`, legalEntityId));
+  const rows = (q.data?.rows ?? []).map((r) => ({ method: r[0] ?? "", count: Number(r[1] ?? 0), amount: Number(r[2] ?? 0) }));
+  const total = rows.reduce((a, r) => a + r.amount, 0);
+  const symbol = currencySymbol(currency);
+  const money = (n: number) => `${symbol}${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n)}`;
+
+  return (
+    <section className={styles.panel} aria-labelledby="modes-heading">
+      <h2 id="modes-heading">How customers paid</h2>
+      {q.isPending ? (
+        <div className={styles.skeleton} style={{ height: 96 }} aria-hidden="true" />
+      ) : q.isError ? (
+        <p className={styles.errorState} role="alert">
+          Couldn't load payment methods.
+        </p>
+      ) : total <= 0 ? (
+        <p className={styles.emptyState}>No payments received in the last {days} days.</p>
+      ) : (
+        <>
+          <div role="img" aria-label={rows.map((r) => `${METHOD_LABEL[r.method] ?? r.method} ${Math.round((r.amount / total) * 100)}%`).join(", ")} style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", background: "var(--color-border)" }}>
+            {rows.map((r, i) => (
+              <div key={r.method} style={{ width: `${(r.amount / total) * 100}%`, background: METHOD_COLOUR[i % METHOD_COLOUR.length] }} />
+            ))}
+          </div>
+          <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0 }}>
+            {rows.map((r, i) => (
+              <li key={r.method} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--color-border)" }}>
+                <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: METHOD_COLOUR[i % METHOD_COLOUR.length], flex: "none" }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {METHOD_LABEL[r.method] ?? r.method}
+                  <span className={ui.muted}> · {r.count} receipt{r.count === 1 ? "" : "s"}</span>
+                </span>
+                <strong className="num">{money(r.amount)}</strong>
+                <span className={ui.muted} style={{ minWidth: 40, textAlign: "right" }}>
+                  {Math.round((r.amount / total) * 100)}%
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className={ui.muted} style={{ margin: "10px 0 0", fontSize: "var(--text-xs)" }}>
+            Last {days} days, receipts recorded against invoices and on account.
           </p>
         </>
       )}

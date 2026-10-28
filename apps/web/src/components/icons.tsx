@@ -82,6 +82,12 @@ export const IntegrationsIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const ImportIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 3v12 M7 10l5 5 5-5 M4 19h16" />
+  </Icon>
+);
+
 export const BackupIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <path d="M12 3a9 9 0 108 13 M12 3v5l3-1" />

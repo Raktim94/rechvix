@@ -13,6 +13,13 @@
 
 # Changelog
 
+## 0.19.0
+
+- **Import your data** (new menu item, `/import`): one guided page that takes a business over from Vyapar, Tally, Marg or a spreadsheet in the right order: customers and suppliers, items with opening stock, opening balances, then past invoices. Each step has the column-matching preview and never writes until confirmed.
+- **Opening balances** for customers and suppliers become real journal entries (a receivable as Dr Accounts Receivable / Cr Opening Balance Equity, a payable as Dr Opening Balance Equity / Cr Accounts Payable, tagged to the party), so ledgers, ageing and the dashboard are right from the first day. One balance per contact, so a file can be re-run safely; a contact that is both customer and supplier must say RECEIVABLE or PAYABLE; the books still balance. New `POST /migration/opening-balances/import` and `/inspect`.
+- **Past invoices** (sales and purchases) are kept in an imported-history register with their original numbers, dates, totals and amounts paid, searchable on the Import page. They are reference records only and never change stock, tax returns or the accounts, so nothing is counted twice. Day-first dates (25/12/2025, 25-Dec-2025) are understood. New `POST /migration/invoices/import`, `/inspect` and `GET /migration/invoices`. Migration 0064 (additive).
+- **Dashboard "How customers paid"**: cash, UPI, card, bank transfer, cheque and other for the chosen period, from the receipts already recorded, with amounts and percentages. New `GET /reports/sales/payment-modes`.
+
 ## 0.18.0
 
 - Online shop orders now follow a fulfilment flow: New, Confirmed, Processing, Dispatched, Delivered, or Cancelled until dispatch. The orders list in Settings has a tab per stage with counts, the next step on every order, a WhatsApp message to the customer, and **Create invoice**, which makes a draft tax invoice from the order (once; asking again opens the same one) and opens it. Finalizing that invoice in Sales is what takes the goods out of stock. An order that has an invoice is cancelled by cancelling the invoice. New `POST /shop/orders/{id}/invoice`; migration 0063 is additive (wider status list, `invoice_document_id`, `status_changed_at`).

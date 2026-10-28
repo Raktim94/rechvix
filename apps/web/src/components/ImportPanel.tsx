@@ -92,6 +92,7 @@ export function ImportPanel({
   sampleRows,
   extraQuery,
   mapColumns = false,
+  defaultOpen = false,
   onImported,
 }: {
   title: string;
@@ -112,9 +113,11 @@ export function ImportPanel({
   /** Show the "match your columns" step. Needs a `${path}/inspect` endpoint
    * on the server (importer.Inspect); omit for imports that have none. */
   mapColumns?: boolean;
+  /** Start expanded (used on the Import centre, where every panel is the point of the page). */
+  defaultOpen?: boolean;
   onImported: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [busy, setBusy] = useState<"preview" | "import" | null>(null);

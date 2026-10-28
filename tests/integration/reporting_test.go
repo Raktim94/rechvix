@@ -638,3 +638,52 @@ func TestReporting_GrossProfit_UsesHistoricalCost_NotCurrentAverage(t *testing.T
 		t.Fatalf("QuantitySold = %s, want 20", got.QuantitySold)
 	}
 }
+
+func TestReporting_PaymentModes_TotalsReceiptsByMethod(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+	inv := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "100", "100") // grand 11800
+
+	for _, r := range []struct {
+		method accountingdomain.PaymentMethod
+		amount string
+		onDoc  bool
+	}{
+		{accountingdomain.MethodCash, "2000", true},
+		{accountingdomain.MethodUPI, "1500", true},
+		{accountingdomain.MethodCash, "500", false}, // on account, no invoice
+	} {
+		p := accountingapp.RecordReceiptParams{PartyID: fx.CustomerID, Amount: mustDecimal(t, r.amount), Method: r.method, ReceivedAt: time.Now()}
+		if r.onDoc {
+			p.SalesDocumentID = &inv.ID
+		}
+		if _, err := accountingSvc.RecordReceipt(ctx, fx.Principal, p); err != nil {
+			t.Fatalf("RecordReceipt %s: %v", r.method, err)
+		}
+	}
+
+	from, to := time.Now().AddDate(0, 0, -1), time.Now().AddDate(0, 0, 1)
+	rows, err := reportingSvc.PaymentModes(ctx, fx.Principal, reportingdomain.Filter{From: &from, To: &to})
+	if err != nil {
+		t.Fatalf("PaymentModes: %v", err)
+	}
+	got := map[string]string{}
+	count := map[string]int{}
+	for _, r := range rows {
+		got[r.Method], count[r.Method] = r.Amount, r.Receipts
+	}
+	if got["CASH"] != "2500.00" || count["CASH"] != 2 || got["UPI"] != "1500.00" || count["UPI"] != 1 || len(rows) != 2 {
+		t.Fatalf("by method = %v counts %v, want CASH 2500.00 (2) and UPI 1500.00 (1)", got, count)
+	}
+	if len(rows) == 2 && rows[0].Method != "CASH" {
+		t.Fatalf("largest method first, got %s", rows[0].Method)
+	}
+
+	// A period that contains no receipts reports nothing.
+	pf, pt := time.Now().AddDate(0, 0, -30), time.Now().AddDate(0, 0, -20)
+	if rows, _ := reportingSvc.PaymentModes(ctx, fx.Principal, reportingdomain.Filter{From: &pf, To: &pt}); len(rows) != 0 {
+		t.Fatalf("an empty period: %+v", rows)
+	}
+}

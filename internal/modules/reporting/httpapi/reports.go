@@ -160,6 +160,24 @@ func (h *Handlers) lowStock(w http.ResponseWriter, r *http.Request) {
 	writeTable(w, r, t)
 }
 
+func (h *Handlers) paymentModes(w http.ResponseWriter, r *http.Request) {
+	f, err := parseFilter(r)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	rows, err := h.svc.PaymentModes(r.Context(), principal(r), f)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	t := export.Table{Title: "Payment Modes", Headers: []string{"Method", "Receipts", "Amount"}}
+	for _, m := range rows {
+		t.Rows = append(t.Rows, []string{m.Method, strconv.Itoa(m.Receipts), m.Amount})
+	}
+	writeTable(w, r, t)
+}
+
 func (h *Handlers) stockMovements(w http.ResponseWriter, r *http.Request) {
 	f, err := parseFilter(r)
 	if err != nil {

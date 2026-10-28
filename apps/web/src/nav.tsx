@@ -7,6 +7,7 @@ import {
   ContactsIcon,
   DashboardIcon,
   GstIcon,
+  ImportIcon,
   IntegrationsIcon,
   InventoryIcon,
   PurchasesIcon,
@@ -82,6 +83,7 @@ export const NAV_GROUPS: NavGroup[] = [
     titleKey: "nav.group.setup",
     items: [
       { to: "/integrations", labelKey: "nav.item.integrations", icon: <IntegrationsIcon /> },
+      { to: "/import", labelKey: "nav.item.import", icon: <ImportIcon /> },
       { to: "/backup", labelKey: "nav.item.backup", icon: <BackupIcon /> },
       { to: "/settings", labelKey: "nav.item.settings", icon: <SettingsIcon /> },
     ],

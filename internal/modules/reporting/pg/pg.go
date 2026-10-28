@@ -587,6 +587,36 @@ func (r *Repo) LowStock(ctx context.Context, f domain.Filter) ([]domain.LowStock
 	return out, rows.Err()
 }
 
+// PaymentModes totals customer receipts by payment method. A receipt is attributed to a company through the invoice it paid;
+// when the caller is limited to some companies, on-account receipts (no invoice) cannot be attributed and are left out.
+func (r *Repo) PaymentModes(ctx context.Context, f domain.Filter) ([]domain.PaymentModeRow, error) {
+	w := newWhere(f.OrganisationID, "rc")
+	w.addRange("rc.received_at", f.From, f.To)
+	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
+	q := fmt.Sprintf(`
+		SELECT rc.payment_method, COUNT(*), COALESCE(SUM(rc.amount), 0)
+		FROM receipts rc LEFT JOIN sales_documents sd ON sd.id = rc.sales_document_id
+		WHERE rc.organisation_id = $1 %s
+		GROUP BY rc.payment_method
+		ORDER BY SUM(rc.amount) DESC, rc.payment_method`, condAppend(w))
+	rows, err := r.pool.Q(ctx).Query(ctx, q, w.args...)
+	if err != nil {
+		return nil, fmt.Errorf("reporting: payment modes query: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.PaymentModeRow
+	for rows.Next() {
+		var m domain.PaymentModeRow
+		var amount decimal.Decimal
+		if err := rows.Scan(&m.Method, &m.Receipts, &amount); err != nil {
+			return nil, fmt.Errorf("reporting: scanning payment mode row: %w", err)
+		}
+		m.Amount = amount.StringFixed(2)
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repo) StockMovements(ctx context.Context, f domain.Filter) ([]domain.StockMovementRow, error) {
 	w := newWhere(f.OrganisationID, "sm")
 	w.addRange("sm.created_at", f.From, f.To)

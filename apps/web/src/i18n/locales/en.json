@@ -41,6 +41,7 @@
       "calendar": "Calendar",
       "integrations": "Integrations",
       "backup": "Backup",
+      "import": "Import",
       "settings": "Settings",
       "tax_gst": "GST / Tax",
       "crm": "CRM",

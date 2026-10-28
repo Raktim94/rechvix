@@ -173,6 +173,13 @@ type LowStockRow struct {
 	ReorderLevel     string
 }
 
+// PaymentModeRow is what was collected from customers by one payment method (cash, UPI, card and so on) in a period.
+type PaymentModeRow struct {
+	Method   string
+	Receipts int
+	Amount   string // decimal.Decimal.String(), in the receipts' own currency (the dashboard sums them the same way)
+}
+
 type StockMovementRow struct {
 	MovementID    uuid.UUID
 	OccurredAt    time.Time
@@ -301,6 +308,7 @@ type Repository interface {
 	PurchaseDetail(ctx context.Context, f Filter) ([]DocumentDetailRow, error)
 	StockValuation(ctx context.Context, f Filter) ([]StockValuationRow, error)
 	LowStock(ctx context.Context, f Filter) ([]LowStockRow, error)
+	PaymentModes(ctx context.Context, f Filter) ([]PaymentModeRow, error)
 	StockMovements(ctx context.Context, f Filter) ([]StockMovementRow, error)
 	TrialBalance(ctx context.Context, orgID uuid.UUID, asOf time.Time) ([]TrialBalanceRow, error)
 	ReceivablesSummaryParties(ctx context.Context, orgID uuid.UUID) ([]uuid.UUID, error)

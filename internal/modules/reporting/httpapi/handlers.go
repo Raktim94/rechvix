@@ -34,6 +34,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/reports/purchases/documents", h.purchaseDocuments)
 	r.Get("/reports/inventory/valuation", h.stockValuation)
 	r.Get("/reports/inventory/low-stock", h.lowStock)
+	r.Get("/reports/sales/payment-modes", h.paymentModes)
 	r.Get("/reports/inventory/movements", h.stockMovements)
 	r.Get("/reports/accounting/trial-balance", h.trialBalance)
 	r.Get("/reports/accounting/receivables", h.receivables)
