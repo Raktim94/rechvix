@@ -8,7 +8,12 @@ import { api } from "../../lib/api-client";
 import { formatMoney, formatMoneyWhole } from "../../lib/money";
 import layout from "../DashboardPage.module.css";
 import { ContactActions } from "./ContactActions";
-import { formatTotals, matches, useCrmData, useMoveOpportunity, whenLabel, who, type Activity, type Opp, type Owner, type Stage } from "./crm";
+import { CrmInsights } from "./CrmInsights";
+import { downloadCsv, formatTotals, leadScore, leadsToCsv, matches, useCrmData, whenLabel, who, type Activity, type Band, type Opp, type Owner, type Stage } from "./crm";
+import extras from "./CrmExtras.module.css";
+import { useMoveWithReason } from "./LossReason";
+import { buildQueue, MyDay } from "./MyDay";
+import { ScoreChip } from "./ScoreChip";
 import styles from "./CrmPage.module.css";
 import { NewLeadDialog } from "./NewLeadDialog";
 import { OpportunityDrawer } from "./OpportunityDrawer";
@@ -69,7 +74,7 @@ function Summary({ opps, tasks }: { opps: Opp[]; tasks: Activity[] }) {
   );
 }
 
-function DealCard({ opp, owner, selected, onOpen }: { opp: Opp; owner: string | undefined; selected: boolean; onOpen: () => void }) {
+function DealCard({ opp, owner, selected, stages, onOpen }: { opp: Opp; owner: string | undefined; selected: boolean; stages: Stage[]; onOpen: () => void }) {
   const close = whenLabel(opp.expected_close);
   const late = close.late && opp.stage_kind === "OPEN";
   return (
@@ -87,6 +92,7 @@ function DealCard({ opp, owner, selected, onOpen }: { opp: Opp; owner: string | 
           <span className={styles.cardTitle}>{opp.title}</span>
           <span className={styles.cardWho}>{who(opp)}</span>
         </button>
+        <ScoreChip opp={opp} stages={stages} />
         <span className={styles.cardValue}>{formatMoneyWhole({ amount: opp.value, currency: opp.currency })}</span>
         <span className={styles.cardMeta}>
           {opp.expected_close ? <span className={late ? styles.late : undefined}>{late ? close.label : `Close ${close.label}`}</span> : null}
@@ -143,7 +149,7 @@ function Board({ stages, opps, owners, selected, onOpen, onMove }: { stages: Sta
             ) : (
               <ul className={styles.cards}>
                 {items.map((o) => (
-                  <DealCard key={o.id} opp={o} owner={o.owner_user_id ? owners.get(o.owner_user_id) : undefined} selected={selected === o.id} onOpen={() => onOpen(o.id)} />
+                  <DealCard key={o.id} opp={o} owner={o.owner_user_id ? owners.get(o.owner_user_id) : undefined} selected={selected === o.id} stages={stages} onOpen={() => onOpen(o.id)} />
                 ))}
               </ul>
             )}
@@ -154,15 +160,19 @@ function Board({ stages, opps, owners, selected, onOpen, onMove }: { stages: Sta
   );
 }
 
-function ListView({ stages, opps, owners, onOpen }: { stages: Stage[]; opps: Opp[]; owners: Map<string, string>; onOpen: (id: string) => void }) {
+function ListView({ stages, opps, owners, onOpen, picked, onPick, onPickAll }: { stages: Stage[]; opps: Opp[]; owners: Map<string, string>; onOpen: (id: string) => void; picked: Set<string>; onPick: (id: string) => void; onPickAll: (all: boolean) => void }) {
   const stageName = new Map(stages.map((s) => [s.id, s.name]));
   return (
     <div className={ui.tableScroll} tabIndex={0}>
       <table className={ui.table}>
         <thead>
           <tr>
+            <th scope="col" style={{ width: 36 }}>
+              <input type="checkbox" aria-label="Select all shown leads" checked={opps.length > 0 && opps.every((o) => picked.has(o.id))} onChange={(e) => onPickAll(e.target.checked)} />
+            </th>
             <th scope="col">Deal</th>
             <th scope="col">Stage</th>
+            <th scope="col">Score</th>
             <th scope="col" style={{ textAlign: "right" }}>
               Value
             </th>
@@ -177,6 +187,9 @@ function ListView({ stages, opps, owners, onOpen }: { stages: Stage[]; opps: Opp
             return (
               <tr key={o.id}>
                 <td>
+                  <input type="checkbox" aria-label={`Select ${o.title}`} checked={picked.has(o.id)} onChange={() => onPick(o.id)} />
+                </td>
+                <td>
                   <button type="button" className={ui.linkRowButton} onClick={() => onOpen(o.id)}>
                     <strong>{o.title}</strong>
                     <br />
@@ -187,6 +200,9 @@ function ListView({ stages, opps, owners, onOpen }: { stages: Stage[]; opps: Opp
                   <span className={ui.badge} data-tone={o.stage_kind === "WON" ? "positive" : o.stage_kind === "LOST" ? "negative" : "neutral"}>
                     {stageName.get(o.stage_id) ?? "—"}
                   </span>
+                </td>
+                <td>
+                  <ScoreChip opp={o} stages={stages} />
                 </td>
                 <td className="num" style={{ textAlign: "right" }}>
                   {formatMoney({ amount: o.value, currency: o.currency })}
@@ -209,7 +225,7 @@ export function CrmPage() {
   const { session } = useAuth();
   const qc = useQueryClient();
   const { stages, opps, tasks, owners } = useCrmData();
-  const move = useMoveOpportunity(stages.data);
+  const move = useMoveWithReason(stages.data);
   const complete = useMutation({
     mutationFn: (t: Activity) => api.post(`/crm/activities/${t.id}/done`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["crm"] }),
@@ -217,6 +233,10 @@ export function CrmPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [tab, setTab] = useState<"pipeline" | "myday" | "insights">("pipeline");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [bandFilter, setBandFilter] = useState<"all" | Band>("all");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [view, setViewState] = useState<View>(readView);
   const [query, setQuery] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -236,14 +256,25 @@ export function CrmPage() {
     () =>
       all.filter((o) => {
         if (!matches(o, query)) return false;
+        if (sourceFilter !== "all" && (o.source?.trim() || "Unknown") !== sourceFilter) return false;
+        if (bandFilter !== "all" && leadScore(o, stages.data ?? [])?.band !== bandFilter) return false;
         if (ownerFilter === "all") return true;
         if (ownerFilter === "none") return !o.owner_user_id;
         if (ownerFilter === "me") return o.owner_user_id === session?.userId;
         return o.owner_user_id === ownerFilter;
       }),
-    [all, query, ownerFilter, session?.userId],
+    [all, query, ownerFilter, sourceFilter, bandFilter, stages.data, session?.userId],
   );
-  const filtering = query.trim() !== "" || ownerFilter !== "all";
+  const filtering = query.trim() !== "" || ownerFilter !== "all" || sourceFilter !== "all" || bandFilter !== "all";
+  const sources = useMemo(() => [...new Set(all.map((o) => o.source?.trim() || "Unknown"))].sort(), [all]);
+  const queueCount = useMemo(() => buildQueue(all, tasks.data ?? [], stages.data ?? []).filter((q) => q.rank <= 1).length, [all, tasks.data, stages.data]);
+  const bulkAssign = useMutation({
+    mutationFn: (owner: string) => Promise.all([...picked].map((id) => api.post(`/crm/opportunities/${id}/assign`, { owner_user_id: owner || null }))),
+    onSuccess: () => {
+      setPicked(new Set());
+      void qc.invalidateQueries({ queryKey: ["crm"] });
+    },
+  });
   const current = all.find((o) => o.id === selected);
   const sortedTasks = [...(tasks.data ?? [])].sort((a, b) => (a.due_at ?? "9999").localeCompare(b.due_at ?? "9999"));
 
@@ -282,10 +313,29 @@ export function CrmPage() {
             <div key={i} className={layout.skeleton} />
           ))}
         </div>
-      ) : opps.isError || tasks.isError ? null : (
+      ) : opps.isError || tasks.isError || tab === "insights" ? null : (
         <Summary opps={all} tasks={tasks.data ?? []} />
       )}
 
+      <div className={extras.tabs} role="tablist" aria-label="CRM sections">
+        <button type="button" role="tab" id="crm-tab-pipeline" aria-selected={tab === "pipeline"} onClick={() => setTab("pipeline")}>
+          Pipeline
+        </button>
+        <button type="button" role="tab" id="crm-tab-myday" aria-selected={tab === "myday"} onClick={() => setTab("myday")}>
+          My day
+          {queueCount > 0 ? <span className={extras.tabBadge}>{queueCount}</span> : null}
+        </button>
+        <button type="button" role="tab" id="crm-tab-insights" aria-selected={tab === "insights"} onClick={() => setTab("insights")}>
+          Insights
+        </button>
+      </div>
+
+      {tab === "myday" ? (
+        <MyDay opps={all} tasks={tasks.data ?? []} stages={stages.data ?? []} onOpen={setSelected} />
+      ) : tab === "insights" ? (
+        <CrmInsights opps={all} stages={stages.data ?? []} owners={owners.data ?? []} />
+      ) : (
+        <>
       <div className={styles.toolbar} role="search">
         <div className={`${styles.search} ${ui.field}`} style={{ position: "relative" }}>
           <label htmlFor="crm-search" className="srOnly">
@@ -309,6 +359,24 @@ export function CrmPage() {
             </option>
           ))}
         </select>
+        <label className="srOnly" htmlFor="crm-source">
+          Source
+        </label>
+        <select id="crm-source" className={ui.select} style={{ width: "auto" }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+          <option value="all">All sources</option>
+          {sources.map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
+        <label className="srOnly" htmlFor="crm-band">
+          Lead score
+        </label>
+        <select id="crm-band" className={ui.select} style={{ width: "auto" }} value={bandFilter} onChange={(e) => setBandFilter(e.target.value as "all" | Band)}>
+          <option value="all">Any score</option>
+          <option value="HOT">Hot</option>
+          <option value="WARM">Warm</option>
+          <option value="COLD">Cold</option>
+        </select>
         <div className={styles.segmented} role="group" aria-label="View">
           <button type="button" aria-pressed={view === "board"} onClick={() => setView("board")}>
             Board
@@ -317,6 +385,14 @@ export function CrmPage() {
             List
           </button>
         </div>
+        <button
+          type="button"
+          className={ui.btnSecondary}
+          disabled={filtered.length === 0}
+          onClick={() => downloadCsv(`crm-leads-${new Date().toISOString().slice(0, 10)}.csv`, leadsToCsv(filtered, stages.data ?? [], ownerNames))}
+        >
+          Export CSV
+        </button>
         {opps.data ? (
           <span className={styles.count} aria-live="polite">
             {filtering ? `${filtered.length} of ${all.length}` : all.length} {all.length === 1 ? "deal" : "deals"}
@@ -344,6 +420,8 @@ export function CrmPage() {
             onClick={() => {
               setQuery("");
               setOwnerFilter("all");
+              setSourceFilter("all");
+              setBandFilter("all");
             }}
           >
             Clear filters
@@ -352,7 +430,43 @@ export function CrmPage() {
       ) : view === "board" ? (
         <Board stages={stages.data} opps={filtered} owners={ownerNames} selected={selected} onOpen={setSelected} onMove={(id, stageId) => move.mutate({ id, stageId })} />
       ) : (
-        <ListView stages={stages.data} opps={filtered} owners={ownerNames} onOpen={setSelected} />
+        <>
+          {picked.size > 0 ? (
+            <div className={extras.bulkBar} role="region" aria-label="Bulk actions">
+              <strong>{picked.size} selected</strong>
+              <label className="srOnly" htmlFor="crm-bulk-owner">
+                Assign selected to
+              </label>
+              <select id="crm-bulk-owner" className={ui.select} style={{ width: "auto" }} defaultValue="__" disabled={bulkAssign.isPending} onChange={(e) => e.target.value !== "__" && bulkAssign.mutate(e.target.value)}>
+                <option value="__" disabled>
+                  Assign to…
+                </option>
+                <option value="">Nobody (unassign)</option>
+                {(owners.data ?? []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className={ui.btnSecondary} onClick={() => downloadCsv("crm-selected-leads.csv", leadsToCsv(filtered.filter((o) => picked.has(o.id)), stages.data ?? [], ownerNames))}>
+                Export selected
+              </button>
+              <button type="button" className={ui.btnGhost} onClick={() => setPicked(new Set())}>
+                Clear
+              </button>
+              {bulkAssign.isError ? <span role="alert" className={styles.late}>Some leads could not be reassigned.</span> : null}
+            </div>
+          ) : null}
+          <ListView
+            stages={stages.data}
+            opps={filtered}
+            owners={ownerNames}
+            onOpen={setSelected}
+            picked={picked}
+            onPick={(id) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+            onPickAll={(all) => setPicked(all ? new Set(filtered.map((o) => o.id)) : new Set())}
+          />
+        </>
       )}
       {move.isError ? (
         <p role="alert" className={styles.errorBanner}>
@@ -389,6 +503,10 @@ export function CrmPage() {
         )}
       </section>
 
+        </>
+      )}
+
+      {move.dialog}
       <OpportunityDrawer opp={current} stages={stages.data ?? []} owners={owners.data} onClose={() => setSelected(null)} />
       <NewLeadDialog
         open={creating}

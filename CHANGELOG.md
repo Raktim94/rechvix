@@ -13,6 +13,17 @@
 
 # Changelog
 
+## 0.22.0
+
+CRM, brought up to the everyday standard of a sales team's tools (adapting Zulivio's lead scoring, My Day queue, funnel and bulk-assignment conventions). No database migration and no new endpoints; everything below is drawn from the leads already in the CRM.
+
+- **Three sections: Pipeline, My day, Insights.** The board and list stay in Pipeline; the other two answer "who do I call?" and "how is the team doing?".
+- **Lead score.** Every open lead shows HOT, WARM or COLD with a 0 to 100 score from six visible facts (phone, email, deal value, a close date still ahead, a follow-up booked, how far along the pipeline it is). The lead sheet lists every point, so nobody has to trust a black box. Filter the board and list by score and by source.
+- **My day** lists who needs you, most urgent first: overdue follow-ups, today's, deals past their close date, then hot leads with nothing scheduled, with call, WhatsApp and email on each. **Call next lead** dials the first one. The tab shows how many are overdue or due today.
+- **Why a lead was lost.** Moving a lead to Lost asks for a reason (price, no response, competitor, not interested and so on) and keeps it on the lead's timeline.
+- **Insights**: open pipeline, a weighted forecast (open value times the chance of winning at each stage), win rate, leads added in the last 14 days, a funnel by stage, where leads come from with conversion per source, and a table by owner.
+- **Bulk actions in the list**: select leads (or all shown), assign them to one owner or unassign in one step, and export the selection. **Export CSV** downloads what is on screen; cells that start with =, +, - or @ are neutralised so a spreadsheet never runs them as formulas.
+
 ## 0.21.0
 
 - **Import leads into the CRM from a spreadsheet.** On the CRM screen, **Import leads** takes a CSV or Excel file (no key or account needed), matches your columns for you (Lead Name, Company, Mobile No., E-mail, Amount, Lead Source, Status and similar headers from other CRMs are recognised, and any match can be changed), shows a preview of every row, and writes nothing until you confirm. Each row can carry a company, contact person, phone, email, deal value (₹ and thousands separators are cleaned), currency, source, stage, owner (by name or email) and an expected close date (day-first dates work). A row without any name is reported as an error; a row whose phone, email or name and company already exists in the CRM, or earlier in the same file, is skipped as a duplicate, so a file can be re-run safely. The same panel is step 5 of the Import page. New `POST /crm/opportunities/import` and `/inspect`. No database migration.

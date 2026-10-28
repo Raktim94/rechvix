@@ -5,7 +5,7 @@ import { formatMoneyWhole } from "../../lib/money";
 export interface Stage { id: string; name: string; sort_order: number; kind: string }
 export interface Opp {
   id: string; title: string; party_id?: string; customer_name?: string; company_name?: string; contact_name?: string; contact_email?: string; contact_phone?: string;
-  owner_user_id?: string; value: string; currency: string; stage_id: string; stage_kind: string; expected_close?: string; source?: string; notes?: string; open_tasks: number;
+  owner_user_id?: string; created_at?: string; value: string; currency: string; stage_id: string; stage_kind: string; expected_close?: string; source?: string; notes?: string; open_tasks: number;
 }
 export interface Activity { id: string; kind: string; subject: string; notes?: string; due_at?: string; done_at?: string; created_at: string; opportunity_title?: string; opportunity_id: string }
 export interface Owner { id: string; name: string }
@@ -60,21 +60,6 @@ export function formatTotals(opps: Opp[]): string {
   return totals.map((t) => formatMoneyWhole({ amount: String(t.amount), currency: t.currency })).join(" + ");
 }
 
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-
-/** "Today", "Tomorrow", "Overdue · 3 Oct": the one phrase a follow-up needs, and whether it is late. */
-export function whenLabel(iso: string | undefined | null): { label: string; late: boolean } {
-  if (!iso) return { label: "", late: false };
-  const date = new Date(iso.length === 10 ? `${iso}T00:00:00` : iso);
-  if (Number.isNaN(date.getTime())) return { label: "", late: false };
-  const today = startOfDay(new Date());
-  const diffDays = Math.round((startOfDay(date) - today) / 86_400_000);
-  if (diffDays === 0) return { label: "Today", late: false };
-  if (diffDays === 1) return { label: "Tomorrow", late: false };
-  const text = date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  return diffDays < 0 ? { label: `Overdue · ${text}`, late: true } : { label: text, late: false };
-}
-
 /** A phone number reduced to digits for a wa.me link. */
 export function whatsappDigits(phone: string): string {
   return phone.replace(/\D/g, "");
@@ -85,3 +70,7 @@ export function matches(o: Opp, query: string): boolean {
   if (!q) return true;
   return [o.title, o.customer_name, o.company_name, o.contact_name, o.contact_email, o.contact_phone, o.source].some((v) => v?.toLowerCase().includes(q));
 }
+
+export { whenLabel } from "./crmLogic";
+export type { Band, LeadScore, ScoreFactor } from "./crmLogic";
+export { LOSS_REASONS, csvCell, downloadCsv, leadScore, leadsToCsv, stageProbability } from "./crmLogic";

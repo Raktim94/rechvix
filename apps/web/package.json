@@ -8,7 +8,7 @@
     "build": "npm run ocr:assets && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test src/lib/*.test.ts",
+    "test": "node --test src/lib/*.test.ts src/pages/crm/*.test.ts",
     "i18n:check": "node scripts/check-locales.mjs",
     "ocr:assets": "node scripts/copy-ocr-assets.mjs"
   },

@@ -5,8 +5,10 @@ import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money";
 import { ContactActions } from "./ContactActions";
-import { KIND_LABEL, useMoveOpportunity, whenLabel, who, type Activity, type Opp, type Owner, type Stage } from "./crm";
+import { KIND_LABEL, leadScore, whenLabel, who, type Activity, type Opp, type Owner, type Stage } from "./crm";
 import styles from "./CrmPage.module.css";
+import extras from "./CrmExtras.module.css";
+import { useMoveWithReason } from "./LossReason";
 
 /** A deal in a side sheet: where it stands, who owns it, what happened, what is next. */
 export function OpportunityDrawer({ opp, stages, owners, onClose }: { opp: Opp | undefined; stages: Stage[]; owners: Owner[] | undefined; onClose: () => void }) {
@@ -51,7 +53,8 @@ function DrawerBody({ opp, stages, owners, onClose }: { opp: Opp; stages: Stage[
     },
   });
   const toggle = useMutation({ mutationFn: (a: Activity) => api.post(`/crm/activities/${a.id}/${a.done_at ? "reopen" : "done"}`), onSuccess: refresh });
-  const move = useMoveOpportunity(stages);
+  const move = useMoveWithReason(stages);
+  const score = leadScore(opp, stages);
   const assign = useMutation({ mutationFn: (owner: string) => api.post(`/crm/opportunities/${opp.id}/assign`, { owner_user_id: owner || null }), onSuccess: refresh });
   const makeCustomer = useMutation({ mutationFn: () => api.post(`/crm/opportunities/${opp.id}/make-customer`), onSuccess: refresh });
   const remove = useMutation({
@@ -77,6 +80,28 @@ function DrawerBody({ opp, stages, owners, onClose }: { opp: Opp; stages: Stage[
           Close
         </button>
       </div>
+
+      {move.dialog}
+      {score ? (
+        <details style={{ margin: "4px 0 12px" }}>
+          <summary>
+            <span className={extras.chip} data-band={score.band}>
+              {score.band} · {score.score}/100
+            </span>{" "}
+            <span className={styles.sub}>Why this score?</span>
+          </summary>
+          <ul className={extras.factors}>
+            {score.factors.map((f) => (
+              <li key={f.label} data-missing={f.points === 0}>
+                <span>{f.label}</span>
+                <span>
+                  {f.points}/{f.max}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       <ol className={styles.stageStrip} aria-label="Pipeline stage">
         {stages.map((s, i) => (

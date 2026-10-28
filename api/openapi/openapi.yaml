@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rechvix API
-  version: "0.21.0"
+  version: "0.22.0"
   description: >
     Multi-company, multi-branch, multi-warehouse billing, inventory,
     accounting, and India-GST tax-management API. This spec is generated

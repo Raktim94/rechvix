@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install, use and remove check for the Debian/Ubuntu package. Run as root on a Debian or Ubuntu machine with systemd.
-#   sudo DEB=dist/rechvix_0.21.0_amd64.deb scripts/test-deb.sh
+#   sudo DEB=dist/rechvix_0.22.0_amd64.deb scripts/test-deb.sh
 # Steps: install, services up, create a business and sign in, read the CRM and dashboard, reinstall (upgrade keeps
 # data), remove (services and programs gone, data kept), purge, then clean up the database it created.
 # Set RELAX_SANDBOX=1 inside a container, where systemd cannot apply the unit's sandboxing.
