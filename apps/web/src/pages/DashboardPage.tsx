@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactECharts from "echarts-for-react";
 import styles from "./DashboardPage.module.css";
+import { DashboardFollowUps } from "../components/DashboardFollowUps";
 import { QuickAccess } from "../components/QuickAccess";
 import { api } from "../lib/api-client";
 import { toLocalIsoDate } from "../lib/calendarGrid";
@@ -503,6 +504,8 @@ export function DashboardPage() {
         <TodaySummaryPanel />
       </div>
 
+      <DashboardFollowUps legalEntityId={org.legalEntity?.ID} />
+
       {updated ? (
         <p className={styles.freshness}>
           {t("dashboard.asOf", { defaultValue: "Balances as of {{time}}. Sales are by invoice date, in {{currency}}.", time: updated, currency })}
@@ -635,7 +638,7 @@ function ReceivablePayableChart({ receivable, payable, dark }: { receivable: Mon
     xAxis: {
       type: "value" as const,
       splitNumber: 3,
-      max: (v: { max: number }) => v.max * 1.35, // room for the value label beside the longest bar
+      boundaryGap: [0, "30%"] as [number, string], // room for the value label beside the longest bar
       splitLine: { lineStyle: { color: gridColor } },
       axisLabel: { color: textColor, fontFamily: "IBM Plex Mono", hideOverlap: true, formatter: compact },
     },
