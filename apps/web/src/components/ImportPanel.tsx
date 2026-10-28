@@ -22,6 +22,24 @@ interface ImportReport {
   Results: RowResult[] | null;
 }
 
+/** Mirrors internal/platform/importer.Field / Inspection. */
+interface ImportField {
+  name: string;
+  label: string;
+  required: boolean;
+}
+interface Inspection {
+  headers: string[];
+  fields: ImportField[];
+  suggested: Record<string, string>;
+  sample: Record<string, string>[];
+  total: number;
+}
+
+/** A mapping value is either a column header or "=constant". */
+const CONSTANT = "=";
+const NONE = "";
+
 function formatFor(file: File): "csv" | "xlsx" | null {
   const ext = file.name.toLowerCase().split(".").pop();
   if (ext === "csv") return "csv";
@@ -72,6 +90,7 @@ export function ImportPanel({
   columns,
   sampleRows,
   extraQuery,
+  mapColumns = false,
   onImported,
 }: {
   title: string;
@@ -89,6 +108,9 @@ export function ImportPanel({
    * so a value the caller derives from context (like the current
    * warehouse) stays current across repeated Preview/Import clicks. */
   extraQuery?: Record<string, string>;
+  /** Show the "match your columns" step. Needs a `${path}/inspect` endpoint
+   * on the server (importer.Inspect); omit for imports that have none. */
+  mapColumns?: boolean;
   onImported: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -96,6 +118,31 @@ export function ImportPanel({
   const [report, setReport] = useState<ImportReport | null>(null);
   const [busy, setBusy] = useState<"preview" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inspection, setInspection] = useState<Inspection | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+
+  async function chooseFile(f: File | null) {
+    setFile(f);
+    setReport(null);
+    setError(null);
+    setInspection(null);
+    setMapping({});
+    if (!f || !mapColumns) return;
+    const format = formatFor(f);
+    if (!format) {
+      setError("Please choose a .csv or .xlsx file.");
+      return;
+    }
+    try {
+      const ins = await api.uploadFile<Inspection>(`${path}/inspect`, f, format, true);
+      setInspection(ins);
+      setMapping(ins.suggested ?? {});
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not read this file.");
+    }
+  }
+
+  const blocked = inspection ? inspection.fields.some((f) => f.required && (!mapping[f.name] || mapping[f.name] === CONSTANT)) : false;
 
   async function run(dryRun: boolean) {
     if (!file) return;
@@ -107,7 +154,10 @@ export function ImportPanel({
     setError(null);
     setBusy(dryRun ? "preview" : "import");
     try {
-      const res = await api.uploadFile<ImportReport>(path, file, format, dryRun, extraQuery);
+      const res = await api.uploadFile<ImportReport>(path, file, format, dryRun, {
+        ...extraQuery,
+        ...(inspection ? { mapping: JSON.stringify(mapping) } : {}),
+      });
       setReport(res);
       if (!dryRun) {
         onImported();
@@ -156,13 +206,9 @@ export function ImportPanel({
               type="file"
               accept=".csv,.xlsx"
               aria-label={`${title} file`}
-              onChange={(e) => {
-                setFile(e.target.files?.[0] ?? null);
-                setReport(null);
-                setError(null);
-              }}
+              onChange={(e) => void chooseFile(e.target.files?.[0] ?? null)}
             />
-            <button type="button" className={ui.btnSecondary} disabled={!file || busy !== null} onClick={() => void run(true)}>
+            <button type="button" className={ui.btnSecondary} disabled={!file || busy !== null || blocked} onClick={() => void run(true)}>
               {busy === "preview" ? "Checking…" : "Preview"}
             </button>
             {report && report.DryRun && report.Errors < report.Total ? (
@@ -171,6 +217,79 @@ export function ImportPanel({
               </button>
             ) : null}
           </div>
+
+          {inspection ? (
+            <fieldset style={{ marginTop: 12, border: "1px solid var(--color-border)", borderRadius: 8, padding: 12 }}>
+              <legend>Match your columns ({inspection.total} row{inspection.total === 1 ? "" : "s"} found)</legend>
+              <div className={ui.tableScroll} tabIndex={0}>
+                <table className={ui.table}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Rechvix field</th>
+                      <th scope="col">Your column</th>
+                      <th scope="col">First row</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inspection.fields.map((f) => {
+                      const value = mapping[f.name] ?? NONE;
+                      const isConstant = value.startsWith(CONSTANT);
+                      const selectValue = isConstant ? CONSTANT : value;
+                      return (
+                        <tr key={f.name}>
+                          <th scope="row">
+                            <label htmlFor={`map-${f.name}`}>
+                              {f.label}
+                              {f.required ? <span aria-label="required"> *</span> : null}
+                            </label>
+                          </th>
+                          <td>
+                            <select
+                              id={`map-${f.name}`}
+                              className={ui.input}
+                              value={selectValue}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setMapping((m) => ({ ...m, [f.name]: v }));
+                                setReport(null);
+                              }}
+                            >
+                              <option value={NONE}>{f.required ? "Choose a column…" : "— skip —"}</option>
+                              {inspection.headers.map((h) => (
+                                <option key={h} value={h}>
+                                  {h}
+                                </option>
+                              ))}
+                              <option value={CONSTANT}>Same value for every row…</option>
+                            </select>
+                            {isConstant ? (
+                              <input
+                                className={ui.input}
+                                aria-label={`${f.label} value for every row`}
+                                style={{ marginTop: 4 }}
+                                value={value.slice(CONSTANT.length)}
+                                onChange={(e) => {
+                                  const v = CONSTANT + e.target.value;
+                                  setMapping((m) => ({ ...m, [f.name]: v }));
+                                  setReport(null);
+                                }}
+                              />
+                            ) : null}
+                          </td>
+                          <td className={ui.muted}>{isConstant ? value.slice(CONSTANT.length) || "—" : (inspection.sample[0]?.[value] ?? "—")}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {blocked ? (
+                <p className={ui.muted} style={{ marginTop: 8 }}>
+                  Choose a column (or a fixed value) for every field marked *.
+                </p>
+              ) : null}
+            </fieldset>
+          ) : null}
 
           {error ? (
             <p role="alert" style={{ color: "var(--color-negative)", marginTop: 8 }}>

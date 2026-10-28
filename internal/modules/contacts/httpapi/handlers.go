@@ -31,6 +31,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/contacts/parties/{id}/tax-registrations", h.addTaxRegistration)
 	r.Get("/contacts/tax-registrations/{number}", h.lookupTaxRegistration)
 	r.Post("/contacts/parties/import", h.importParties)
+	r.Post("/contacts/parties/import/inspect", h.inspectPartyImport)
 }
 
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -251,6 +252,10 @@ func (h *Handlers) importParties(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	rows, ok = mapImportRows(w, r, rows, partyImportFields)
+	if !ok {
+		return
+	}
 	dryRun := r.URL.Query().Get("dry_run") == "true"
 	report, err := h.svc.ImportParties(r.Context(), principal(r), rows, dryRun)
 	if err != nil {
@@ -283,4 +288,38 @@ func parseImportBody(w http.ResponseWriter, r *http.Request) ([]importer.Row, bo
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FORMAT", `format query parameter must be "csv" or "xlsx".`))
 		return nil, false
 	}
+}
+
+// partyImportFields are the columns ImportParties reads, with the
+// headers Vyapar, Tally and Marg exports use for the same things.
+var partyImportFields = []importer.Field{
+	{Name: "legal_name", Label: "Party name", Required: true, Synonyms: []string{"Name", "Party Name", "Customer Name", "Supplier Name", "Ledger Name", "Account Name", "Business Name"}},
+	{Name: "party_type", Label: "Type (CUSTOMER/SUPPLIER/BOTH)", Required: true, Synonyms: []string{"Party Type", "Type", "Category"}},
+	{Name: "currency_code", Label: "Currency", Required: true, Synonyms: []string{"Currency"}},
+	{Name: "phone", Label: "Phone", Synonyms: []string{"Phone No.", "Phone Number", "Mobile", "Mobile No.", "Contact No.", "Contact Number", "Whatsapp"}},
+	{Name: "email", Label: "Email", Synonyms: []string{"Email ID", "E-mail", "Email Address"}},
+}
+
+// inspectPartyImport returns the uploaded file's columns and a suggested
+// mapping so the import wizard can show its mapping step. Nothing is written.
+func (h *Handlers) inspectPartyImport(w http.ResponseWriter, r *http.Request) {
+	rows, ok := parseImportBody(w, r)
+	if !ok {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, importer.Inspect(rows, partyImportFields))
+}
+
+// mapImportRows applies the optional "mapping" query parameter (or the
+// suggested mapping when absent) to the parsed rows.
+func mapImportRows(w http.ResponseWriter, r *http.Request, rows []importer.Row, fields []importer.Field) ([]importer.Row, bool) {
+	mapping, err := importer.ParseMapping(r.URL.Query().Get("mapping"))
+	if err == nil {
+		rows, err = importer.ApplyMapping(rows, fields, mapping)
+	}
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_MAPPING", err.Error()))
+		return nil, false
+	}
+	return rows, true
 }

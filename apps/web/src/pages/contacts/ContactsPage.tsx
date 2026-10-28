@@ -152,6 +152,7 @@ export function ContactsPage() {
       <ImportPanel
         title="Bulk import contacts"
         path="/contacts/parties/import"
+        mapColumns
         columns={["party_type (CUSTOMER/SUPPLIER/BOTH)", "legal_name", "phone", "email", "currency_code"]}
         onImported={() => void queryClient.invalidateQueries({ queryKey: ["parties"] })}
       />

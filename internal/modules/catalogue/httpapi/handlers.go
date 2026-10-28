@@ -47,6 +47,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/catalogue/barcodes", h.addBarcode)
 	r.Get("/catalogue/barcodes/{code}", h.lookupBarcode)
 	r.Post("/catalogue/products/import", h.importProducts)
+	r.Post("/catalogue/products/import/inspect", h.inspectProductImport)
 }
 
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -513,6 +514,10 @@ func (h *Handlers) importProducts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	rows, ok = mapImportRows(w, r, rows, productImportFields)
+	if !ok {
+		return
+	}
 	dryRun := r.URL.Query().Get("dry_run") == "true"
 	var warehouseID *uuid.UUID
 	if raw := r.URL.Query().Get("warehouse_id"); raw != "" {
@@ -557,4 +562,44 @@ func parseImportBody(w http.ResponseWriter, r *http.Request) ([]importer.Row, bo
 		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_FORMAT", `format query parameter must be "csv" or "xlsx".`))
 		return nil, false
 	}
+}
+
+// productImportFields are the columns ImportProducts reads, with the
+// headers Vyapar, Tally and Marg item exports use for the same things.
+var productImportFields = []importer.Field{
+	{Name: "name", Label: "Item name", Required: true, Synonyms: []string{"Item Name", "Product Name", "Product", "Item", "Description", "Particulars", "Stock Item"}},
+	{Name: "base_uom_code", Label: "Unit", Required: true, Synonyms: []string{"UOM", "Unit", "Primary Unit", "Base Unit", "Units"}},
+	{Name: "hsn_sac_code", Label: "HSN/SAC", Synonyms: []string{"HSN", "HSN Code", "SAC", "HSN/SAC", "HSN SAC Code"}},
+	{Name: "sku_code", Label: "Item code / SKU", Synonyms: []string{"Item Code", "SKU", "Product Code", "Code"}},
+	{Name: "price", Label: "Sale price", Numeric: true, Synonyms: []string{"Sale Price", "Selling Price", "MRP", "Rate", "Price"}},
+	{Name: "gst_rate", Label: "GST rate %", Numeric: true, Synonyms: []string{"Tax Rate", "GST", "GST %", "GST Rate", "Tax %", "IGST %"}},
+	{Name: "category_name", Label: "Category", Synonyms: []string{"Category", "Item Category", "Group", "Stock Group"}},
+	{Name: "brand_name", Label: "Brand", Synonyms: []string{"Brand", "Manufacturer", "Make"}},
+	{Name: "barcode", Label: "Barcode", Synonyms: []string{"Barcode", "EAN", "UPC", "Item Barcode"}},
+	{Name: "opening_qty", Label: "Opening stock", Numeric: true, Synonyms: []string{"Opening Stock", "Opening Qty", "Opening Quantity", "Current Stock", "Stock", "Quantity", "Qty"}},
+	{Name: "opening_cost", Label: "Cost price", Numeric: true, Synonyms: []string{"Purchase Price", "Cost Price", "Cost", "Opening Rate", "Buying Price"}},
+}
+
+// inspectProductImport returns the uploaded file's columns and a suggested
+// mapping for the import wizard. Nothing is written.
+func (h *Handlers) inspectProductImport(w http.ResponseWriter, r *http.Request) {
+	rows, ok := parseImportBody(w, r)
+	if !ok {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, importer.Inspect(rows, productImportFields))
+}
+
+// mapImportRows applies the optional "mapping" query parameter (or the
+// suggested mapping when absent) to the parsed rows.
+func mapImportRows(w http.ResponseWriter, r *http.Request, rows []importer.Row, fields []importer.Field) ([]importer.Row, bool) {
+	mapping, err := importer.ParseMapping(r.URL.Query().Get("mapping"))
+	if err == nil {
+		rows, err = importer.ApplyMapping(rows, fields, mapping)
+	}
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_MAPPING", err.Error()))
+		return nil, false
+	}
+	return rows, true
 }

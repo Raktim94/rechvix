@@ -13,6 +13,10 @@
 
 # Changelog
 
+## Unreleased
+
+- Bulk import of products and contacts now has a "Match your columns" step: headers from Vyapar, Tally, Marg or a hand-made sheet (Party Name, Phone No., Item Name, HSN, Sale Price, Tax Rate, Opening Stock and so on) are matched to Rechvix fields automatically and can be changed, skipped or set to one fixed value for every row (for example party type). Rupee signs, thousands separators (including 1,23,456.50) and a trailing % are cleaned from numeric columns. Files whose headers already use the old column names import exactly as before. New `POST /contacts/parties/import/inspect` and `POST /catalogue/products/import/inspect`; the import endpoints accept an optional `mapping` query parameter. No migration.
+
 ## 0.16.0
 
 - Scanning a bill now works: the OCR engine (worker, WASM core, English language data) is served by the app itself instead of a CDN that the server's content security policy blocked. Photos are downscaled and contrast-stretched before reading. The online Puter option is removed (it sent bills to a third party and could not run under the policy).

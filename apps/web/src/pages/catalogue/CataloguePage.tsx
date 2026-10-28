@@ -788,6 +788,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
       <ImportPanel
         title="Bulk import products"
         path="/catalogue/products/import"
+        mapColumns
         columns={[
           "name",
           "hsn_sac_code (optional)",
