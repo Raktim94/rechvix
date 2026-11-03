@@ -235,3 +235,7 @@ irm https://rechvix.nodedr.com/install.ps1 | iex
 ```
 
 [Read the native Windows script](scripts/install-windows.ps1) first. It installs the verified Microsoft Store product `9NMPSP7CR5RW` using WinGet, preserves agreement prompts and propagates installation failures. This is the desktop app with bundled server/database; it does not need WSL or Docker. The separate legacy WSL server bootstrap is an advanced route requiring its Linux Docker prerequisites.
+
+## Commercial licence
+
+Licensed under the AGPL-3.0. A [commercial licence](COMMERCIAL-LICENSE.md) is available on request for use without the AGPL obligations. The Rechvix name and logo are not covered by the AGPL.
