@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -17,7 +18,7 @@ import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import layout from "../DashboardPage.module.css";
 import styles from "./BillingPage.module.css";
-import { DOCUMENT_TYPE_LABELS, type DocumentType, type SalesDocument, type SalesDocumentLine } from "./types";
+import { type DocumentType, type SalesDocument, type SalesDocumentLine } from "./types";
 
 interface BillingLookupResult {
   ProductID: string;
@@ -165,6 +166,7 @@ function LineGstRate({ hsnSacCode }: { hsnSacCode: string }) {
  * existing id).
  */
 export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocumentType }: { resumeDocumentId?: string; initialCustomerId?: string; initialDocumentType?: "QUOTATION" }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const org = useOrgContext();
@@ -338,7 +340,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
   const startSale = useMutation({
     mutationFn: async () => {
       if (!customer || !org.legalEntity || !org.branch || !org.warehouse || !org.organisation) {
-        throw new Error("Missing organisation context.");
+        throw new Error(t("billing.missingOrg"));
       }
       return api.post<SalesDocument>("/sales/documents", {
         legal_entity_id: org.legalEntity.ID,
@@ -544,10 +546,10 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
     <div className={layout.page}>
       <div className={layout.heading}>
         <div>
-          <h1>{resumeDocumentId ? "Continue sale" : "New sale"}</h1>
-          <p className={layout.subtitle}>Scan a barcode or search by product name — stock and price show instantly.</p>
+          <h1>{resumeDocumentId ? t("billing.titleContinue") : t("billing.titleNew")}</h1>
+          <p className={layout.subtitle}>{t("billing.subtitle")}</p>
           <p className={`${ui.muted} ${styles.kbdHint}`} style={{ marginTop: 2 }}>
-            <kbd>F2</kbd> search product · <kbd>F3</kbd> search customer · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> finalize
+            <kbd>F2</kbd> {t("billing.hintSearchProduct")} · <kbd>F3</kbd> {t("billing.hintSearchCustomer")} · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> {t("billing.hintFinalize")}
           </p>
         </div>
       </div>
@@ -555,7 +557,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
       <div className={layout.panel}>
         <div className={styles.headerGrid}>
           <div className={ui.field}>
-            <label htmlFor="doc-type">Document type</label>
+            <label htmlFor="doc-type">{t("billing.documentType")}</label>
             <select
               id="doc-type"
               className={ui.select}
@@ -563,16 +565,16 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
               disabled={!!documentId}
               onChange={(e) => setDocumentType(e.target.value as DocumentType)}
             >
-              {(["TAX_INVOICE", "POS_INVOICE", "QUOTATION", "SALES_ORDER"] as DocumentType[]).map((t) => (
-                <option key={t} value={t}>
-                  {DOCUMENT_TYPE_LABELS[t]}
+              {(["TAX_INVOICE", "POS_INVOICE", "QUOTATION", "SALES_ORDER"] as DocumentType[]).map((dt) => (
+                <option key={dt} value={dt}>
+                  {t(`salesList.type.${dt}`)}
                 </option>
               ))}
             </select>
           </div>
 
           <div className={`${ui.field} ${styles.customerField}`}>
-            <label htmlFor="customer-search">Customer</label>
+            <label htmlFor="customer-search">{t("billing.customer")}</label>
             {customer && documentId ? (
               <div className={styles.customerBadge}>
                 <strong>{customer.LegalName || customer.ID}</strong>
@@ -582,8 +584,8 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                 <strong>{customer.LegalName}</strong>
                 {customerAgeing.data ? (
                   <span className={styles.customerBalance}>
-                    Outstanding: {formatMoney(customerAgeing.data.Total)}
-                    {customer.CreditLimitAmount ? ` · Credit limit: ${formatMoney({ amount: customer.CreditLimitAmount, currency: org.organisation?.DefaultCurrencyCode ?? "INR" })}` : ""}
+                    {t("billing.outstanding", { amount: formatMoney(customerAgeing.data.Total) })}
+                    {customer.CreditLimitAmount ? ` · ${t("billing.creditLimit", { amount: formatMoney({ amount: customer.CreditLimitAmount, currency: org.organisation?.DefaultCurrencyCode ?? "INR" }) })}` : ""}
                   </span>
                 ) : null}
                 <button
@@ -594,18 +596,18 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                     setPlaceOfSupplyOverride(null);
                   }}
                 >
-                  Change
+                  {t("billing.change")}
                 </button>
               </div>
             ) : (
               <div className={styles.customerSearchRow}>
                 <div className={styles.customerSearchWrap}>
-                  {launchCustomer.isError ? <p role="alert">The CRM customer could not be loaded. Search for a customer below, or <button type="button" onClick={() => void launchCustomer.refetch()}>retry</button>.</p> : null}
+                  {launchCustomer.isError ? <p role="alert">{t("billing.crmLoadFailed")} <button type="button" onClick={() => void launchCustomer.refetch()}>{t("billing.retryInline")}</button>.</p> : null}
                   <input
                     id="customer-search"
                     ref={customerSearchRef}
                     className={ui.input}
-                    placeholder="Search customer by name or phone…"
+                    placeholder={t("billing.customerPlaceholder")}
                     value={customerQuery}
                     onChange={(e) => {
                       setCustomerQuery(e.target.value);
@@ -615,7 +617,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                     autoComplete="off"
                   />
                   {showCustomerResults && customerQuery.trim().length >= 2 ? (
-                    <ul className={styles.dropdown} role="menu" aria-label="Customer results">
+                    <ul className={styles.dropdown} role="menu" aria-label={t("billing.customerResults")}>
                       {customerSearch.data && customerSearch.data.length > 0 ? (
                         customerSearch.data.map((p) => (
                           <li key={p.ID}>
@@ -635,7 +637,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                         ))
                       ) : (
                         <li className={ui.muted} style={{ padding: "8px 12px" }}>
-                          No match for "{customerQuery}".
+                          {t("billing.noMatch", { query: customerQuery })}
                         </li>
                       )}
                       <li>
@@ -648,17 +650,17 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                             setQuickAddOpen(true);
                           }}
                         >
-                          <strong style={{ color: "var(--color-accent)" }}>+ New customer{customerQuery.trim() ? ` "${customerQuery.trim()}"` : ""}</strong>
+                          <strong style={{ color: "var(--color-accent)" }}>{customerQuery.trim() ? t("billing.newCustomerNamed", { name: customerQuery.trim() }) : t("billing.newCustomer")}</strong>
                         </button>
                       </li>
                     </ul>
                   ) : null}
                 </div>
                 <button type="button" className={ui.btnSecondary} onClick={() => setQuickAddOpen(true)}>
-                  + New
+                  {t("billing.newShort")}
                 </button>
-                <button type="button" className={ui.btnSecondary} disabled={startWalkIn.isPending} onClick={() => startWalkIn.mutate()} title="Skip picking a customer — for a quick retail sale">
-                  {startWalkIn.isPending ? "…" : "Walk-in / Cash sale"}
+                <button type="button" className={ui.btnSecondary} disabled={startWalkIn.isPending} onClick={() => startWalkIn.mutate()} title={t("billing.walkInTitle")}>
+                  {startWalkIn.isPending ? "…" : t("billing.walkIn")}
                 </button>
               </div>
             )}
@@ -670,7 +672,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
 
           {customer && !documentId && isIndia ? (
             <div className={ui.field}>
-              <label htmlFor="place-of-supply">Place of supply</label>
+              <label htmlFor="place-of-supply">{t("billing.placeOfSupply")}</label>
               <select
                 id="place-of-supply"
                 className={ui.select}
@@ -678,7 +680,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                 onChange={(e) => setPlaceOfSupplyOverride(e.target.value)}
               >
                 <option value="" disabled>
-                  Select a state…
+                  {t("billing.selectState")}
                 </option>
                 {GST_STATE_CODES.map((s) => (
                   <option key={s.code} value={s.code}>
@@ -687,14 +689,14 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                 ))}
               </select>
               <p className={ui.muted} style={{ marginTop: 4 }}>
-                Decides CGST+SGST vs. IGST — cannot be changed after Start Sale.
+                {t("billing.posHelp")}
               </p>
               {!placeOfSupply ? (
                 <p className={ui.muted} style={{ marginTop: 4 }} role="status">
-                  Choose a state to continue.{" "}
+                  {t("billing.chooseState")}{" "}
                   {org.legalEntity?.GSTStateCode ? null : (
                     <>
-                      Set your business state in <Link to="/settings">Settings</Link> and this fills in automatically.
+                      {t("billing.setStatePrefix")} <Link to="/settings">{t("billing.settings")}</Link> {t("billing.setStateSuffix")}
                     </>
                   )}
                 </p>
@@ -704,28 +706,28 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
 
           <details className={styles.moreOptions} style={{ gridColumn: "1 / -1" }} open={!documentId && foreignCurrency ? true : undefined}>
             <summary>
-              More options · language {doc.data?.document.InvoiceLanguage || invoiceLanguage || "company default"} · currency {doc.data?.document.CurrencyCode ?? invoiceCurrency}
+              {t("billing.moreOptions", { language: doc.data?.document.InvoiceLanguage || invoiceLanguage || t("billing.companyDefault").toLowerCase(), currency: doc.data?.document.CurrencyCode ?? invoiceCurrency })}
             </summary>
             <div className={styles.moreOptionsBody}>
           <div className={ui.field}>
-            <label htmlFor="invoice-language">Invoice language</label>
+            <label htmlFor="invoice-language">{t("billing.invoiceLanguage")}</label>
             <select id="invoice-language" className={ui.select} disabled={!!documentId} value={doc.data?.document.InvoiceLanguage ?? invoiceLanguage} onChange={e => setInvoiceLanguage(e.target.value)}>
-              <option value="">Company default</option>
+              <option value="">{t("billing.companyDefault")}</option>
               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
             </select>
           </div>
           <div className={ui.field}>
-            <label htmlFor="invoice-currency">Invoice currency</label>
+            <label htmlFor="invoice-currency">{t("billing.invoiceCurrency")}</label>
             <select id="invoice-currency" className={ui.select} disabled={!!documentId || currencies.isPending || currencies.isError} value={doc.data?.document.CurrencyCode ?? invoiceCurrency} onChange={e => { setChosenCurrency(e.target.value); setExchangeRate(""); }}>
-              <option value={baseCurrency}>{baseCurrency} — book currency</option>
+              <option value={baseCurrency}>{t("billing.bookCurrency", { code: baseCurrency })}</option>
               {(currencies.data ?? []).filter(c => c.code !== baseCurrency).map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
             </select>
-            {currencies.isError ? <p role="alert">Could not load currencies. <button type="button" onClick={() => void currencies.refetch()}>Retry</button></p> : null}
+            {currencies.isError ? <p role="alert">{t("billing.currenciesFailed")} <button type="button" onClick={() => void currencies.refetch()}>{t("billing.retry")}</button></p> : null}
           </div>
           {(doc.data?.document.CurrencyCode ? doc.data.document.CurrencyCode !== baseCurrency : foreignCurrency) ? <div className={ui.field}>
-            <label htmlFor="invoice-rate">Exchange rate: {baseCurrency} per 1 {doc.data?.document.CurrencyCode ?? invoiceCurrency}</label>
+            <label htmlFor="invoice-rate">{t("billing.exchangeRate", { base: baseCurrency, currency: doc.data?.document.CurrencyCode ?? invoiceCurrency })}</label>
             <input id="invoice-rate" className={ui.input} inputMode="decimal" value={doc.data?.document.ExchangeRate ?? exchangeRate} disabled={!!documentId} onChange={e => setExchangeRate(e.target.value)} aria-describedby="invoice-rate-help" />
-            <p id="invoice-rate-help" className={ui.muted}>Enter the rate agreed for this invoice. Catalogue prices are converted using this rate; books remain in {baseCurrency}.</p>
+            <p id="invoice-rate-help" className={ui.muted}>{t("billing.exchangeRateHelp", { base: baseCurrency })}</p>
           </div> : null}
             </div>
           </details>
@@ -737,28 +739,28 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
               disabled={!validRate || !customer || (isIndia ? !placeOfSupply : !taxDetailsReady(supplierCountry, taxDetails)) || org.isPending || startSale.isPending}
               onClick={() => startSale.mutate()}
             >
-              {startSale.isPending ? "Starting…" : "Start sale"}
+              {startSale.isPending ? t("billing.starting") : t("billing.startSale")}
             </button>
           ) : null}
           {!documentId && !customer ? (
             <p className={ui.muted} style={{ gridColumn: "1 / -1", margin: 0 }}>
-              Pick a customer above, or choose Walk-in / Cash sale, to start adding items.
+              {t("billing.pickCustomerHint")}
             </p>
           ) : null}
         </div>
         {startSale.isError ? (
           <p className={styles.errorText} role="alert">
-            {startSale.error instanceof ApiError ? startSale.error.message : "Could not start this sale."}
+            {startSale.error instanceof ApiError ? startSale.error.message : t("billing.startFailed")}
           </p>
         ) : null}
         {startWalkIn.isError ? (
           <p className={styles.errorText} role="alert">
-            {startWalkIn.error instanceof ApiError ? startWalkIn.error.message : "Could not start a walk-in sale."}
+            {startWalkIn.error instanceof ApiError ? startWalkIn.error.message : t("billing.walkInFailed")}
           </p>
         ) : null}
         {org.isError ? (
           <p className={styles.errorText} role="alert">
-            Could not load your branch/warehouse setup. Check Settings.
+            {t("billing.orgLoadFailed")}
           </p>
         ) : null}
       </div>
@@ -772,7 +774,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
       <>
           <div className={layout.panel} data-inert={!documentId ? "true" : undefined}>
             <label htmlFor="product-search" className={styles.searchLabel}>
-              Search or scan a product
+              {t("billing.searchLabel")}
             </label>
             <div className={styles.searchInputWrap}>
               <SearchIcon className={styles.searchInputIcon} aria-hidden="true" />
@@ -780,7 +782,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                 id="product-search"
                 ref={searchInputRef}
                 className={`${ui.input} ${styles.searchInput}`}
-                placeholder={documentId ? "Type a product name, scan a barcode, or scroll below to browse…" : "Pick a customer above to start billing…"}
+                placeholder={documentId ? t("billing.searchPlaceholderOn") : t("billing.searchPlaceholderOff")}
                 value={productQuery}
                 disabled={!documentId}
                 onChange={(e) => setProductQuery(e.target.value)}
@@ -793,7 +795,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                 autoComplete="off"
               />
               <button type="button" className={ui.btnSecondary} disabled={!documentId} onClick={() => setNewItemOpen(true)}>
-                + Add new item
+                {t("billing.addNewItem")}
               </button>
             </div>
             {/* Browsing the whole catalogue helps on an empty sale; once items are
@@ -802,9 +804,9 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
             {productResults.length > 0 && (productQuery.trim().length > 0 || lines.length === 0) ? (
               <div className={styles.resultsTable}>
                 <div className={styles.resultsHeader}>
-                  <span>Item</span>
-                  <span className={styles.resultsHeaderNum}>Stock</span>
-                  <span className={styles.resultsHeaderNum}>Price</span>
+                  <span>{t("billing.results.item")}</span>
+                  <span className={styles.resultsHeaderNum}>{t("billing.results.stock")}</span>
+                  <span className={styles.resultsHeaderNum}>{t("billing.results.price")}</span>
                   <span />
                 </div>
                 <div className={styles.resultsBody}>
@@ -814,18 +816,18 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                       <div key={r.ProductVariantID} className={styles.resultRow}>
                         <div className={styles.resultName}>
                           <strong>{r.ProductName}</strong>
-                          <span className={ui.muted}>SKU {r.SKUCode || "—"}</span>
+                          <span className={ui.muted}>{t("billing.results.sku", { sku: r.SKUCode || "—" })}</span>
                         </div>
                         {stock >= 5 ? (
-                          <span className={ui.muted}>{r.QuantityAvailable} in stock</span>
+                          <span className={ui.muted}>{t("billing.results.inStock", { qty: r.QuantityAvailable })}</span>
                         ) : (
                           <span className={ui.badge} data-tone={stock <= 0 ? "negative" : "warning"}>
-                            {stock <= 0 ? "Out of stock" : `Only ${r.QuantityAvailable} left`}
+                            {stock <= 0 ? t("billing.results.outOfStock") : t("billing.results.onlyLeft", { qty: r.QuantityAvailable })}
                           </span>
                         )}
                         <span className={styles.resultPrice}>{r.UnitPrice ? formatMoney(r.UnitPrice) : "—"}</span>
                         <button type="button" className={ui.btnPrimary} disabled={addLine.isPending} onClick={() => handleAddProduct(r)}>
-                          Add
+                          {t("billing.results.add")}
                         </button>
                       </div>
                     );
@@ -836,7 +838,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
           </div>
 
           <div className={layout.panel}>
-            <h2>Items ({lines.length})</h2>
+            <h2>{t("billing.items", { count: lines.length })}</h2>
             {lines.length === 0 ? (
               <div className={ui.tableScroll} tabIndex={0}>
                 <table className={`${ui.table} ${styles.lineGrid}`}>
@@ -845,32 +847,32 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                       <th scope="col" className={styles.colNum}>
                         #
                       </th>
-                      <th scope="col">Item</th>
-                      <th scope="col">{isIndia ? "HSN/SAC" : "Tax category"}</th>
+                      <th scope="col">{t("billing.col.item")}</th>
+                      <th scope="col">{isIndia ? "HSN/SAC" : t("billing.col.taxCategory")}</th>
                       {isIndia ? (
                         <th scope="col" className={styles.colRight}>
-                          GST %
+                          {t("billing.col.gst")}
                         </th>
                       ) : null}
                       <th scope="col" className={styles.colRight}>
-                        Qty
+                        {t("billing.col.qty")}
                       </th>
                       <th scope="col" className={styles.colRight}>
-                        Rate
+                        {t("billing.col.rate")}
                       </th>
                       <th scope="col" className={styles.colRight}>
-                        Discount
+                        {t("billing.col.discount")}
                       </th>
                       <th scope="col" className={styles.colRight}>
-                        Amount
+                        {t("billing.col.amount")}
                       </th>
-                      <th scope="col"><span className="srOnly">Actions</span></th>
+                      <th scope="col"><span className="srOnly">{t("billing.col.actions")}</span></th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td colSpan={isIndia ? 9 : 8} className={styles.gridEmpty}>
-                        {documentId ? "Scan a barcode or search above to add the first item." : "Pick a customer above, then scan or search to add items."}
+                        {documentId ? t("billing.emptyStarted") : t("billing.emptyNotStarted")}
                       </td>
                     </tr>
                   </tbody>
@@ -884,33 +886,33 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                       <th scope="col" className={styles.colNum}>
                         #
                       </th>
-                      <th scope="col">Item</th>
-                      <th scope="col">{isIndia ? "HSN/SAC" : "Tax category"}</th>
+                      <th scope="col">{t("billing.col.item")}</th>
+                      <th scope="col">{isIndia ? "HSN/SAC" : t("billing.col.taxCategory")}</th>
                       {isIndia ? (
                         <th scope="col" className={styles.colRight}>
-                          GST %
+                          {t("billing.col.gst")}
                         </th>
                       ) : null}
                       <th scope="col" className={styles.colRight}>
-                        Qty
+                        {t("billing.col.qty")}
                       </th>
                       <th scope="col" className={styles.colRight}>
-                        Rate
+                        {t("billing.col.rate")}
                       </th>
                       <th scope="col" className={styles.colRight}>
-                        Discount
+                        {t("billing.col.discount")}
                       </th>
                       <th scope="col" className={styles.colRight}>
-                        Amount
+                        {t("billing.col.amount")}
                       </th>
-                      <th scope="col"><span className="srOnly">Actions</span></th>
+                      <th scope="col"><span className="srOnly">{t("billing.col.actions")}</span></th>
                     </tr>
                   </thead>
                   <tbody>
                     {lines.map((l) => (
                       <tr key={l.ID}>
                         <td className={`num ${styles.colNum}`}>{l.LineNumber}</td>
-                        <td className={styles.itemCell}>{nameByVariant[l.ProductVariantID] ?? doc.data?.line_names?.[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
+                        <td className={styles.itemCell}>{nameByVariant[l.ProductVariantID] ?? doc.data?.line_names?.[l.ProductVariantID] ?? <span className={ui.muted}>{t("billing.itemN", { n: l.LineNumber })}</span>}</td>
                         <td className={styles.hsnCell}>{l.HSNSACCode || "—"}</td>
                         {isIndia ? (
                           <td className={`num ${styles.colRight}`}>
@@ -931,8 +933,8 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                             className={styles.removeButton}
                             disabled={removeLine.isPending}
                             onClick={() => removeLine.mutate(l.ID)}
-                            aria-label={`Remove ${nameByVariant[l.ProductVariantID] ?? `line ${l.LineNumber}`}`}
-                            title="Remove this item"
+                            aria-label={t("billing.removeAria", { name: nameByVariant[l.ProductVariantID] ?? t("billing.lineN", { n: l.LineNumber }) })}
+                            title={t("billing.removeTitle")}
                           >
                             ×
                           </button>
@@ -943,7 +945,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                   <tfoot>
                     <tr className={styles.gridTotalRow}>
                       <td />
-                      <td>Total</td>
+                      <td>{t("billing.total")}</td>
                       <td />
                       <td />
                       <td className={`num ${styles.colRight}`}>{lines.reduce((sum, l) => sum + Number(l.Quantity), 0)}</td>
@@ -960,16 +962,16 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
             )}
             <div className={styles.summaryBar}>
               <span className={styles.summaryCount}>
-                {lines.length} item{lines.length === 1 ? "" : "s"}
+                {t("billing.itemCount", { count: lines.length })}
               </span>
               <div className={styles.summaryTotal}>
-                <span>{grandTotal ? "Grand total" : "Subtotal · tax added on finalize"}</span>
+                <span>{grandTotal ? t("billing.grandTotal") : t("billing.subtotalNote")}</span>
                 <strong className="num">{grandTotal ? formatMoney(grandTotal) : formatMoney({ amount: String(runningSubtotal), currency: currencyCode })}</strong>
               </div>
             </div>
             <div className={ui.formActions}>
               <button type="button" className={ui.btnSecondary} onClick={() => navigate({ to: "/sales" })}>
-                Hold for later
+                {t("billing.hold")}
               </button>
               <button
                 type="button"
@@ -989,22 +991,22 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                     EwayBillCard already does the real, accurate
                     threshold check and only offers e-Way Bill actions
                     when eligibility.Requirement isn't NOT_REQUIRED. */}
-                {finalize.isPending ? "Saving…" : "Finalize sale"}
+                {finalize.isPending ? t("billing.saving") : t("billing.finalize")}
               </button>
             </div>
             {finalize.isError ? (
               <p className={styles.errorText} role="alert">
-                {finalize.error instanceof ApiError ? finalize.error.message : "Could not finalize this sale."}
+                {finalize.error instanceof ApiError ? finalize.error.message : t("billing.finalizeFailed")}
               </p>
             ) : null}
             {updateLine.isError ? (
               <p className={styles.errorText} role="alert">
-                {updateLine.error instanceof ApiError ? updateLine.error.message : "Could not update that line."}
+                {updateLine.error instanceof ApiError ? updateLine.error.message : t("billing.updateFailed")}
               </p>
             ) : null}
             {removeLine.isError ? (
               <p className={styles.errorText} role="alert">
-                {removeLine.error instanceof ApiError ? removeLine.error.message : "Could not remove that item."}
+                {removeLine.error instanceof ApiError ? removeLine.error.message : t("billing.removeFailed")}
               </p>
             ) : null}
           </div>
