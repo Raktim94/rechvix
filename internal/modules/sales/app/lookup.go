@@ -128,6 +128,11 @@ func BillingPriceInDocumentCurrency(price money.Money, doc *domain.Document) (mo
 // the line number.
 func (s *Service) LineProductNames(ctx context.Context, principal permissions.Principal, lines []*domain.DocumentLine) map[uuid.UUID]string {
 	names := make(map[uuid.UUID]string, len(lines))
+	// Same gate as GetDocument: a principal who cannot view documents gets no
+	// names (the caller falls back to line numbers) rather than a lookup.
+	if err := s.view(ctx, principal); err != nil {
+		return names
+	}
 	for _, l := range lines {
 		if _, seen := names[l.ProductVariantID]; seen {
 			continue
