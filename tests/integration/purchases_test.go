@@ -376,3 +376,42 @@ func TestPurchases_RLS_BlocksCrossOrganisationDocumentRead(t *testing.T) {
 		t.Fatalf("GetDocument as A for its own document: %v", err)
 	}
 }
+
+// TestPurchases_ListDocuments_CarriesLinesTotal guards the purchases list's
+// Total column: the document row has no stored total, so the repository
+// sums the lines on every read.
+func TestPurchases_ListDocuments_CarriesLinesTotal(t *testing.T) {
+	ctx := context.Background()
+	inventorySvc := newTestInventoryService(t)
+	purchasesSvc := newTestPurchasesService(t, inventorySvc)
+	fx := setupPurchasesFixture(t, ctx)
+
+	doc, err := purchasesSvc.CreateDocument(ctx, fx.Principal, purchasesapp.CreateDocumentParams{
+		BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, SupplierPartyID: fx.SupplierPartyID,
+		DocumentType: purchasesdomain.DocPurchaseInvoice, CurrencyCode: "INR",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	for _, qty := range []string{"3", "2"} {
+		if _, err := purchasesSvc.AddLine(ctx, fx.Principal, purchasesapp.AddLineParams{
+			DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+			Quantity: mustDecimal(t, qty), UnitPrice: mustDecimal(t, "20"),
+		}); err != nil {
+			t.Fatalf("AddLine: %v", err)
+		}
+	}
+	docs, err := purchasesSvc.ListDocuments(ctx, fx.Principal, nil, nil)
+	if err != nil {
+		t.Fatalf("ListDocuments: %v", err)
+	}
+	for _, d := range docs {
+		if d.ID == doc.ID {
+			if !d.LinesTotal.Equal(mustDecimal(t, "100")) {
+				t.Fatalf("LinesTotal = %s, want 100 (3×20 + 2×20)", d.LinesTotal)
+			}
+			return
+		}
+	}
+	t.Fatal("created purchase document missing from ListDocuments")
+}

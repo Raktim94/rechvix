@@ -937,3 +937,37 @@ func TestAgeingPreservesScopedLedgerCurrency(t *testing.T) {
 		}
 	}
 }
+
+// TestAccounting_SalesList_CarriesPaidAmount guards the sales list's
+// paid / unpaid / overdue status: PaidAmount is the sum of receipts
+// recorded against that invoice only.
+func TestAccounting_SalesList_CarriesPaidAmount(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	paid := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "1", "5000")
+	untouched := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "1", "3000")
+	for _, amt := range []string{"1500", "500"} {
+		if _, err := accountingSvc.RecordReceipt(ctx, fx.Principal, accountingapp.RecordReceiptParams{
+			PartyID: fx.CustomerID, SalesDocumentID: &paid.ID, Amount: mustDecimal(t, amt),
+			Method: accountingdomain.MethodCash, ReceivedAt: time.Now(),
+		}); err != nil {
+			t.Fatalf("RecordReceipt: %v", err)
+		}
+	}
+	docs, err := salesSvc.ListDocuments(ctx, fx.Principal, nil, nil)
+	if err != nil {
+		t.Fatalf("ListDocuments: %v", err)
+	}
+	got := map[uuid.UUID]decimal.Decimal{}
+	for _, d := range docs {
+		got[d.ID] = d.PaidAmount
+	}
+	if !got[paid.ID].Equal(mustDecimal(t, "2000")) {
+		t.Fatalf("PaidAmount of the part-paid invoice = %s, want 2000", got[paid.ID])
+	}
+	if !got[untouched.ID].IsZero() {
+		t.Fatalf("PaidAmount of the untouched invoice = %s, want 0", got[untouched.ID])
+	}
+}

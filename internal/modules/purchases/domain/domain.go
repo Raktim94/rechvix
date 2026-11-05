@@ -107,6 +107,10 @@ type Document struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	FinalizedAt   *time.Time
+	// LinesTotal is the sum of line totals before tax. Read-only: the
+	// repository computes it on every read so list screens can show a
+	// total without fetching lines.
+	LinesTotal decimal.Decimal
 }
 
 type DocumentLine struct {

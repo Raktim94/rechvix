@@ -154,6 +154,11 @@ type Document struct {
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 	FinalizedAt          *time.Time
+	// PaidAmount is the sum of receipts recorded against this document, in
+	// the same unit as GrandTotalAmount (the convention the payment panel
+	// already uses). Read-only: computed on every read so list screens can
+	// show paid / unpaid / overdue without a request per row.
+	PaidAmount decimal.Decimal
 }
 
 type DocumentLine struct {

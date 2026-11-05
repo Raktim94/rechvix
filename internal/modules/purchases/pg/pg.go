@@ -50,7 +50,8 @@ func (r *DocumentRepo) Create(ctx context.Context, d *domain.Document) error {
 
 const documentCols = `id, organisation_id, branch_id, warehouse_id, supplier_party_id, document_type, document_number,
 	reference_document_id, status, COALESCE(supplier_invoice_number, ''), supplier_invoice_date, document_date,
-	currency_code, COALESCE(notes, ''), tax_document_id, created_by, created_at, updated_at, finalized_at`
+	currency_code, COALESCE(notes, ''), tax_document_id, created_by, created_at, updated_at, finalized_at,
+	COALESCE((SELECT sum(l.line_total_amount) FROM purchase_document_lines l WHERE l.purchase_document_id = purchase_documents.id), 0)`
 
 func (r *DocumentRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Document, error) {
 	q := fmt.Sprintf(`SELECT %s FROM purchase_documents WHERE organisation_id = $1 AND id = $2`, documentCols)
@@ -161,7 +162,7 @@ func scanDocumentRow(row scannable) (*domain.Document, error) {
 	var docType, status string
 	if err := row.Scan(&d.ID, &d.OrganisationID, &d.BranchID, &d.WarehouseID, &d.SupplierPartyID, &docType, &d.DocumentNumber,
 		&d.ReferenceDocumentID, &status, &d.SupplierInvoiceNumber, &d.SupplierInvoiceDate, &d.DocumentDate,
-		&d.CurrencyCode, &d.Notes, &d.TaxDocumentID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.FinalizedAt); err != nil {
+		&d.CurrencyCode, &d.Notes, &d.TaxDocumentID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.FinalizedAt, &d.LinesTotal); err != nil {
 		return nil, err
 	}
 	d.DocumentType = domain.DocumentType(docType)

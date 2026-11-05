@@ -28,7 +28,8 @@ Everyday-use polish across billing, purchasing, reporting and phones. No databas
 - **Design.** No gradients or glow shadows, no endlessly looping skeleton shimmer, no card-inside-card (empty states, billing total, nested import panel), real SVG icons instead of text glyphs and emoji, status badges only where they say something, concentric radii where boxes still nest.
 - **Accessibility.** Defined the missing `.sr-only` class (screen-reader-only captions were rendering visibly), labelled the calendar assignee select, per-section browser tab titles. axe-core (WCAG 2.1 AA and best practice) reports no violations across all 20 app routes at 1440 and 390 px.
 - **Deployment.** Optional `HTTP_BIND` in the Compose file to publish the app on 127.0.0.1 behind a same-host TLS proxy; the default is unchanged.
-- **Not yet done:** the purchases list has no total column (the purchase document does not carry one), and many screens still use English literals outside the eight-language files.
+- **Purchases list total and sales payment status.** `GET /purchases/documents` rows carry a read-only `LinesTotal` (sum of line totals before tax) and `GET /sales/documents` rows a read-only `PaidAmount` (sum of receipts against the document); both are computed on read, so there is still no migration. The purchases list gains a Total column. The sales list shows Paid, Part paid, Overdue or Unpaid on finalized invoices and has Unpaid and Overdue views. Integration tests included.
+- **Not yet done:** many screens still use English literals outside the eight-language files.
 
 ## 0.22.0
 

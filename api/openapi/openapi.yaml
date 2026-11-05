@@ -3039,6 +3039,7 @@ components:
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
         FinalizedAt: { type: string, format: date-time, nullable: true }
+        LinesTotal: { type: string, description: "Sum of line totals before tax; read-only." }
 
     PurchaseDocumentLine:
       type: object
@@ -3121,6 +3122,7 @@ components:
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
         FinalizedAt: { type: string, format: date-time, nullable: true }
+        PaidAmount: { type: string, description: "Sum of receipts recorded against the document; read-only." }
 
     SalesDocumentLine:
       type: object

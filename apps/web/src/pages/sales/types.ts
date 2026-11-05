@@ -33,6 +33,9 @@ export interface SalesDocument {
   ExchangeRate: string;
   InvoiceLanguage: string;
   GrandTotalAmount: Money | null;
+  DueDate: string | null;
+  /** Sum of receipts recorded against the document (read-only, from the API). */
+  PaidAmount: string;
   CreatedAt: string;
   FinalizedAt: string | null;
 }
@@ -91,3 +94,22 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   SALES_RETURN: "Sales return",
   RECURRING_INVOICE: "Recurring invoice",
 };
+
+export type PaymentState = "PAID" | "PARTIAL" | "OVERDUE" | "UNPAID";
+
+const RECEIVABLE_TYPES: DocumentType[] = ["TAX_INVOICE", "POS_INVOICE", "DEBIT_NOTE"];
+
+/** Paid / part-paid / overdue / unpaid for a finalized receivable document;
+ * null for anything that is not owed money (drafts, quotes, orders, credit notes…). */
+export function paymentState(d: SalesDocument, today = new Date()): PaymentState | null {
+  if (d.Status !== "FINALIZED" || !RECEIVABLE_TYPES.includes(d.DocumentType) || !d.GrandTotalAmount) return null;
+  const total = Number(d.GrandTotalAmount.amount);
+  const paid = Number(d.PaidAmount ?? "0");
+  if (total <= 0) return null;
+  if (paid >= total) return "PAID";
+  if (d.DueDate && d.DueDate.slice(0, 10) < today.toISOString().slice(0, 10)) return "OVERDUE";
+  return paid > 0 ? "PARTIAL" : "UNPAID";
+}
+
+export const PAYMENT_LABELS: Record<PaymentState, string> = { PAID: "Paid", PARTIAL: "Part paid", OVERDUE: "Overdue", UNPAID: "Unpaid" };
+export const PAYMENT_TONES: Record<PaymentState, string> = { PAID: "positive", PARTIAL: "warning", OVERDUE: "negative", UNPAID: "warning" };

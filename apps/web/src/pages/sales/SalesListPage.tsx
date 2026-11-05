@@ -12,7 +12,7 @@ import { useOrgContext } from "../../lib/useOrgContext";
 import { withLegalEntity } from "../../lib/useReportTable";
 import { useShareSalesDocumentOnWhatsApp, useShareSalesDocumentPdf } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
-import { DOCUMENT_TYPE_LABELS, type DocumentStatus, type DocumentType, type SalesDocument } from "./types";
+import { DOCUMENT_TYPE_LABELS, PAYMENT_LABELS, PAYMENT_TONES, paymentState, type DocumentStatus, type DocumentType, type PaymentState, type SalesDocument } from "./types";
 
 /** Row-level counterpart to SalesDetailPage's "Share via WhatsApp" —
  * lets a counter operator send a finalized bill straight from the list
@@ -72,13 +72,16 @@ function statusTone(status: SalesDocument["Status"]) {
 
 type StatusFilter = "ALL" | DocumentStatus;
 type TypeFilter = "ALL" | DocumentType;
+type PayFilter = "ANY" | "OPEN" | "OVERDUE";
 
 /** One-click views, ordered by how often a counter operator needs them.
  * Quotations and orders mirror the old "Open quotations/orders" shortcuts:
  * finalized ones are the ones still awaiting "Convert to…". */
-const VIEWS: { key: string; label: string; status: StatusFilter; type: TypeFilter }[] = [
+const VIEWS: { key: string; label: string; status: StatusFilter; type: TypeFilter; pay?: PayFilter }[] = [
   { key: "all", label: "All", status: "ALL", type: "ALL" },
   { key: "invoices", label: "Invoices", status: "FINALIZED", type: "TAX_INVOICE" },
+  { key: "unpaid", label: "Unpaid", status: "FINALIZED", type: "ALL", pay: "OPEN" },
+  { key: "overdue", label: "Overdue", status: "FINALIZED", type: "ALL", pay: "OVERDUE" },
   { key: "drafts", label: "Drafts", status: "DRAFT", type: "ALL" },
   { key: "quotes", label: "Quotations", status: "FINALIZED", type: "QUOTATION" },
   { key: "orders", label: "Orders", status: "FINALIZED", type: "SALES_ORDER" },
@@ -86,10 +89,34 @@ const VIEWS: { key: string; label: string; status: StatusFilter; type: TypeFilte
 
 const STATUS_LABELS: Record<DocumentStatus, string> = { DRAFT: "Draft", FINALIZED: "Finalized", CANCELLED: "Cancelled" };
 
+function matchesView(d: SalesDocument, v: { status: StatusFilter; type: TypeFilter; pay?: PayFilter }) {
+  if (v.status !== "ALL" && d.Status !== v.status) return false;
+  if (v.type !== "ALL" && d.DocumentType !== v.type) return false;
+  if (v.pay) {
+    const ps = paymentState(d);
+    return v.pay === "OPEN" ? ps !== null && ps !== "PAID" : ps === "OVERDUE";
+  }
+  return true;
+}
+
+function PaymentBadge({ document }: { document: SalesDocument }) {
+  const ps: PaymentState | null = paymentState(document);
+  if (!ps) return null;
+  return (
+    <>
+      {" "}
+      <span className={ui.badge} data-tone={PAYMENT_TONES[ps]}>
+        {PAYMENT_LABELS[ps]}
+      </span>
+    </>
+  );
+}
+
 export function SalesListPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [type, setType] = useState<TypeFilter>("ALL");
+  const [pay, setPay] = useState<PayFilter>("ANY");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const org = useOrgContext();
@@ -126,6 +153,10 @@ export function SalesListPage() {
   const filtered = (documents.data ?? []).filter((d) => {
     if (status !== "ALL" && d.Status !== status) return false;
     if (type !== "ALL" && d.DocumentType !== type) return false;
+    if (pay !== "ANY") {
+      const ps = paymentState(d);
+      if (pay === "OPEN" ? ps === null || ps === "PAID" : ps !== "OVERDUE") return false;
+    }
     if (from && d.IssueDate.slice(0, 10) < from) return false;
     if (to && d.IssueDate.slice(0, 10) > to) return false;
     if (q) {
@@ -153,8 +184,8 @@ export function SalesListPage() {
       <div className={layout.panel}>
         <div className={ui.segmented} role="group" aria-label="Sales views">
           {VIEWS.map((v) => {
-            const count = (documents.data ?? []).filter((d) => (v.status === "ALL" || d.Status === v.status) && (v.type === "ALL" || d.DocumentType === v.type)).length;
-            const active = status === v.status && type === v.type;
+            const count = (documents.data ?? []).filter((d) => matchesView(d, v)).length;
+            const active = status === v.status && type === v.type && pay === (v.pay ?? "ANY");
             return (
               <button
                 key={v.key}
@@ -164,6 +195,7 @@ export function SalesListPage() {
                 onClick={() => {
                   setStatus(v.status);
                   setType(v.type);
+                  setPay(v.pay ?? "ANY");
                 }}
               >
                 {v.label}
@@ -184,7 +216,7 @@ export function SalesListPage() {
         </div>
         <details style={{ marginBottom: 12 }}>
           <summary style={{ cursor: "pointer", minHeight: 36, display: "flex", alignItems: "center", fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--color-text-muted)" }}>
-            More filters{from || to || !VIEWS.some((v) => v.status === status && v.type === type) ? " (active)" : ""}
+            More filters{from || to || !VIEWS.some((v) => v.status === status && v.type === type && (v.pay ?? "ANY") === pay) ? " (active)" : ""}
           </summary>
           <div className={ui.toolbar} style={{ marginTop: 8 }}>
           <select className={ui.select} aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
@@ -236,6 +268,7 @@ export function SalesListPage() {
                   onClick={() => {
                     setStatus("ALL");
                     setType("ALL");
+                    setPay("ANY");
                     setQuery("");
                     setFrom("");
                     setTo("");
@@ -305,6 +338,7 @@ export function SalesListPage() {
                       <span className={ui.badge} data-tone={statusTone(d.Status)}>
                         {STATUS_LABELS[d.Status]}
                       </span>
+                      <PaymentBadge document={d} />
                       {workflowByDoc.get(d.ID) ? <> <StatusBadge name={workflowByDoc.get(d.ID)!.name} color={workflowByDoc.get(d.ID)!.color} /></> : null}
                     </td>
                     <td data-label="Date">{new Date(d.IssueDate).toLocaleDateString()}</td>

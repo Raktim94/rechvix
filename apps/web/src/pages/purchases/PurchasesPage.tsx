@@ -27,6 +27,9 @@ interface PurchaseDocument {
   DocumentType: string;
   DocumentDate: string;
   SupplierPartyID: string;
+  CurrencyCode?: string;
+  /** Sum of line totals before tax (read-only, from the API). */
+  LinesTotal?: string;
 }
 interface PurchaseLine {
   ID: string;
@@ -539,6 +542,7 @@ export function PurchasesPage() {
                   <th scope="col">Type</th>
                   <th scope="col">Status</th>
                   <th scope="col">Date</th>
+                  <th scope="col">Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -562,6 +566,9 @@ export function PurchasesPage() {
                       </span>
                     </td>
                     <td data-label="Date">{new Date(d.DocumentDate).toLocaleDateString()}</td>
+                    <td className="num" data-end>
+                      {d.LinesTotal && d.CurrencyCode ? formatMoney({ amount: d.LinesTotal, currency: d.CurrencyCode }) : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
