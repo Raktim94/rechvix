@@ -664,13 +664,12 @@ function IndiaGstPage() {
         </div>
       </div>
 
-      <EWayBillModeSection />
-      {legalEntityId ? <EInvoiceProviderSection legalEntityId={legalEntityId} /> : null}
-      <BulkEwayBillPanel legalEntityId={legalEntityId} />
-      <VehiclesSection />
-      <TransportersSection />
-      <TaxRatesSection />
+      <nav className={ui.segmented} aria-label="On this page" style={{ marginBottom: 0 }}>
+        <a className={ui.segment} href="#gst-filing">Filing and accountant files</a>
+        <a className={ui.segment} href="#gst-setup">e-Way Bill, e-Invoice and rates</a>
+      </nav>
 
+      <h2 id="gst-filing" style={{ margin: "var(--space-3) 0 0", scrollMarginTop: 80 }}>Filing and accountant files</h2>
       {/* HSN/tax-rate summary stay organisation-wide (no withLegalEntity
           here) — tax_documents has no cheap company join available yet,
           see reporting/pg.Repo.HSNSummary's own doc comment. GSTR-1/3B
@@ -705,6 +704,15 @@ function IndiaGstPage() {
         </p>
         <ReportTable path={withLegalEntity("/reports/tax/gstr3b?format=json", legalEntityId)} />
       </div>
+
+      <h2 id="gst-setup" style={{ margin: "var(--space-5) 0 0", scrollMarginTop: 80 }}>e-Way Bill, e-Invoice and rates</h2>
+      <EWayBillModeSection />
+      {legalEntityId ? <EInvoiceProviderSection legalEntityId={legalEntityId} /> : null}
+      <BulkEwayBillPanel legalEntityId={legalEntityId} />
+      <VehiclesSection />
+      <TransportersSection />
+      <TaxRatesSection />
+
     </div>
   );
 }

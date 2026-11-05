@@ -515,7 +515,16 @@ export function PurchasesPage() {
         ) : documents.isPending ? (
           <div className={layout.skeleton} style={{ height: 200 }} aria-hidden="true" />
         ) : filteredDocuments.length === 0 ? (
-          <p className={layout.emptyState}>{documents.data.length === 0 ? "No purchases yet." : "No purchases match these filters."}</p>
+          <div className={layout.emptyState}>
+            <p style={{ margin: "0 0 var(--space-3)" }}>
+              {documents.data.length === 0 ? "No purchases yet. Record a supplier bill to add stock and track what you owe." : "No purchases match these filters."}
+            </p>
+            {documents.data.length === 0 ? (
+              <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
+                + New purchase
+              </button>
+            ) : null}
+          </div>
         ) : (
           <div className={ui.tableScroll} tabIndex={0}>
             <table className={ui.table}>

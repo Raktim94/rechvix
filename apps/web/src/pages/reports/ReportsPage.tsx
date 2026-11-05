@@ -1,4 +1,7 @@
 import ReactECharts from "echarts-for-react";
+import { useState } from "react";
+import { isValidRange, periodFor, withPeriod, type Period, type PeriodKey } from "../../lib/period";
+import ui from "../../components/ui.module.css";
 import { ReceivablesPanel } from "../../components/ReceivablesPanel";
 import { ReportTable } from "../../components/ReportTable";
 import { formatMoney, moneyToApproxNumber } from "../../lib/money";
@@ -8,50 +11,90 @@ import { useReportTable, withLegalEntity } from "../../lib/useReportTable";
 import { useTheme } from "../../theme/ThemeProvider";
 import layout from "../DashboardPage.module.css";
 
+const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
+  { key: "30d", label: "Last 30 days" },
+  { key: "month", label: "This month" },
+  { key: "lastMonth", label: "Last month" },
+  { key: "quarter", label: "This quarter" },
+  { key: "fy", label: "This year" },
+  { key: "custom", label: "Custom" },
+];
+
 export function ReportsPage() {
   const { theme } = useTheme();
   const dark = theme === "dark";
   const org = useOrgContext();
   const legalEntityId = org.legalEntity?.ID;
+  const [key, setKey] = useState<PeriodKey>("30d");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const country = org.legalEntity?.CountryCode;
+  // null = fall back to the server default (last 30 days) while a custom range is incomplete.
+  const period: Period | null =
+    key === "custom" ? (isValidRange(customFrom, customTo) ? { from: customFrom, to: customTo } : null) : periodFor(key, new Date(), country);
 
   return (
     <div className={layout.page}>
       <div className={layout.heading}>
         <div>
           <h1>Reports</h1>
-          <p className={layout.subtitle}>Sales, purchases, and stock movement — the last 30 days by default.</p>
+          <p className={layout.subtitle}>
+            Sales, purchases, and stock movement
+            {period ? ` · ${period.from} to ${period.to}` : " · last 30 days"}
+          </p>
         </div>
       </div>
 
+      <div className={ui.segmented} role="group" aria-label="Report period" style={{ marginBottom: 0 }}>
+        {PERIOD_OPTIONS.map((o) => (
+          <button key={o.key} type="button" className={ui.segment} aria-pressed={key === o.key} onClick={() => setKey(o.key)}>
+            {o.key === "fy" ? (country === "IN" ? "This financial year" : "This year") : o.label}
+          </button>
+        ))}
+      </div>
+      {key === "custom" ? (
+        <div className={ui.toolbar} style={{ gap: 12 }}>
+          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            From
+            <input type="date" className={ui.input} value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} />
+          </label>
+          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            To
+            <input type="date" className={ui.input} value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} />
+          </label>
+          {!period ? <span className={ui.muted}>Choose both dates to apply. Showing the last 30 days meanwhile.</span> : null}
+        </div>
+      ) : null}
+
       <div className={layout.panel}>
         <h2>Top products by profit</h2>
-        <GrossProfitChart dark={dark} legalEntityId={legalEntityId} />
+        <GrossProfitChart dark={dark} legalEntityId={legalEntityId} period={period} />
       </div>
 
       <div className={layout.panel}>
         <h2>Sales invoices</h2>
-        <ReportTable path={withLegalEntity("/reports/sales/invoices?format=json", legalEntityId)} />
+        <ReportTable path={withPeriod(withLegalEntity("/reports/sales/invoices?format=json", legalEntityId), period)} />
       </div>
       <div className={layout.panel}>
         <h2>Gross profit</h2>
-        <ReportTable path={withLegalEntity("/reports/sales/gross-profit?format=json", legalEntityId)} />
+        <ReportTable path={withPeriod(withLegalEntity("/reports/sales/gross-profit?format=json", legalEntityId), period)} />
       </div>
 
       <div className={layout.panel}>
         <h2>Purchases by day</h2>
-        <PurchaseSummaryChart dark={dark} legalEntityId={legalEntityId} />
+        <PurchaseSummaryChart dark={dark} legalEntityId={legalEntityId} period={period} />
       </div>
       <div className={layout.panel}>
         <h2>Purchase summary</h2>
-        <ReportTable path={withLegalEntity("/reports/purchases/summary?format=json", legalEntityId)} />
+        <ReportTable path={withPeriod(withLegalEntity("/reports/purchases/summary?format=json", legalEntityId), period)} />
       </div>
       <div className={layout.panel}>
         <h2>Purchase documents</h2>
-        <ReportTable path={withLegalEntity("/reports/purchases/documents?format=json", legalEntityId)} emptyLabel="No purchases recorded yet." />
+        <ReportTable path={withPeriod(withLegalEntity("/reports/purchases/documents?format=json", legalEntityId), period)} emptyLabel="No purchases recorded yet." />
       </div>
       <div className={layout.panel}>
         <h2>Stock movements</h2>
-        <ReportTable path={withLegalEntity("/reports/inventory/movements?format=json", legalEntityId)} emptyLabel="No stock movements recorded yet." />
+        <ReportTable path={withPeriod(withLegalEntity("/reports/inventory/movements?format=json", legalEntityId), period)} emptyLabel="No stock movements recorded yet." />
       </div>
 
       {/* Trial balance/receivables/payables also live on Accounting
@@ -84,8 +127,8 @@ export function ReportsPage() {
 // Top 8 by profit, revenue vs. profit as two categorical bars per product
 // — magnitude comparison across products, not a trend, so grouped bars
 // beat a line here.
-function GrossProfitChart({ dark, legalEntityId }: { dark: boolean; legalEntityId: string | undefined }) {
-  const query = useReportTable(withLegalEntity("/reports/sales/gross-profit?format=json", legalEntityId));
+function GrossProfitChart({ dark, legalEntityId, period }: { dark: boolean; legalEntityId: string | undefined; period: Period | null }) {
+  const query = useReportTable(withPeriod(withLegalEntity("/reports/sales/gross-profit?format=json", legalEntityId), period));
 
   if (query.isPending) {
     return <div className={layout.skeleton} style={{ height: 280 }} aria-hidden="true" />;
@@ -171,8 +214,8 @@ function GrossProfitChart({ dark, legalEntityId }: { dark: boolean; legalEntityI
 // (same domain.GroupByDay default as the Dashboard's sales trend) —
 // plotted as bars rather than the Dashboard's line so the two daily-trend
 // charts in this app don't read as the same chart with different data.
-function PurchaseSummaryChart({ dark, legalEntityId }: { dark: boolean; legalEntityId: string | undefined }) {
-  const query = useReportTable(withLegalEntity("/reports/purchases/summary?format=json", legalEntityId));
+function PurchaseSummaryChart({ dark, legalEntityId, period }: { dark: boolean; legalEntityId: string | undefined; period: Period | null }) {
+  const query = useReportTable(withPeriod(withLegalEntity("/reports/purchases/summary?format=json", legalEntityId), period));
 
   if (query.isPending) {
     return <div className={layout.skeleton} style={{ height: 260 }} aria-hidden="true" />;
