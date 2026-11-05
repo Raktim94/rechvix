@@ -687,3 +687,51 @@ func TestReporting_PaymentModes_TotalsReceiptsByMethod(t *testing.T) {
 		t.Fatalf("an empty period: %+v", rows)
 	}
 }
+
+// TestReporting_GSTReports_ExcludeQuotations_AndDoNotDoubleCountHSN is the
+// regression test for two bugs found by walking the app with real data:
+// the HSN summary joined tax_components onto tax_lines, so every intra-state
+// line (CGST + SGST = two component rows) had its taxable value and total tax
+// counted twice; and finalized quotations, which also get a computed tax
+// document, appeared in GSTR-1, GSTR-3B and the HSN summary as if they were
+// supplies. Hand-computed: one 10 x 100 invoice at 18% intra-state, plus a
+// 4 x 100 quotation that must not appear anywhere.
+func TestReporting_GSTReports_ExcludeQuotations_AndDoNotDoubleCountHSN(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100")
+	finalizeTaxInvoiceAs(t, ctx, salesSvc, fx, salesdomain.DocQuotation, "4", "100")
+
+	hsn, err := reportingSvc.HSNSummary(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("HSNSummary: %v", err)
+	}
+	if len(hsn) != 1 {
+		t.Fatalf("got %d HSN buckets, want 1", len(hsn))
+	}
+	if got := hsn[0].TaxableAmount.StringFixed(0); got != "1000.00" {
+		t.Fatalf("HSN taxable = %s, want 1000.00 (once, and without the quotation)", got)
+	}
+	if got := hsn[0].TotalTax.StringFixed(0); got != "180.00" {
+		t.Fatalf("HSN total tax = %s, want 180.00 (CGST 90 + SGST 90, counted once)", got)
+	}
+
+	g1, err := reportingSvc.GSTR1(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("GSTR1: %v", err)
+	}
+	if len(g1) != 1 {
+		t.Fatalf("GSTR-1 has %d documents, want 1 (the quotation is not a supply)", len(g1))
+	}
+
+	g3b, err := reportingSvc.GSTR3B(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("GSTR3B: %v", err)
+	}
+	if got := g3b[0].TaxableAmount.StringFixed(0); got != "1000.00" {
+		t.Fatalf("GSTR-3B 3.1(a) taxable = %s, want 1000.00 (quotation excluded)", got)
+	}
+}

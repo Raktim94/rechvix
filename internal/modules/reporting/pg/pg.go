@@ -768,23 +768,49 @@ func (r *Repo) AccountLedger(ctx context.Context, orgID, accountID uuid.UUID, f 
 // existing join to hang a company filter off without restructuring the
 // query to branch on tax_documents.reference_type first.
 
+// salesRevenueTypesSQL lists the sales document types that are real supplies
+// (mirrors sales/domain.RevenueAffecting). Quotations, orders, proforma
+// invoices and delivery challans also get a computed tax document when they
+// are finalized, but they are not supplies and must never reach a GST report.
+const salesRevenueTypesSQL = `('TAX_INVOICE','POS_INVOICE','CREDIT_NOTE','DEBIT_NOTE','SALES_RETURN','RECURRING_INVOICE')`
+
+// taxDocIsReportableSQL restricts tax_documents (aliased td) to those whose
+// source document is a finalized supply: a finalized revenue-type sales
+// document or a finalized purchase document. Other reference types (the
+// engine's own standalone calculations) are left alone.
+const taxDocIsReportableSQL = `(
+		td.reference_type NOT IN ('sales_document', 'purchase_document')
+		OR (td.reference_type = 'sales_document' AND EXISTS (SELECT 1 FROM sales_documents sdx WHERE sdx.id = td.reference_id AND sdx.status = 'FINALIZED' AND sdx.document_type IN ` + salesRevenueTypesSQL + `))
+		OR (td.reference_type = 'purchase_document' AND EXISTS (SELECT 1 FROM purchase_documents pdx WHERE pdx.id = td.reference_id AND pdx.status = 'FINALIZED'))
+	)`
+
 func (r *Repo) HSNSummary(ctx context.Context, f domain.Filter) ([]domain.HSNSummaryRow, error) {
 	w := newWhere(f.OrganisationID, "tl")
 	w.addRange("td.document_date", f.From, f.To)
 	w.addOptionalString("tl.hsn_sac_code", f.HSNSACCode)
 
+	// Components are aggregated per line (LATERAL) rather than joined: joining
+	// tax_components multiplies each line by its component count (CGST+SGST =
+	// 2 rows), which doubled every intra-state line's taxable value and tax.
 	q := fmt.Sprintf(`
 		SELECT tl.hsn_sac_code, SUM(tl.taxable_amount * td.exchange_rate),
-		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'CGST'), 0),
-		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'SGST'), 0),
-		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'IGST'), 0),
-		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'UTGST'), 0),
-		       COALESCE(SUM(tc.amount * td.exchange_rate) FILTER (WHERE tc.component_type = 'CESS'), 0),
+		       COALESCE(SUM(c.cgst * td.exchange_rate), 0),
+		       COALESCE(SUM(c.sgst * td.exchange_rate), 0),
+		       COALESCE(SUM(c.igst * td.exchange_rate), 0),
+		       COALESCE(SUM(c.utgst * td.exchange_rate), 0),
+		       COALESCE(SUM(c.cess * td.exchange_rate), 0),
 		       SUM(tl.total_tax_amount * td.exchange_rate)
 		FROM tax_lines tl
 		JOIN tax_documents td ON td.id = tl.tax_document_id
-		LEFT JOIN tax_components tc ON tc.tax_line_id = tl.id
-		WHERE %s
+		LEFT JOIN LATERAL (
+			SELECT SUM(tc.amount) FILTER (WHERE tc.component_type = 'CGST') AS cgst,
+			       SUM(tc.amount) FILTER (WHERE tc.component_type = 'SGST') AS sgst,
+			       SUM(tc.amount) FILTER (WHERE tc.component_type = 'IGST') AS igst,
+			       SUM(tc.amount) FILTER (WHERE tc.component_type = 'UTGST') AS utgst,
+			       SUM(tc.amount) FILTER (WHERE tc.component_type = 'CESS') AS cess
+			FROM tax_components tc WHERE tc.tax_line_id = tl.id
+		) c ON true
+		WHERE %s AND `+taxDocIsReportableSQL+`
 		GROUP BY tl.hsn_sac_code
 		ORDER BY tl.hsn_sac_code`, w.sql())
 	rows, err := r.pool.Q(ctx).Query(ctx, q, w.args...)
@@ -814,7 +840,7 @@ func (r *Repo) TaxRateSummary(ctx context.Context, f domain.Filter) ([]domain.Ta
 		FROM tax_components tc
 		JOIN tax_lines tl ON tl.id = tc.tax_line_id
 		JOIN tax_documents td ON td.id = tl.tax_document_id
-		WHERE %s AND tc.component_type IN ('CGST','IGST') -- one of the two per line, avoids double-counting the intra-state CGST+SGST split
+		WHERE %s AND tc.component_type IN ('CGST','IGST') AND `+taxDocIsReportableSQL+` -- one of the two per line, avoids double-counting the intra-state CGST+SGST split
 		GROUP BY tc.rate
 		ORDER BY tc.rate`, w.sql())
 	rows, err := r.pool.Q(ctx).Query(ctx, q, w.args...)
@@ -852,7 +878,7 @@ func (r *Repo) GSTR1(ctx context.Context, f domain.Filter) ([]domain.GSTR1Line, 
 		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS'), 0),
 		       td.grand_total * td.exchange_rate
 		FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
-		WHERE %s
+		WHERE %s AND sd.document_type IN `+salesRevenueTypesSQL+`
 		ORDER BY sd.issue_date, sd.document_number`, w.sql())
 	rows, err := r.pool.Q(ctx).Query(ctx, q, w.args...)
 	if err != nil {
@@ -911,7 +937,7 @@ func (r *Repo) gstr3bOutward(ctx context.Context, f domain.Filter) ([]domain.GST
 			COALESCE(SUM(td.total_taxable_amount * td.exchange_rate) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0),
 			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0)
 		FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
-		WHERE %s`, w.sql())
+		WHERE %s AND sd.document_type IN `+salesRevenueTypesSQL, w.sql())
 	var taxable, igst, cgst, sgst, cess, zeroTaxable, zeroIGST decimal.Decimal
 	row := r.pool.Q(ctx).QueryRow(ctx, q, w.args...)
 	if err := row.Scan(&taxable, &igst, &cgst, &sgst, &cess, &zeroTaxable, &zeroIGST); err != nil {
