@@ -355,3 +355,58 @@
   background: var(--color-accent-soft, var(--color-surface-alt));
   color: var(--color-accent, inherit);
 }
+
+/* Phones: a wide table becomes one stacked row per record, each cell labelled
+   by its column (data-label), so figures are never hidden off to the right. */
+@media (max-width: 640px) {
+  .tableStack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .tableStack,
+  .tableStack tbody,
+  .tableStack tr,
+  .tableStack td {
+    display: block;
+    width: 100%;
+  }
+  .tableStack tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px var(--space-3);
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--color-border);
+  }
+  .tableStack td {
+    padding: 0;
+    border: 0;
+    width: auto;
+  }
+  .tableStack td {
+    grid-column: 1 / -1;
+  }
+  .tableStack td:empty {
+    display: none;
+  }
+  .tableStack td[data-label]::before {
+    content: attr(data-label) ": ";
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+  }
+  .tableStack td[data-primary] {
+    grid-column: 1;
+    font-weight: 600;
+  }
+  .tableStack td[data-end] {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+  }
+  .tableStack td[data-primary]::before,
+  .tableStack td[data-end]::before {
+    content: none;
+  }
+}

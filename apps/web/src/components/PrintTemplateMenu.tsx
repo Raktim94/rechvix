@@ -1,4 +1,4 @@
-import { CheckIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon } from "./icons";
 import { LANGUAGES } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import styles from "./PrintTemplateMenu.module.css";
@@ -52,12 +52,14 @@ export function PrintTemplateMenu({ documentId }: { documentId: string }) {
           {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
         </select>
       </label>
+      <div className={styles.split}>
       <a href={printUrl(selectedTemplate, selectedTheme)} target="_blank" rel="noopener noreferrer" className={`${ui.btnSecondary} ${styles.printLink}`}>
         Print / Save PDF
       </a>
       <button type="button" className={`${ui.btnSecondary} ${styles.caret}`} aria-haspopup="menu" aria-expanded={open} aria-label="Choose invoice layout and design" onClick={() => setOpen((v) => !v)}>
-        ▾
+        <ChevronDownIcon width={16} height={16} />
       </button>
+      </div>
       {open ? (
         <ul className={styles.menu} role="menu" aria-label="Invoice layout and design">
           <li className={styles.sectionTitle} role="presentation">

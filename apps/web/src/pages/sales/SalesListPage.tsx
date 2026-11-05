@@ -181,29 +181,36 @@ export function SalesListPage() {
             onChange={(e) => setQuery(e.target.value)}
             style={{ maxWidth: 280 }}
           />
-          <select className={ui.select} aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
-            <option value="ALL">All statuses</option>
-            <option value="DRAFT">Draft</option>
-            <option value="FINALIZED">Finalized</option>
-            <option value="CANCELLED">Cancelled</option>
-          </select>
-          <select className={ui.select} aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value as TypeFilter)}>
-            <option value="ALL">All types</option>
-            {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            From
-            <input type="date" className={ui.input} aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            To
-            <input type="date" className={ui.input} aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
         </div>
+        <details style={{ marginBottom: 12 }}>
+          <summary style={{ cursor: "pointer", minHeight: 36, display: "flex", alignItems: "center", fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--color-text-muted)" }}>
+            More filters{from || to || !VIEWS.some((v) => v.status === status && v.type === type) ? " (active)" : ""}
+          </summary>
+          <div className={ui.toolbar} style={{ marginTop: 8 }}>
+          <select className={ui.select} aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+              <option value="ALL">All statuses</option>
+              <option value="DRAFT">Draft</option>
+              <option value="FINALIZED">Finalized</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+            <select className={ui.select} aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value as TypeFilter)}>
+              <option value="ALL">All types</option>
+              {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              From
+              <input type="date" className={ui.input} aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </label>
+            <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              To
+              <input type="date" className={ui.input} aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </label>
+          </div>
+        </details>
 
         {documents.isError ? (
           <p className={layout.errorState} role="alert">
@@ -251,7 +258,7 @@ export function SalesListPage() {
             ) : null}
             {billNotes.isError ? <p role="alert">{billNotes.error instanceof ApiError ? billNotes.error.message : "Could not create the invoice."}</p> : null}
           <div className={ui.tableScroll} tabIndex={0}>
-            <table className={ui.table}>
+            <table className={`${ui.table} ${ui.tableStack}`}>
               <thead>
                 <tr>
                   <th scope="col"><span className="srOnly">Select delivery notes to bill</span></th>
@@ -282,7 +289,7 @@ export function SalesListPage() {
                         />
                       ) : null}
                     </td>
-                    <td>
+                    <td data-primary>
                       <Link
                         to={d.Status === "DRAFT" ? "/sales/new" : "/sales/$id"}
                         params={d.Status === "DRAFT" ? undefined : { id: d.ID }}
@@ -292,16 +299,16 @@ export function SalesListPage() {
                         {d.DocumentNumber || "(draft)"}
                       </Link>
                     </td>
-                    <td>{customerNameById.get(d.CustomerPartyID) ?? "—"}</td>
-                    <td>{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
+                    <td data-label="Customer">{customerNameById.get(d.CustomerPartyID) ?? "—"}</td>
+                    <td data-label="Type">{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
                     <td>
                       <span className={ui.badge} data-tone={statusTone(d.Status)}>
                         {STATUS_LABELS[d.Status]}
                       </span>
                       {workflowByDoc.get(d.ID) ? <> <StatusBadge name={workflowByDoc.get(d.ID)!.name} color={workflowByDoc.get(d.ID)!.color} /></> : null}
                     </td>
-                    <td>{new Date(d.IssueDate).toLocaleDateString()}</td>
-                    <td className="num">{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
+                    <td data-label="Date">{new Date(d.IssueDate).toLocaleDateString()}</td>
+                    <td className="num" data-end>{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
                     <td>
                       {d.Status !== "DRAFT" ? (
                         <div style={{ display: "flex", gap: 4 }}>
