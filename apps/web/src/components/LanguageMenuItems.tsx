@@ -1,3 +1,4 @@
+import { CheckIcon } from "./icons";
 import { useTranslation } from "react-i18next";
 import { LANGUAGES, currentLanguage, setLanguage } from "../i18n";
 
@@ -20,7 +21,7 @@ export function LanguageMenuItems({ onChosen }: { onChosen: () => void }) {
             onChosen();
           }}
         >
-          {l.code === active ? "✓ " : ""}
+          {l.code === active ? <CheckIcon width={14} height={14} style={{ marginRight: 6, verticalAlign: "-2px" }} /> : null}
           {l.name}
         </button>
       ))}

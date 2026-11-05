@@ -305,26 +305,23 @@
   font-size: var(--text-sm);
 }
 
-/* The summary bar is the one number the counter and the customer are both
-   watching while a sale builds — an elevated card with a bolder, larger
-   grand total (not just a top border on plain text) makes it read as the
-   answer to "how much so far", not one more table row. */
+/* The summary is the one number the counter and the customer are both
+   watching while a sale builds. It is flat (a rule above, a larger grand
+   total) rather than a card inside the card. */
 .summaryBar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   margin-top: var(--space-4);
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-lg);
-  color: var(--color-rail-text);
-  background: linear-gradient(120deg, var(--color-rail) 0%, var(--color-rail-raised) 100%);
-  box-shadow: var(--shadow-card);
+  padding: var(--space-4) 0 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
 }
 
 .summaryCount {
   font-size: var(--text-sm);
-  color: var(--color-rail-text-muted);
+  color: var(--color-text-muted);
   font-weight: 500;
 }
 
@@ -336,7 +333,7 @@
 
 .summaryTotal span {
   font-size: var(--text-sm);
-  color: var(--color-rail-text-muted);
+  color: var(--color-text-muted);
 }
 
 .summaryTotal strong {
@@ -345,7 +342,7 @@
   font-size: var(--text-2xl);
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: #ffffff;
+  color: var(--color-text);
 }
 
 .errorText {

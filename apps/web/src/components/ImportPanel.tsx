@@ -93,9 +93,12 @@ export function ImportPanel({
   extraQuery,
   mapColumns = false,
   defaultOpen = false,
+  embedded = false,
   onImported,
 }: {
   title: string;
+  /** Render flat (a divider, no card) when already inside another panel. */
+  embedded?: boolean;
   path: string;
   columns: string[];
   /** Raw column-key -> example-value rows for a downloadable sample CSV
@@ -174,7 +177,7 @@ export function ImportPanel({
   }
 
   return (
-    <div className={layout.panel}>
+    <div className={embedded ? undefined : layout.panel} style={embedded ? { borderTop: "1px solid var(--color-border)", marginTop: "var(--space-4)", paddingTop: "var(--space-4)" } : undefined}>
       <div className={ui.toolbar}>
         <h2 style={{ margin: 0, fontSize: "1rem" }}>{title}</h2>
         <div className={ui.toolbarSpacer} />

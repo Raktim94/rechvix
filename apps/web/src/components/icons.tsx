@@ -244,3 +244,22 @@ export const BankIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18" />
   </Icon>
 );
+
+export const SunIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4" />
+  </Icon>
+);
+
+export const MoonIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z" />
+  </Icon>
+);
+
+export const PaperclipIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M20 11.5l-8 8a5 5 0 01-7-7l8.5-8.5a3.5 3.5 0 015 5L10 17.5a2 2 0 01-3-3L14.5 7" />
+  </Icon>
+);

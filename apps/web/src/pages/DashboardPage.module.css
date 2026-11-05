@@ -85,9 +85,6 @@
   font-size: var(--text-sm);
   padding: var(--space-6) var(--space-4);
   text-align: center;
-  background: var(--color-bg);
-  border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius-lg);
 }
 
 .errorState {
@@ -98,37 +95,12 @@
   font-size: var(--text-sm);
 }
 
-/* A moving sheen rather than a flat grey block — the standard cue that
-   something is loading rather than empty/broken. Held still for anyone
-   who's asked the OS to reduce motion. */
+/* A flat placeholder block that holds the layout while data loads. It does
+   not animate: an endless shimmer is motion with no meaning. */
 .skeleton {
   background: var(--color-surface-alt);
-  background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.45) 50%, transparent 100%);
-  background-size: 200% 100%;
-  background-repeat: no-repeat;
   border-radius: var(--radius-lg);
   height: 88px;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-:root[data-theme="dark"] .skeleton {
-  background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
-}
-
-@keyframes shimmer {
-  from {
-    background-position: 180% 0;
-  }
-  to {
-    background-position: -80% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-    background-image: none;
-  }
 }
 
 /* ---- Overview ------------------------------------------------------- */

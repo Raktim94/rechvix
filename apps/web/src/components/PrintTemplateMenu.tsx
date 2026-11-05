@@ -1,3 +1,4 @@
+import { CheckIcon } from "./icons";
 import { LANGUAGES } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import styles from "./PrintTemplateMenu.module.css";
@@ -78,7 +79,7 @@ export function PrintTemplateMenu({ documentId }: { documentId: string }) {
               >
                 <span className={styles.itemLabel}>
                   {t.label}
-                  {t.value === selectedTemplate ? <span className={styles.check} aria-hidden="true">✓</span> : null}
+                  {t.value === selectedTemplate ? <CheckIcon className={styles.check} width={14} height={14} /> : null}
                 </span>
                 <span className={styles.itemDescription}>{t.description}</span>
               </button>
@@ -104,7 +105,7 @@ export function PrintTemplateMenu({ documentId }: { documentId: string }) {
               >
                 <span className={styles.itemLabel}>
                   {t.label}
-                  {t.value === selectedTheme ? <span className={styles.check} aria-hidden="true">✓</span> : null}
+                  {t.value === selectedTheme ? <CheckIcon className={styles.check} width={14} height={14} /> : null}
                 </span>
                 <span className={styles.itemDescription}>{t.description}</span>
               </button>

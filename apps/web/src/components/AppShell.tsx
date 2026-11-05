@@ -5,7 +5,7 @@ import styles from "./AppShell.module.css";
 import { CommandPalette } from "./CommandPalette";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { Logo } from "./Logo";
-import { PlusIcon, SearchIcon } from "./icons";
+import { MoonIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
@@ -206,7 +206,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           onClick={toggle}
           aria-label={theme === "dark" ? t("shell.switchToLight") : t("shell.switchToDark")}
         >
-          {theme === "dark" ? "☀" : "☾"}
+          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
         </button>
         <div className={styles.userMenu} ref={menuRef}>
           <button

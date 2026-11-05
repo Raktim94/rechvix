@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../lib/api-client";
 import { useOrgContext } from "../lib/useOrgContext";
 import { withLegalEntity } from "../lib/useReportTable";
+import { CheckIcon } from "./icons";
 import styles from "./SetupChecklist.module.css";
 
 const STORAGE_KEY = "rechvix.setup.done";
@@ -141,7 +142,7 @@ export function SetupChecklist() {
         {steps.map((s) => (
           <li key={s.key} data-done={s.done} data-next={s === next}>
             <span className={styles.mark} aria-hidden="true">
-              {s.done ? "✓" : ""}
+              {s.done ? <CheckIcon width={14} height={14} strokeWidth={3} /> : null}
             </span>
             <div className={styles.text}>
               <strong>

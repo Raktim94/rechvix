@@ -813,9 +813,13 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                           <strong>{r.ProductName}</strong>
                           <span className={ui.muted}>SKU {r.SKUCode || "—"}</span>
                         </div>
-                        <span className={ui.badge} data-tone={stock <= 0 ? "negative" : stock < 5 ? "warning" : "neutral"}>
-                          {r.QuantityAvailable || "0"}
-                        </span>
+                        {stock >= 5 ? (
+                          <span className={ui.muted}>{r.QuantityAvailable} in stock</span>
+                        ) : (
+                          <span className={ui.badge} data-tone={stock <= 0 ? "negative" : "warning"}>
+                            {stock <= 0 ? "Out of stock" : `Only ${r.QuantityAvailable} left`}
+                          </span>
+                        )}
                         <span className={styles.resultPrice}>{r.UnitPrice ? formatMoney(r.UnitPrice) : "—"}</span>
                         <button type="button" className={ui.btnPrimary} disabled={addLine.isPending} onClick={() => handleAddProduct(r)}>
                           Add

@@ -1,3 +1,4 @@
+import { PaperclipIcon } from "../../components/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import ui from "../../components/ui.module.css";
@@ -83,7 +84,8 @@ export function ExpenseAttachments({ journalId }: { journalId: string }) {
   return (
     <div>
       <button type="button" className={ui.btnGhost} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        📎 {open ? "Hide" : count > 0 ? `${count} attached` : "Attach"}
+        <PaperclipIcon width={16} height={16} style={{ marginRight: 6, verticalAlign: "-3px" }} />
+        {open ? "Hide" : count > 0 ? `${count} attached` : "Attach"}
       </button>
       {open ? (
         <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>

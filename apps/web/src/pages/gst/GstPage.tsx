@@ -502,6 +502,7 @@ function TaxRatesSection() {
 
       <div style={{ marginTop: 16 }}>
         <ImportPanel
+          embedded
           title="Bulk import tax rates"
           path="/gst/tax-rates/import"
           columns={["hsn_sac_code", "gst_rate", "sku_code", "quantity"]}
