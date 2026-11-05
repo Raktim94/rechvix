@@ -295,5 +295,84 @@
       "REJECTED": "Rejeté",
       "ERROR": "Échec de l'envoi, nouvel essai prévu"
     }
+  },
+  "salesList": {
+    "title": "Ventes",
+    "subtitle": "Tous les devis, commandes et factures, brouillons ou finalisés.",
+    "newSale": "+ Nouvelle vente",
+    "viewsLabel": "Vues des ventes",
+    "views": {
+      "all": "Toutes",
+      "invoices": "Factures",
+      "unpaid": "Impayées",
+      "overdue": "En retard",
+      "drafts": "Brouillons",
+      "quotations": "Devis",
+      "orders": "Commandes"
+    },
+    "searchPlaceholder": "Rechercher des ventes…",
+    "searchLabel": "Rechercher des ventes",
+    "moreFilters": "Plus de filtres",
+    "moreFiltersActive": "Plus de filtres (actifs)",
+    "filterStatus": "Filtrer par statut",
+    "allStatuses": "Tous les statuts",
+    "status": {
+      "DRAFT": "Brouillon",
+      "FINALIZED": "Finalisée",
+      "CANCELLED": "Annulée"
+    },
+    "filterType": "Filtrer par type",
+    "allTypes": "Tous les types",
+    "from": "Du",
+    "to": "Au",
+    "fromDate": "Date de début",
+    "toDate": "Date de fin",
+    "loadFailed": "Impossible de charger les documents de vente.",
+    "emptyNone": "Aucune vente pour l’instant. Créez votre première facture en moins d’une minute.",
+    "emptyFiltered": "Aucune vente ne correspond à ces filtres.",
+    "clearFilters": "Effacer les filtres",
+    "billNotes_one": "Facturer {{count}} bon de livraison en une seule facture",
+    "billNotes_other": "Facturer {{count}} bons de livraison en une seule facture",
+    "creating": "Création…",
+    "clear": "Effacer",
+    "createFailed": "Impossible de créer la facture.",
+    "col": {
+      "select": "Sélectionner les bons de livraison à facturer",
+      "number": "Numéro",
+      "customer": "Client",
+      "type": "Type",
+      "status": "Statut",
+      "date": "Date",
+      "total": "Total",
+      "actions": "Actions"
+    },
+    "billNote": "Facturer le bon de livraison {{number}}",
+    "draftNumber": "(brouillon)",
+    "payment": {
+      "PAID": "Payée",
+      "PARTIAL": "Partiellement payée",
+      "OVERDUE": "En retard",
+      "UNPAID": "Impayée"
+    },
+    "share": {
+      "whatsapp": "Partager via WhatsApp",
+      "whatsappAria": "Partager {{doc}} via WhatsApp",
+      "pdf": "Partager le PDF",
+      "pdfAria": "Partager {{doc}} en PDF",
+      "thisSale": "cette vente",
+      "message": "Bonjour {{name}}, votre {{type}} {{number}} de {{total}} est prêt. Merci de votre confiance !"
+    },
+    "type": {
+      "QUOTATION": "Devis",
+      "PROFORMA_INVOICE": "Facture proforma",
+      "SALES_ORDER": "Commande client",
+      "DELIVERY_CHALLAN": "Bon de livraison",
+      "TAX_INVOICE": "Facture",
+      "POS_INVOICE": "Facture de caisse",
+      "CREDIT_NOTE": "Avoir",
+      "DEBIT_NOTE": "Note de débit",
+      "SALES_RETURN": "Retour client",
+      "RECURRING_INVOICE": "Facture récurrente"
+    }
   }
 }

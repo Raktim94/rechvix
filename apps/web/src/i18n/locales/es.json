@@ -294,5 +294,84 @@
       "REJECTED": "Rechazado",
       "ERROR": "Error de envío, se reintentará"
     }
+  },
+  "salesList": {
+    "title": "Ventas",
+    "subtitle": "Todos los presupuestos, pedidos y facturas, en borrador o finalizados.",
+    "newSale": "+ Nueva venta",
+    "viewsLabel": "Vistas de ventas",
+    "views": {
+      "all": "Todas",
+      "invoices": "Facturas",
+      "unpaid": "Sin pagar",
+      "overdue": "Vencidas",
+      "drafts": "Borradores",
+      "quotations": "Presupuestos",
+      "orders": "Pedidos"
+    },
+    "searchPlaceholder": "Buscar ventas…",
+    "searchLabel": "Buscar ventas",
+    "moreFilters": "Más filtros",
+    "moreFiltersActive": "Más filtros (activos)",
+    "filterStatus": "Filtrar por estado",
+    "allStatuses": "Todos los estados",
+    "status": {
+      "DRAFT": "Borrador",
+      "FINALIZED": "Finalizada",
+      "CANCELLED": "Cancelada"
+    },
+    "filterType": "Filtrar por tipo",
+    "allTypes": "Todos los tipos",
+    "from": "Desde",
+    "to": "Hasta",
+    "fromDate": "Fecha desde",
+    "toDate": "Fecha hasta",
+    "loadFailed": "No se pudieron cargar los documentos de venta.",
+    "emptyNone": "Aún no hay ventas. Crea tu primera factura en menos de un minuto.",
+    "emptyFiltered": "Ninguna venta coincide con estos filtros.",
+    "clearFilters": "Borrar filtros",
+    "billNotes_one": "Facturar {{count}} albarán en una sola factura",
+    "billNotes_other": "Facturar {{count}} albaranes en una sola factura",
+    "creating": "Creando…",
+    "clear": "Limpiar",
+    "createFailed": "No se pudo crear la factura.",
+    "col": {
+      "select": "Seleccionar albaranes para facturar",
+      "number": "Número",
+      "customer": "Cliente",
+      "type": "Tipo",
+      "status": "Estado",
+      "date": "Fecha",
+      "total": "Total",
+      "actions": "Acciones"
+    },
+    "billNote": "Facturar el albarán {{number}}",
+    "draftNumber": "(borrador)",
+    "payment": {
+      "PAID": "Pagada",
+      "PARTIAL": "Pago parcial",
+      "OVERDUE": "Vencida",
+      "UNPAID": "Sin pagar"
+    },
+    "share": {
+      "whatsapp": "Compartir por WhatsApp",
+      "whatsappAria": "Compartir {{doc}} por WhatsApp",
+      "pdf": "Compartir PDF",
+      "pdfAria": "Compartir {{doc}} como PDF",
+      "thisSale": "esta venta",
+      "message": "Hola {{name}}, tu {{type}} {{number}} por {{total}} está lista. ¡Gracias por tu compra!"
+    },
+    "type": {
+      "QUOTATION": "Presupuesto",
+      "PROFORMA_INVOICE": "Factura proforma",
+      "SALES_ORDER": "Pedido de venta",
+      "DELIVERY_CHALLAN": "Albarán de entrega",
+      "TAX_INVOICE": "Factura",
+      "POS_INVOICE": "Factura de TPV",
+      "CREDIT_NOTE": "Nota de crédito",
+      "DEBIT_NOTE": "Nota de débito",
+      "SALES_RETURN": "Devolución de venta",
+      "RECURRING_INVOICE": "Factura recurrente"
+    }
   }
 }

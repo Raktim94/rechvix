@@ -294,5 +294,84 @@
       "REJECTED": "Afgewezen",
       "ERROR": "Verzenden mislukt, nieuwe poging volgt"
     }
+  },
+  "salesList": {
+    "title": "Verkoop",
+    "subtitle": "Alle offertes, orders en facturen, als concept of definitief.",
+    "newSale": "+ Nieuwe verkoop",
+    "viewsLabel": "Verkoopweergaven",
+    "views": {
+      "all": "Alle",
+      "invoices": "Facturen",
+      "unpaid": "Onbetaald",
+      "overdue": "Achterstallig",
+      "drafts": "Concepten",
+      "quotations": "Offertes",
+      "orders": "Orders"
+    },
+    "searchPlaceholder": "Verkopen zoeken…",
+    "searchLabel": "Verkopen zoeken",
+    "moreFilters": "Meer filters",
+    "moreFiltersActive": "Meer filters (actief)",
+    "filterStatus": "Filteren op status",
+    "allStatuses": "Alle statussen",
+    "status": {
+      "DRAFT": "Concept",
+      "FINALIZED": "Definitief",
+      "CANCELLED": "Geannuleerd"
+    },
+    "filterType": "Filteren op type",
+    "allTypes": "Alle typen",
+    "from": "Van",
+    "to": "Tot",
+    "fromDate": "Vanaf datum",
+    "toDate": "Tot datum",
+    "loadFailed": "Verkoopdocumenten konden niet worden geladen.",
+    "emptyNone": "Nog geen verkopen. Maak je eerste factuur in minder dan een minuut.",
+    "emptyFiltered": "Geen verkopen komen overeen met deze filters.",
+    "clearFilters": "Filters wissen",
+    "billNotes_one": "{{count}} pakbon op één factuur zetten",
+    "billNotes_other": "{{count}} pakbonnen op één factuur zetten",
+    "creating": "Aanmaken…",
+    "clear": "Wissen",
+    "createFailed": "De factuur kon niet worden aangemaakt.",
+    "col": {
+      "select": "Pakbonnen selecteren om te factureren",
+      "number": "Nummer",
+      "customer": "Klant",
+      "type": "Type",
+      "status": "Status",
+      "date": "Datum",
+      "total": "Totaal",
+      "actions": "Acties"
+    },
+    "billNote": "Pakbon {{number}} factureren",
+    "draftNumber": "(concept)",
+    "payment": {
+      "PAID": "Betaald",
+      "PARTIAL": "Deels betaald",
+      "OVERDUE": "Achterstallig",
+      "UNPAID": "Onbetaald"
+    },
+    "share": {
+      "whatsapp": "Delen via WhatsApp",
+      "whatsappAria": "{{doc}} delen via WhatsApp",
+      "pdf": "PDF delen",
+      "pdfAria": "{{doc}} delen als PDF",
+      "thisSale": "deze verkoop",
+      "message": "Hallo {{name}}, je {{type}} {{number}} van {{total}} staat klaar. Bedankt voor je aankoop!"
+    },
+    "type": {
+      "QUOTATION": "Offerte",
+      "PROFORMA_INVOICE": "Proformafactuur",
+      "SALES_ORDER": "Verkooporder",
+      "DELIVERY_CHALLAN": "Pakbon",
+      "TAX_INVOICE": "Factuur",
+      "POS_INVOICE": "Kassafactuur",
+      "CREDIT_NOTE": "Creditnota",
+      "DEBIT_NOTE": "Debetnota",
+      "SALES_RETURN": "Verkoopretour",
+      "RECURRING_INVOICE": "Terugkerende factuur"
+    }
   }
 }

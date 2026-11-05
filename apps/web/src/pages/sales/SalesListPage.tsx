@@ -3,16 +3,18 @@ import { RecurringList } from "../../components/RecurringPanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { WhatsAppIcon } from "../../components/icons";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
+import { formatLocale } from "../../i18n";
 import { formatMoney } from "../../lib/money";
 import type { Party } from "../../lib/partyTypes";
 import { useOrgContext } from "../../lib/useOrgContext";
 import { withLegalEntity } from "../../lib/useReportTable";
 import { useShareSalesDocumentOnWhatsApp, useShareSalesDocumentPdf } from "../../lib/whatsapp";
 import layout from "../DashboardPage.module.css";
-import { DOCUMENT_TYPE_LABELS, PAYMENT_LABELS, PAYMENT_TONES, paymentState, type DocumentStatus, type DocumentType, type PaymentState, type SalesDocument } from "./types";
+import { DOCUMENT_TYPE_LABELS, PAYMENT_TONES, paymentState, type DocumentStatus, type DocumentType, type PaymentState, type SalesDocument } from "./types";
 
 /** Row-level counterpart to SalesDetailPage's "Share via WhatsApp" —
  * lets a counter operator send a finalized bill straight from the list
@@ -20,6 +22,7 @@ import { DOCUMENT_TYPE_LABELS, PAYMENT_LABELS, PAYMENT_TONES, paymentState, type
  * which row they want. Drafts have no finalized total/number to share
  * yet, so this only ever renders for non-draft rows. */
 function ShareRowButton({ document, customer }: { document: SalesDocument; customer: Party | undefined }) {
+  const { t } = useTranslation();
   const share = useShareSalesDocumentOnWhatsApp();
   const phone = customer?.Phone;
   if (!phone) return null;
@@ -28,15 +31,18 @@ function ShareRowButton({ document, customer }: { document: SalesDocument; custo
       type="button"
       className={ui.btnGhost}
       disabled={share.isPending}
-      title="Share via WhatsApp"
-      aria-label={`Share ${document.DocumentNumber || "this sale"} via WhatsApp`}
+      title={t("salesList.share.whatsapp")}
+      aria-label={t("salesList.share.whatsappAria", { doc: document.DocumentNumber || t("salesList.share.thisSale") })}
       onClick={() =>
         share.mutate({
           documentId: document.ID,
           phone,
-          message: `Hi ${customer.LegalName}, your ${DOCUMENT_TYPE_LABELS[document.DocumentType].toLowerCase()} ${document.DocumentNumber} for ${
-            document.GrandTotalAmount ? formatMoney(document.GrandTotalAmount) : "—"
-          } is ready. Thank you for your business!`,
+          message: t("salesList.share.message", {
+            name: customer.LegalName,
+            type: t(`salesList.type.${document.DocumentType}`).toLowerCase(),
+            number: document.DocumentNumber,
+            total: document.GrandTotalAmount ? formatMoney(document.GrandTotalAmount) : "—",
+          }),
         })
       }
     >
@@ -49,14 +55,15 @@ function ShareRowButton({ document, customer }: { document: SalesDocument; custo
  * actual PDF file (not just a wa.me link) via the native share sheet;
  * see useShareSalesDocumentPdf's doc comment. */
 function SharePdfRowButton({ document }: { document: SalesDocument }) {
+  const { t } = useTranslation();
   const share = useShareSalesDocumentPdf();
   return (
     <button
       type="button"
       className={ui.btnGhost}
       disabled={share.isPending}
-      title="Share PDF"
-      aria-label={`Share ${document.DocumentNumber || "this sale"} as PDF`}
+      title={t("salesList.share.pdf")}
+      aria-label={t("salesList.share.pdfAria", { doc: document.DocumentNumber || t("salesList.share.thisSale") })}
       onClick={() => share.mutate({ documentId: document.ID, documentNumber: document.DocumentNumber })}
     >
       PDF
@@ -77,17 +84,17 @@ type PayFilter = "ANY" | "OPEN" | "OVERDUE";
 /** One-click views, ordered by how often a counter operator needs them.
  * Quotations and orders mirror the old "Open quotations/orders" shortcuts:
  * finalized ones are the ones still awaiting "Convert to…". */
-const VIEWS: { key: string; label: string; status: StatusFilter; type: TypeFilter; pay?: PayFilter }[] = [
-  { key: "all", label: "All", status: "ALL", type: "ALL" },
-  { key: "invoices", label: "Invoices", status: "FINALIZED", type: "TAX_INVOICE" },
-  { key: "unpaid", label: "Unpaid", status: "FINALIZED", type: "ALL", pay: "OPEN" },
-  { key: "overdue", label: "Overdue", status: "FINALIZED", type: "ALL", pay: "OVERDUE" },
-  { key: "drafts", label: "Drafts", status: "DRAFT", type: "ALL" },
-  { key: "quotes", label: "Quotations", status: "FINALIZED", type: "QUOTATION" },
-  { key: "orders", label: "Orders", status: "FINALIZED", type: "SALES_ORDER" },
+const VIEWS: { key: string; status: StatusFilter; type: TypeFilter; pay?: PayFilter }[] = [
+  { key: "all", status: "ALL", type: "ALL" },
+  { key: "invoices", status: "FINALIZED", type: "TAX_INVOICE" },
+  { key: "unpaid", status: "FINALIZED", type: "ALL", pay: "OPEN" },
+  { key: "overdue", status: "FINALIZED", type: "ALL", pay: "OVERDUE" },
+  { key: "drafts", status: "DRAFT", type: "ALL" },
+  { key: "quotes", status: "FINALIZED", type: "QUOTATION" },
+  { key: "orders", status: "FINALIZED", type: "SALES_ORDER" },
 ];
 
-const STATUS_LABELS: Record<DocumentStatus, string> = { DRAFT: "Draft", FINALIZED: "Finalized", CANCELLED: "Cancelled" };
+const VIEW_LABEL_KEYS: Record<string, string> = { all: "all", invoices: "invoices", unpaid: "unpaid", overdue: "overdue", drafts: "drafts", quotes: "quotations", orders: "orders" };
 
 function matchesView(d: SalesDocument, v: { status: StatusFilter; type: TypeFilter; pay?: PayFilter }) {
   if (v.status !== "ALL" && d.Status !== v.status) return false;
@@ -100,16 +107,18 @@ function matchesView(d: SalesDocument, v: { status: StatusFilter; type: TypeFilt
 }
 
 function PaymentBadge({ document }: { document: SalesDocument }) {
+  const { t } = useTranslation();
   const ps: PaymentState | null = paymentState(document);
   if (!ps) return null;
   return (
     <span className={ui.badge} data-tone={PAYMENT_TONES[ps]}>
-      {PAYMENT_LABELS[ps]}
+      {t(`salesList.payment.${ps}`)}
     </span>
   );
 }
 
 export function SalesListPage() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [type, setType] = useState<TypeFilter>("ALL");
@@ -170,16 +179,16 @@ export function SalesListPage() {
     <div className={layout.page}>
       <div className={layout.heading}>
         <div>
-          <h1>Sales</h1>
-          <p className={layout.subtitle}>Every quotation, order, and invoice — draft or finalized.</p>
+          <h1>{t("salesList.title")}</h1>
+          <p className={layout.subtitle}>{t("salesList.subtitle")}</p>
         </div>
         <Link to="/sales/new" className={ui.btnPrimary}>
-          + New sale
+          {t("salesList.newSale")}
         </Link>
       </div>
 
       <div className={layout.panel}>
-        <div className={ui.segmented} role="group" aria-label="Sales views">
+        <div className={ui.segmented} role="group" aria-label={t("salesList.viewsLabel")}>
           {VIEWS.map((v) => {
             const count = (documents.data ?? []).filter((d) => matchesView(d, v)).length;
             const active = status === v.status && type === v.type && pay === (v.pay ?? "ANY");
@@ -195,7 +204,7 @@ export function SalesListPage() {
                   setPay(v.pay ?? "ANY");
                 }}
               >
-                {v.label}
+                {t(`salesList.views.${VIEW_LABEL_KEYS[v.key]}`)}
                 {documents.data ? <span className={ui.segmentCount}>{count}</span> : null}
               </button>
             );
@@ -204,8 +213,8 @@ export function SalesListPage() {
         <div className={ui.toolbar} style={{ marginBottom: 12 }}>
           <input
             className={ui.input}
-            placeholder="Search sales…"
-            aria-label="Search sales"
+            placeholder={t("salesList.searchPlaceholder")}
+            aria-label={t("salesList.searchLabel")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{ maxWidth: 280 }}
@@ -213,37 +222,37 @@ export function SalesListPage() {
         </div>
         <details style={{ marginBottom: 12 }}>
           <summary style={{ cursor: "pointer", minHeight: 36, display: "flex", alignItems: "center", fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--color-text-muted)" }}>
-            More filters{from || to || !VIEWS.some((v) => v.status === status && v.type === type && (v.pay ?? "ANY") === pay) ? " (active)" : ""}
+            {from || to || !VIEWS.some((v) => v.status === status && v.type === type && (v.pay ?? "ANY") === pay) ? t("salesList.moreFiltersActive") : t("salesList.moreFilters")}
           </summary>
           <div className={ui.toolbar} style={{ marginTop: 8 }}>
-          <select className={ui.select} aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
-              <option value="ALL">All statuses</option>
-              <option value="DRAFT">Draft</option>
-              <option value="FINALIZED">Finalized</option>
-              <option value="CANCELLED">Cancelled</option>
+          <select className={ui.select} aria-label={t("salesList.filterStatus")} value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+              <option value="ALL">{t("salesList.allStatuses")}</option>
+              <option value="DRAFT">{t("salesList.status.DRAFT")}</option>
+              <option value="FINALIZED">{t("salesList.status.FINALIZED")}</option>
+              <option value="CANCELLED">{t("salesList.status.CANCELLED")}</option>
             </select>
-            <select className={ui.select} aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value as TypeFilter)}>
-              <option value="ALL">All types</option>
-              {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+            <select className={ui.select} aria-label={t("salesList.filterType")} value={type} onChange={(e) => setType(e.target.value as TypeFilter)}>
+              <option value="ALL">{t("salesList.allTypes")}</option>
+              {Object.keys(DOCUMENT_TYPE_LABELS).map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {t(`salesList.type.${value}`)}
                 </option>
               ))}
             </select>
             <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              From
-              <input type="date" className={ui.input} aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              {t("salesList.from")}
+              <input type="date" className={ui.input} aria-label={t("salesList.fromDate")} value={from} onChange={(e) => setFrom(e.target.value)} />
             </label>
             <label className={ui.muted} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              To
-              <input type="date" className={ui.input} aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} />
+              {t("salesList.to")}
+              <input type="date" className={ui.input} aria-label={t("salesList.toDate")} value={to} onChange={(e) => setTo(e.target.value)} />
             </label>
           </div>
         </details>
 
         {documents.isError ? (
           <p className={layout.errorState} role="alert">
-            Couldn't load sales documents.
+            {t("salesList.loadFailed")}
           </p>
         ) : documents.isPending ? (
           <div className={layout.skeleton} style={{ height: 240 }} aria-hidden="true" />
@@ -251,14 +260,14 @@ export function SalesListPage() {
           <div className={layout.emptyState}>
             {documents.data.length === 0 ? (
               <>
-                <p style={{ margin: "0 0 var(--space-3)" }}>No sales yet. Create your first invoice in under a minute.</p>
+                <p style={{ margin: "0 0 var(--space-3)" }}>{t("salesList.emptyNone")}</p>
                 <Link to="/sales/new" className={ui.btnPrimary}>
-                  + New sale
+                  {t("salesList.newSale")}
                 </Link>
               </>
             ) : (
               <>
-                <p style={{ margin: "0 0 var(--space-3)" }}>No sales match these filters.</p>
+                <p style={{ margin: "0 0 var(--space-3)" }}>{t("salesList.emptyFiltered")}</p>
                 <button
                   type="button"
                   className={ui.btnSecondary}
@@ -271,7 +280,7 @@ export function SalesListPage() {
                     setTo("");
                   }}
                 >
-                  Clear filters
+                  {t("salesList.clearFilters")}
                 </button>
               </>
             )}
@@ -281,24 +290,24 @@ export function SalesListPage() {
             {picked.size > 0 ? (
               <div className={ui.formActions} style={{ justifyContent: "flex-start", margin: "8px 0" }}>
                 <button type="button" className={ui.btnPrimary} disabled={billNotes.isPending} onClick={() => billNotes.mutate()}>
-                  {billNotes.isPending ? "Creating…" : `Bill ${picked.size} delivery note${picked.size === 1 ? "" : "s"} in one invoice`}
+                  {billNotes.isPending ? t("salesList.creating") : t("salesList.billNotes", { count: picked.size })}
                 </button>
-                <button type="button" className={ui.btnSecondary} onClick={() => setPicked(new Set())}>Clear</button>
+                <button type="button" className={ui.btnSecondary} onClick={() => setPicked(new Set())}>{t("salesList.clear")}</button>
               </div>
             ) : null}
-            {billNotes.isError ? <p role="alert">{billNotes.error instanceof ApiError ? billNotes.error.message : "Could not create the invoice."}</p> : null}
+            {billNotes.isError ? <p role="alert">{billNotes.error instanceof ApiError ? billNotes.error.message : t("salesList.createFailed")}</p> : null}
           <div className={ui.tableScroll} tabIndex={0}>
             <table className={`${ui.table} ${ui.tableStack}`}>
               <thead>
                 <tr>
-                  <th scope="col"><span className="srOnly">Select delivery notes to bill</span></th>
-                  <th scope="col">Number</th>
-                  <th scope="col">Customer</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Total</th>
-                  <th scope="col"><span className="srOnly">Actions</span></th>
+                  <th scope="col"><span className="srOnly">{t("salesList.col.select")}</span></th>
+                  <th scope="col">{t("salesList.col.number")}</th>
+                  <th scope="col">{t("salesList.col.customer")}</th>
+                  <th scope="col">{t("salesList.col.type")}</th>
+                  <th scope="col">{t("salesList.col.status")}</th>
+                  <th scope="col">{t("salesList.col.date")}</th>
+                  <th scope="col">{t("salesList.col.total")}</th>
+                  <th scope="col"><span className="srOnly">{t("salesList.col.actions")}</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -308,7 +317,7 @@ export function SalesListPage() {
                       {d.DocumentType === "DELIVERY_CHALLAN" && d.Status === "FINALIZED" ? (
                         <input
                           type="checkbox"
-                          aria-label={`Bill delivery note ${d.DocumentNumber}`}
+                          aria-label={t("salesList.billNote", { number: d.DocumentNumber })}
                           checked={picked.has(d.ID)}
                           onChange={(e) => {
                             const next = new Set(picked);
@@ -326,11 +335,11 @@ export function SalesListPage() {
                         search={d.Status === "DRAFT" ? { resume: d.ID } : undefined}
                         className={ui.linkRow}
                       >
-                        {d.DocumentNumber || "(draft)"}
+                        {d.DocumentNumber || t("salesList.draftNumber")}
                       </Link>
                     </td>
-                    <td data-label="Customer">{customerNameById.get(d.CustomerPartyID) ?? "—"}</td>
-                    <td data-label="Type">{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
+                    <td data-label={t("salesList.col.customer")}>{customerNameById.get(d.CustomerPartyID) ?? "—"}</td>
+                    <td data-label={t("salesList.col.type")}>{t(`salesList.type.${d.DocumentType}`)}</td>
                     <td>
                       {/* A finalized invoice's useful state is whether it is paid, so the
                           payment badge replaces the plain "Finalized" one. */}
@@ -338,12 +347,12 @@ export function SalesListPage() {
                         <PaymentBadge document={d} />
                       ) : (
                         <span className={ui.badge} data-tone={statusTone(d.Status)}>
-                          {STATUS_LABELS[d.Status]}
+                          {t(`salesList.status.${d.Status}`)}
                         </span>
                       )}
                       {workflowByDoc.get(d.ID) ? <> <StatusBadge name={workflowByDoc.get(d.ID)!.name} color={workflowByDoc.get(d.ID)!.color} /></> : null}
                     </td>
-                    <td data-label="Date">{new Date(d.IssueDate).toLocaleDateString()}</td>
+                    <td data-label={t("salesList.col.date")}>{new Date(d.IssueDate).toLocaleDateString(formatLocale())}</td>
                     <td className="num" data-end>{d.GrandTotalAmount ? formatMoney(d.GrandTotalAmount) : "—"}</td>
                     <td>
                       {d.Status !== "DRAFT" ? (

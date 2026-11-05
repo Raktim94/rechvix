@@ -295,5 +295,84 @@
       "REJECTED": "Rifiutato",
       "ERROR": "Invio non riuscito, nuovo tentativo previsto"
     }
+  },
+  "salesList": {
+    "title": "Vendite",
+    "subtitle": "Tutti i preventivi, gli ordini e le fatture, in bozza o finalizzati.",
+    "newSale": "+ Nuova vendita",
+    "viewsLabel": "Viste delle vendite",
+    "views": {
+      "all": "Tutte",
+      "invoices": "Fatture",
+      "unpaid": "Non pagate",
+      "overdue": "Scadute",
+      "drafts": "Bozze",
+      "quotations": "Preventivi",
+      "orders": "Ordini"
+    },
+    "searchPlaceholder": "Cerca vendite…",
+    "searchLabel": "Cerca vendite",
+    "moreFilters": "Altri filtri",
+    "moreFiltersActive": "Altri filtri (attivi)",
+    "filterStatus": "Filtra per stato",
+    "allStatuses": "Tutti gli stati",
+    "status": {
+      "DRAFT": "Bozza",
+      "FINALIZED": "Finalizzata",
+      "CANCELLED": "Annullata"
+    },
+    "filterType": "Filtra per tipo",
+    "allTypes": "Tutti i tipi",
+    "from": "Da",
+    "to": "A",
+    "fromDate": "Data iniziale",
+    "toDate": "Data finale",
+    "loadFailed": "Impossibile caricare i documenti di vendita.",
+    "emptyNone": "Ancora nessuna vendita. Crea la tua prima fattura in meno di un minuto.",
+    "emptyFiltered": "Nessuna vendita corrisponde a questi filtri.",
+    "clearFilters": "Cancella filtri",
+    "billNotes_one": "Fattura {{count}} documento di trasporto in un’unica fattura",
+    "billNotes_other": "Fattura {{count}} documenti di trasporto in un’unica fattura",
+    "creating": "Creazione…",
+    "clear": "Svuota",
+    "createFailed": "Impossibile creare la fattura.",
+    "col": {
+      "select": "Seleziona i documenti di trasporto da fatturare",
+      "number": "Numero",
+      "customer": "Cliente",
+      "type": "Tipo",
+      "status": "Stato",
+      "date": "Data",
+      "total": "Totale",
+      "actions": "Azioni"
+    },
+    "billNote": "Fattura il documento di trasporto {{number}}",
+    "draftNumber": "(bozza)",
+    "payment": {
+      "PAID": "Pagata",
+      "PARTIAL": "Pagata in parte",
+      "OVERDUE": "Scaduta",
+      "UNPAID": "Non pagata"
+    },
+    "share": {
+      "whatsapp": "Condividi su WhatsApp",
+      "whatsappAria": "Condividi {{doc}} su WhatsApp",
+      "pdf": "Condividi PDF",
+      "pdfAria": "Condividi {{doc}} in PDF",
+      "thisSale": "questa vendita",
+      "message": "Ciao {{name}}, il tuo {{type}} {{number}} da {{total}} è pronto. Grazie per il tuo acquisto!"
+    },
+    "type": {
+      "QUOTATION": "Preventivo",
+      "PROFORMA_INVOICE": "Fattura proforma",
+      "SALES_ORDER": "Ordine di vendita",
+      "DELIVERY_CHALLAN": "Documento di trasporto",
+      "TAX_INVOICE": "Fattura",
+      "POS_INVOICE": "Fattura POS",
+      "CREDIT_NOTE": "Nota di credito",
+      "DEBIT_NOTE": "Nota di debito",
+      "SALES_RETURN": "Reso di vendita",
+      "RECURRING_INVOICE": "Fattura ricorrente"
+    }
   }
 }

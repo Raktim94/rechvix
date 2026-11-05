@@ -774,6 +774,13 @@ func (r *Repo) AccountLedger(ctx context.Context, orgID, accountID uuid.UUID, f 
 // are finalized, but they are not supplies and must never reach a GST report.
 const salesRevenueTypesSQL = `('TAX_INVOICE','POS_INVOICE','CREDIT_NOTE','DEBIT_NOTE','SALES_RETURN','RECURRING_INVOICE')`
 
+// Credit notes and sales returns reduce outward supplies, so every GST report
+// that totals them must subtract them. sdSignSQL is for queries aliasing the
+// sales document as sd; tdSignSQL for queries that only have the tax document
+// (td) and look the sales document up through its reference.
+const sdSignSQL = `(CASE WHEN sd.document_type IN ('CREDIT_NOTE','SALES_RETURN') THEN -1 ELSE 1 END)`
+const tdSignSQL = `(CASE WHEN td.reference_type = 'sales_document' AND EXISTS (SELECT 1 FROM sales_documents sdn WHERE sdn.id = td.reference_id AND sdn.document_type IN ('CREDIT_NOTE','SALES_RETURN')) THEN -1 ELSE 1 END)`
+
 // taxDocIsReportableSQL restricts tax_documents (aliased td) to those whose
 // source document is a finalized supply: a finalized revenue-type sales
 // document or a finalized purchase document. Other reference types (the
@@ -793,13 +800,13 @@ func (r *Repo) HSNSummary(ctx context.Context, f domain.Filter) ([]domain.HSNSum
 	// tax_components multiplies each line by its component count (CGST+SGST =
 	// 2 rows), which doubled every intra-state line's taxable value and tax.
 	q := fmt.Sprintf(`
-		SELECT tl.hsn_sac_code, SUM(tl.taxable_amount * td.exchange_rate),
-		       COALESCE(SUM(c.cgst * td.exchange_rate), 0),
-		       COALESCE(SUM(c.sgst * td.exchange_rate), 0),
-		       COALESCE(SUM(c.igst * td.exchange_rate), 0),
-		       COALESCE(SUM(c.utgst * td.exchange_rate), 0),
-		       COALESCE(SUM(c.cess * td.exchange_rate), 0),
-		       SUM(tl.total_tax_amount * td.exchange_rate)
+		SELECT tl.hsn_sac_code, SUM(tl.taxable_amount * (td.exchange_rate * `+tdSignSQL+`)),
+		       COALESCE(SUM(c.cgst * (td.exchange_rate * `+tdSignSQL+`)), 0),
+		       COALESCE(SUM(c.sgst * (td.exchange_rate * `+tdSignSQL+`)), 0),
+		       COALESCE(SUM(c.igst * (td.exchange_rate * `+tdSignSQL+`)), 0),
+		       COALESCE(SUM(c.utgst * (td.exchange_rate * `+tdSignSQL+`)), 0),
+		       COALESCE(SUM(c.cess * (td.exchange_rate * `+tdSignSQL+`)), 0),
+		       SUM(tl.total_tax_amount * (td.exchange_rate * `+tdSignSQL+`))
 		FROM tax_lines tl
 		JOIN tax_documents td ON td.id = tl.tax_document_id
 		LEFT JOIN LATERAL (
@@ -836,7 +843,7 @@ func (r *Repo) TaxRateSummary(ctx context.Context, f domain.Filter) ([]domain.Ta
 	w.addRange("td.document_date", f.From, f.To)
 
 	q := fmt.Sprintf(`
-		SELECT tc.rate::text, SUM(tl.taxable_amount * td.exchange_rate), SUM(tc.amount * td.exchange_rate), COUNT(DISTINCT td.id)
+		SELECT tc.rate::text, SUM(tl.taxable_amount * (td.exchange_rate * `+tdSignSQL+`)), SUM(tc.amount * (td.exchange_rate * `+tdSignSQL+`)), COUNT(DISTINCT td.id)
 		FROM tax_components tc
 		JOIN tax_lines tl ON tl.id = tc.tax_line_id
 		JOIN tax_documents td ON td.id = tl.tax_document_id
@@ -871,12 +878,12 @@ func (r *Repo) GSTR1(ctx context.Context, f domain.Filter) ([]domain.GSTR1Line, 
 	q := fmt.Sprintf(`
 		SELECT sd.document_number, sd.issue_date, td.supply_type,
 		       COALESCE((SELECT ptr.registration_number FROM party_tax_registrations ptr WHERE ptr.id = sd.customer_tax_registration_id), ''),
-		       td.place_of_supply_code, td.total_taxable_amount * td.exchange_rate,
-		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST'), 0),
-		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST'), 0),
-		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST'), 0),
-		       td.exchange_rate * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS'), 0),
-		       td.grand_total * td.exchange_rate
+		       td.place_of_supply_code, td.total_taxable_amount * (td.exchange_rate * `+sdSignSQL+`),
+		       (td.exchange_rate * `+sdSignSQL+`) * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST'), 0),
+		       (td.exchange_rate * `+sdSignSQL+`) * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST'), 0),
+		       (td.exchange_rate * `+sdSignSQL+`) * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST'), 0),
+		       (td.exchange_rate * `+sdSignSQL+`) * COALESCE((SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS'), 0),
+		       td.grand_total * (td.exchange_rate * `+sdSignSQL+`)
 		FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
 		WHERE %s AND sd.document_type IN `+salesRevenueTypesSQL+`
 		ORDER BY sd.issue_date, sd.document_number`, w.sql())
@@ -929,13 +936,13 @@ func (r *Repo) gstr3bOutward(ctx context.Context, f domain.Filter) ([]domain.GST
 	w.addOptionalUUIDs("sd.legal_entity_id", f.LegalEntityIDs)
 	q := fmt.Sprintf(`
 		SELECT
-			COALESCE(SUM(td.total_taxable_amount * td.exchange_rate) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM(td.total_taxable_amount * td.exchange_rate) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0),
-			COALESCE(SUM(td.exchange_rate * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0)
+			COALESCE(SUM(td.total_taxable_amount * (td.exchange_rate * `+sdSignSQL+`)) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((td.exchange_rate * `+sdSignSQL+`) * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((td.exchange_rate * `+sdSignSQL+`) * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((td.exchange_rate * `+sdSignSQL+`) * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'SGST')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((td.exchange_rate * `+sdSignSQL+`) * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'CESS')) FILTER (WHERE td.supply_type NOT IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM(td.total_taxable_amount * (td.exchange_rate * `+sdSignSQL+`)) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0),
+			COALESCE(SUM((td.exchange_rate * `+sdSignSQL+`) * (SELECT SUM(tc.amount) FROM tax_components tc JOIN tax_lines tl ON tl.id = tc.tax_line_id WHERE tl.tax_document_id = td.id AND tc.component_type = 'IGST')) FILTER (WHERE td.supply_type IN ('EXPORT', 'SEZ')), 0)
 		FROM sales_documents sd JOIN tax_documents td ON td.id = sd.tax_document_id
 		WHERE %s AND sd.document_type IN `+salesRevenueTypesSQL, w.sql())
 	var taxable, igst, cgst, sgst, cess, zeroTaxable, zeroIGST decimal.Decimal

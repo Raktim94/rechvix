@@ -294,5 +294,84 @@
       "REJECTED": "Rejected",
       "ERROR": "Send failed, will retry"
     }
+  },
+  "salesList": {
+    "title": "Sales",
+    "subtitle": "Every quotation, order, and invoice — draft or finalized.",
+    "newSale": "+ New sale",
+    "viewsLabel": "Sales views",
+    "views": {
+      "all": "All",
+      "invoices": "Invoices",
+      "unpaid": "Unpaid",
+      "overdue": "Overdue",
+      "drafts": "Drafts",
+      "quotations": "Quotations",
+      "orders": "Orders"
+    },
+    "searchPlaceholder": "Search sales…",
+    "searchLabel": "Search sales",
+    "moreFilters": "More filters",
+    "moreFiltersActive": "More filters (active)",
+    "filterStatus": "Filter by status",
+    "allStatuses": "All statuses",
+    "status": {
+      "DRAFT": "Draft",
+      "FINALIZED": "Finalized",
+      "CANCELLED": "Cancelled"
+    },
+    "filterType": "Filter by type",
+    "allTypes": "All types",
+    "from": "From",
+    "to": "To",
+    "fromDate": "From date",
+    "toDate": "To date",
+    "loadFailed": "Couldn't load sales documents.",
+    "emptyNone": "No sales yet. Create your first invoice in under a minute.",
+    "emptyFiltered": "No sales match these filters.",
+    "clearFilters": "Clear filters",
+    "billNotes_one": "Bill {{count}} delivery note in one invoice",
+    "billNotes_other": "Bill {{count}} delivery notes in one invoice",
+    "creating": "Creating…",
+    "clear": "Clear",
+    "createFailed": "Could not create the invoice.",
+    "col": {
+      "select": "Select delivery notes to bill",
+      "number": "Number",
+      "customer": "Customer",
+      "type": "Type",
+      "status": "Status",
+      "date": "Date",
+      "total": "Total",
+      "actions": "Actions"
+    },
+    "billNote": "Bill delivery note {{number}}",
+    "draftNumber": "(draft)",
+    "payment": {
+      "PAID": "Paid",
+      "PARTIAL": "Part paid",
+      "OVERDUE": "Overdue",
+      "UNPAID": "Unpaid"
+    },
+    "share": {
+      "whatsapp": "Share via WhatsApp",
+      "whatsappAria": "Share {{doc}} via WhatsApp",
+      "pdf": "Share PDF",
+      "pdfAria": "Share {{doc}} as PDF",
+      "thisSale": "this sale",
+      "message": "Hi {{name}}, your {{type}} {{number}} for {{total}} is ready. Thank you for your business!"
+    },
+    "type": {
+      "QUOTATION": "Quotation",
+      "PROFORMA_INVOICE": "Proforma invoice",
+      "SALES_ORDER": "Sales order",
+      "DELIVERY_CHALLAN": "Delivery challan",
+      "TAX_INVOICE": "Tax invoice",
+      "POS_INVOICE": "POS invoice",
+      "CREDIT_NOTE": "Credit note",
+      "DEBIT_NOTE": "Debit note",
+      "SALES_RETURN": "Sales return",
+      "RECURRING_INVOICE": "Recurring invoice"
+    }
   }
 }

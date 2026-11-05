@@ -294,5 +294,84 @@
       "REJECTED": "Abgelehnt",
       "ERROR": "Senden fehlgeschlagen, neuer Versuch folgt"
     }
+  },
+  "salesList": {
+    "title": "Verkäufe",
+    "subtitle": "Alle Angebote, Aufträge und Rechnungen – als Entwurf oder abgeschlossen.",
+    "newSale": "+ Neuer Verkauf",
+    "viewsLabel": "Verkaufsansichten",
+    "views": {
+      "all": "Alle",
+      "invoices": "Rechnungen",
+      "unpaid": "Unbezahlt",
+      "overdue": "Überfällig",
+      "drafts": "Entwürfe",
+      "quotations": "Angebote",
+      "orders": "Aufträge"
+    },
+    "searchPlaceholder": "Verkäufe suchen…",
+    "searchLabel": "Verkäufe suchen",
+    "moreFilters": "Weitere Filter",
+    "moreFiltersActive": "Weitere Filter (aktiv)",
+    "filterStatus": "Nach Status filtern",
+    "allStatuses": "Alle Status",
+    "status": {
+      "DRAFT": "Entwurf",
+      "FINALIZED": "Abgeschlossen",
+      "CANCELLED": "Storniert"
+    },
+    "filterType": "Nach Typ filtern",
+    "allTypes": "Alle Typen",
+    "from": "Von",
+    "to": "Bis",
+    "fromDate": "Von Datum",
+    "toDate": "Bis Datum",
+    "loadFailed": "Verkaufsbelege konnten nicht geladen werden.",
+    "emptyNone": "Noch keine Verkäufe. Erstellen Sie Ihre erste Rechnung in unter einer Minute.",
+    "emptyFiltered": "Keine Verkäufe entsprechen diesen Filtern.",
+    "clearFilters": "Filter zurücksetzen",
+    "billNotes_one": "{{count}} Lieferschein in einer Rechnung abrechnen",
+    "billNotes_other": "{{count}} Lieferscheine in einer Rechnung abrechnen",
+    "creating": "Wird erstellt…",
+    "clear": "Leeren",
+    "createFailed": "Die Rechnung konnte nicht erstellt werden.",
+    "col": {
+      "select": "Lieferscheine zur Abrechnung auswählen",
+      "number": "Nummer",
+      "customer": "Kunde",
+      "type": "Typ",
+      "status": "Status",
+      "date": "Datum",
+      "total": "Gesamt",
+      "actions": "Aktionen"
+    },
+    "billNote": "Lieferschein {{number}} abrechnen",
+    "draftNumber": "(Entwurf)",
+    "payment": {
+      "PAID": "Bezahlt",
+      "PARTIAL": "Teilweise bezahlt",
+      "OVERDUE": "Überfällig",
+      "UNPAID": "Unbezahlt"
+    },
+    "share": {
+      "whatsapp": "Über WhatsApp teilen",
+      "whatsappAria": "{{doc}} über WhatsApp teilen",
+      "pdf": "PDF teilen",
+      "pdfAria": "{{doc}} als PDF teilen",
+      "thisSale": "diesen Verkauf",
+      "message": "Hallo {{name}}, Ihr {{type}} {{number}} über {{total}} liegt bereit. Vielen Dank für Ihren Einkauf!"
+    },
+    "type": {
+      "QUOTATION": "Angebot",
+      "PROFORMA_INVOICE": "Proforma-Rechnung",
+      "SALES_ORDER": "Auftrag",
+      "DELIVERY_CHALLAN": "Lieferschein",
+      "TAX_INVOICE": "Rechnung",
+      "POS_INVOICE": "Kassenrechnung",
+      "CREDIT_NOTE": "Gutschrift",
+      "DEBIT_NOTE": "Belastungsanzeige",
+      "SALES_RETURN": "Verkaufsretoure",
+      "RECURRING_INVOICE": "Wiederkehrende Rechnung"
+    }
   }
 }

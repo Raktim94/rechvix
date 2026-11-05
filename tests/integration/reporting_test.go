@@ -735,3 +735,58 @@ func TestReporting_GSTReports_ExcludeQuotations_AndDoNotDoubleCountHSN(t *testin
 		t.Fatalf("GSTR-3B 3.1(a) taxable = %s, want 1000.00 (quotation excluded)", got)
 	}
 }
+
+// TestReporting_GSTReports_SubtractCreditNotes: a credit note reduces outward
+// supplies, so GSTR-3B 3.1(a), the HSN summary and the tax-rate summary must
+// net it off (10 x 100 invoice - 2 x 100 credit note = 800 taxable, 144 tax),
+// and GSTR-1 must list it as a negative row.
+func TestReporting_GSTReports_SubtractCreditNotes(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100")
+	finalizeTaxInvoiceAs(t, ctx, salesSvc, fx, salesdomain.DocCreditNote, "2", "100")
+
+	g3b, err := reportingSvc.GSTR3B(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("GSTR3B: %v", err)
+	}
+	if got := g3b[0].TaxableAmount.StringFixed(0); got != "800.00" {
+		t.Fatalf("GSTR-3B 3.1(a) taxable = %s, want 800.00 (1000 invoice - 200 credit note)", got)
+	}
+	if got := g3b[0].CGST.StringFixed(0); got != "72.00" {
+		t.Fatalf("GSTR-3B CGST = %s, want 72.00 (90 - 18)", got)
+	}
+
+	hsn, err := reportingSvc.HSNSummary(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("HSNSummary: %v", err)
+	}
+	if len(hsn) != 1 || hsn[0].TaxableAmount.StringFixed(0) != "800.00" || hsn[0].TotalTax.StringFixed(0) != "144.00" {
+		t.Fatalf("HSN summary = %+v, want one bucket of 800.00 taxable / 144.00 tax", hsn)
+	}
+
+	rates, err := reportingSvc.TaxRateSummary(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("TaxRateSummary: %v", err)
+	}
+	if len(rates) != 1 || rates[0].TaxableAmount.StringFixed(0) != "800.00" {
+		t.Fatalf("tax rate summary = %+v, want one rate with 800.00 taxable", rates)
+	}
+
+	g1, err := reportingSvc.GSTR1(ctx, fx.Principal, reportingdomain.Filter{})
+	if err != nil {
+		t.Fatalf("GSTR1: %v", err)
+	}
+	negative := 0
+	for _, l := range g1 {
+		if l.TaxableAmount.Decimal().IsNegative() {
+			negative++
+		}
+	}
+	if len(g1) != 2 || negative != 1 {
+		t.Fatalf("GSTR-1 rows = %d (negative %d), want 2 rows with the credit note negative", len(g1), negative)
+	}
+}

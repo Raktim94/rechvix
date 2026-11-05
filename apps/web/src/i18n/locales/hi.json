@@ -294,5 +294,84 @@
       "REJECTED": "अस्वीकृत",
       "ERROR": "भेजना विफल, दोबारा कोशिश होगी"
     }
+  },
+  "salesList": {
+    "title": "बिक्री",
+    "subtitle": "सभी कोटेशन, ऑर्डर और इनवॉइस — ड्राफ़्ट या अंतिम।",
+    "newSale": "+ नई बिक्री",
+    "viewsLabel": "बिक्री के दृश्य",
+    "views": {
+      "all": "सभी",
+      "invoices": "इनवॉइस",
+      "unpaid": "बकाया",
+      "overdue": "अतिदेय",
+      "drafts": "ड्राफ़्ट",
+      "quotations": "कोटेशन",
+      "orders": "ऑर्डर"
+    },
+    "searchPlaceholder": "बिक्री खोजें…",
+    "searchLabel": "बिक्री खोजें",
+    "moreFilters": "और फ़िल्टर",
+    "moreFiltersActive": "और फ़िल्टर (सक्रिय)",
+    "filterStatus": "स्थिति के अनुसार फ़िल्टर करें",
+    "allStatuses": "सभी स्थितियाँ",
+    "status": {
+      "DRAFT": "ड्राफ़्ट",
+      "FINALIZED": "अंतिम",
+      "CANCELLED": "रद्द"
+    },
+    "filterType": "प्रकार के अनुसार फ़िल्टर करें",
+    "allTypes": "सभी प्रकार",
+    "from": "से",
+    "to": "तक",
+    "fromDate": "प्रारंभ तिथि",
+    "toDate": "अंतिम तिथि",
+    "loadFailed": "बिक्री दस्तावेज़ लोड नहीं हो सके।",
+    "emptyNone": "अभी तक कोई बिक्री नहीं। एक मिनट से कम में अपना पहला इनवॉइस बनाएँ।",
+    "emptyFiltered": "इन फ़िल्टर से कोई बिक्री मेल नहीं खाती।",
+    "clearFilters": "फ़िल्टर हटाएँ",
+    "billNotes_one": "{{count}} डिलीवरी नोट का एक इनवॉइस बनाएँ",
+    "billNotes_other": "{{count}} डिलीवरी नोट का एक इनवॉइस बनाएँ",
+    "creating": "बनाया जा रहा है…",
+    "clear": "हटाएँ",
+    "createFailed": "इनवॉइस नहीं बन सका।",
+    "col": {
+      "select": "बिल करने के लिए डिलीवरी नोट चुनें",
+      "number": "नंबर",
+      "customer": "ग्राहक",
+      "type": "प्रकार",
+      "status": "स्थिति",
+      "date": "तारीख़",
+      "total": "कुल",
+      "actions": "कार्रवाई"
+    },
+    "billNote": "डिलीवरी नोट {{number}} का बिल बनाएँ",
+    "draftNumber": "(ड्राफ़्ट)",
+    "payment": {
+      "PAID": "भुगतान हो गया",
+      "PARTIAL": "आंशिक भुगतान",
+      "OVERDUE": "अतिदेय",
+      "UNPAID": "बकाया"
+    },
+    "share": {
+      "whatsapp": "WhatsApp पर साझा करें",
+      "whatsappAria": "{{doc}} को WhatsApp पर साझा करें",
+      "pdf": "PDF साझा करें",
+      "pdfAria": "{{doc}} को PDF के रूप में साझा करें",
+      "thisSale": "यह बिक्री",
+      "message": "नमस्ते {{name}}, आपका {{type}} {{number}} ({{total}}) तैयार है। आपके व्यापार के लिए धन्यवाद!"
+    },
+    "type": {
+      "QUOTATION": "कोटेशन",
+      "PROFORMA_INVOICE": "प्रोफ़ॉर्मा इनवॉइस",
+      "SALES_ORDER": "बिक्री ऑर्डर",
+      "DELIVERY_CHALLAN": "डिलीवरी चालान",
+      "TAX_INVOICE": "टैक्स इनवॉइस",
+      "POS_INVOICE": "POS इनवॉइस",
+      "CREDIT_NOTE": "क्रेडिट नोट",
+      "DEBIT_NOTE": "डेबिट नोट",
+      "SALES_RETURN": "बिक्री वापसी",
+      "RECURRING_INVOICE": "आवर्ती इनवॉइस"
+    }
   }
 }

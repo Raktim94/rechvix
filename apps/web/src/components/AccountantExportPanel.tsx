@@ -15,9 +15,16 @@ interface ExportReview {
 function localDate(d: Date): string {
  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+/** The only year the backend's tax mappings are verified for (internal/modules/reporting/app/accountant.go). */
+const MAPPING_YEAR = 2026;
 function previousMonth(): {from: string; to: string} {
  const now = new Date();
- return { from: localDate(new Date(now.getFullYear(), now.getMonth()-1, 1)), to: localDate(new Date(now.getFullYear(), now.getMonth(), 0)) };
+ const from = new Date(now.getFullYear(), now.getMonth()-1, 1);
+ const to = new Date(now.getFullYear(), now.getMonth(), 0);
+ // Outside the verified year, start on the nearest period that can be generated rather than one the server rejects.
+ if (from.getFullYear() > MAPPING_YEAR) return { from: `${MAPPING_YEAR}-12-01`, to: `${MAPPING_YEAR}-12-31` };
+ if (from.getFullYear() < MAPPING_YEAR) return { from: `${MAPPING_YEAR}-01-01`, to: `${MAPPING_YEAR}-01-31` };
+ return { from: localDate(from), to: localDate(to) };
 }
 
 /** No government credentials or submission action: downloads stay within the
@@ -39,9 +46,10 @@ export function AccountantExportPanel({ company }: { company: LegalEntity }) {
   <p className={ui.muted}>{company.LegalName}: sales, purchases, tax calculations, credit notes, reconciliation and {country==="ES" ? "Modelo 303 worksheets" : country==="GB" ? "VAT return worksheets" : country==="IN" ? "GST worksheets and eligible offline-tool CSVs" : "state-by-state sales-tax schedules"}. No return is submitted.</p>
   <form onSubmit={e=>{e.preventDefault();review.mutate();}}>
    <div className={ui.formGrid}>
-    <div className={ui.field}><label htmlFor="accountant-from">Period start</label><input id="accountant-from" type="date" className={ui.input} required min="2026-01-01" max={to||"2026-12-31"} value={from} disabled={review.isPending} onChange={e=>updateFrom(e.target.value)} /></div>
-    <div className={ui.field}><label htmlFor="accountant-to">Period end</label><input id="accountant-to" type="date" className={ui.input} required min={from||"2026-01-01"} max="2026-12-31" value={to} disabled={review.isPending} onChange={e=>updateTo(e.target.value)} /></div>
+    <div className={ui.field}><label htmlFor="accountant-from">Period start</label><input id="accountant-from" type="date" className={ui.input} required min={`${MAPPING_YEAR}-01-01`} max={to||`${MAPPING_YEAR}-12-31`} value={from} disabled={review.isPending} onChange={e=>updateFrom(e.target.value)} /></div>
+    <div className={ui.field}><label htmlFor="accountant-to">Period end</label><input id="accountant-to" type="date" className={ui.input} required min={from||`${MAPPING_YEAR}-01-01`} max={`${MAPPING_YEAR}-12-31`} value={to} disabled={review.isPending} onChange={e=>updateTo(e.target.value)} /></div>
    </div>
+   <p className={ui.muted} style={{ marginTop: 8 }}>Tax mappings are verified for {MAPPING_YEAR} only, so periods must fall inside {MAPPING_YEAR}. Other years become available once their mappings are verified.</p>
    <div className={ui.formActions} style={{ marginTop: 12, flexWrap: "wrap", justifyContent: "flex-start", gap: 8 }}>
     <button type="submit" className={ui.btnPrimary} disabled={!from||!to||from>to||review.isPending}>{review.isPending ? "Checking records…" : "Check accountant package"}</button>
     {review.data ? <><a className={ui.btnPrimary} href={apiUrl(path+"&format=zip")}>Download CA package</a><a className={ui.btnSecondary} href={apiUrl(path+"&format=xlsx")}>Workbook only</a></> : null}

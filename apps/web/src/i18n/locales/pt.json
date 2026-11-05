@@ -295,5 +295,84 @@
       "REJECTED": "Rejeitado",
       "ERROR": "Falha no envio, será repetido"
     }
+  },
+  "salesList": {
+    "title": "Vendas",
+    "subtitle": "Todos os orçamentos, pedidos e faturas, em rascunho ou finalizados.",
+    "newSale": "+ Nova venda",
+    "viewsLabel": "Vistas de vendas",
+    "views": {
+      "all": "Todas",
+      "invoices": "Faturas",
+      "unpaid": "Por pagar",
+      "overdue": "Vencidas",
+      "drafts": "Rascunhos",
+      "quotations": "Orçamentos",
+      "orders": "Pedidos"
+    },
+    "searchPlaceholder": "Pesquisar vendas…",
+    "searchLabel": "Pesquisar vendas",
+    "moreFilters": "Mais filtros",
+    "moreFiltersActive": "Mais filtros (ativos)",
+    "filterStatus": "Filtrar por estado",
+    "allStatuses": "Todos os estados",
+    "status": {
+      "DRAFT": "Rascunho",
+      "FINALIZED": "Finalizada",
+      "CANCELLED": "Cancelada"
+    },
+    "filterType": "Filtrar por tipo",
+    "allTypes": "Todos os tipos",
+    "from": "De",
+    "to": "Até",
+    "fromDate": "Data inicial",
+    "toDate": "Data final",
+    "loadFailed": "Não foi possível carregar os documentos de venda.",
+    "emptyNone": "Ainda não há vendas. Crie a sua primeira fatura em menos de um minuto.",
+    "emptyFiltered": "Nenhuma venda corresponde a estes filtros.",
+    "clearFilters": "Limpar filtros",
+    "billNotes_one": "Faturar {{count}} guia de remessa numa única fatura",
+    "billNotes_other": "Faturar {{count}} guias de remessa numa única fatura",
+    "creating": "A criar…",
+    "clear": "Limpar",
+    "createFailed": "Não foi possível criar a fatura.",
+    "col": {
+      "select": "Selecionar guias de remessa a faturar",
+      "number": "Número",
+      "customer": "Cliente",
+      "type": "Tipo",
+      "status": "Estado",
+      "date": "Data",
+      "total": "Total",
+      "actions": "Ações"
+    },
+    "billNote": "Faturar a guia de remessa {{number}}",
+    "draftNumber": "(rascunho)",
+    "payment": {
+      "PAID": "Paga",
+      "PARTIAL": "Paga parcialmente",
+      "OVERDUE": "Vencida",
+      "UNPAID": "Por pagar"
+    },
+    "share": {
+      "whatsapp": "Partilhar por WhatsApp",
+      "whatsappAria": "Partilhar {{doc}} por WhatsApp",
+      "pdf": "Partilhar PDF",
+      "pdfAria": "Partilhar {{doc}} em PDF",
+      "thisSale": "esta venda",
+      "message": "Olá {{name}}, o seu {{type}} {{number}} de {{total}} está pronto. Obrigado pela sua preferência!"
+    },
+    "type": {
+      "QUOTATION": "Orçamento",
+      "PROFORMA_INVOICE": "Fatura pró-forma",
+      "SALES_ORDER": "Pedido de venda",
+      "DELIVERY_CHALLAN": "Guia de remessa",
+      "TAX_INVOICE": "Fatura",
+      "POS_INVOICE": "Fatura de PDV",
+      "CREDIT_NOTE": "Nota de crédito",
+      "DEBIT_NOTE": "Nota de débito",
+      "SALES_RETURN": "Devolução de venda",
+      "RECURRING_INVOICE": "Fatura recorrente"
+    }
   }
 }
