@@ -102,7 +102,10 @@ services:
       SMTP_TLS: "${SMTP_TLS:-starttls}"
       VERIFACTU_PRODUCER_ID: "${VERIFACTU_PRODUCER_ID:-}"
     ports:
-      - "${HTTP_PORT:-8080}:8080"
+      # HTTP_BIND=127.0.0.1 publishes the app only to this machine (use when a
+      # reverse proxy on the same host terminates TLS). Default: all interfaces,
+      # so phones and other LAN devices can reach a home/office install.
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-8080}:8080"
 
   worker:
     build:

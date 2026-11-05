@@ -269,7 +269,7 @@ export function CalendarPage() {
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
               />
-              <select className={ui.select} value={newTaskAssignee} onChange={(e) => setNewTaskAssignee(e.target.value)} style={{ maxWidth: 160 }}>
+              <select className={ui.select} aria-label="Assign to" value={newTaskAssignee} onChange={(e) => setNewTaskAssignee(e.target.value)} style={{ maxWidth: 160 }}>
                 <option value="">Unassigned</option>
                 {activeStaff.map((m) => (
                   <option key={m.ID} value={m.ID}>
