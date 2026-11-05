@@ -120,7 +120,7 @@ func (h *Handlers) getDocument(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"document": doc, "lines": lines})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"document": doc, "lines": lines, "line_names": h.svc.LineProductNames(r.Context(), principal(r), lines)})
 }
 
 func (h *Handlers) listDocuments(w http.ResponseWriter, r *http.Request) {

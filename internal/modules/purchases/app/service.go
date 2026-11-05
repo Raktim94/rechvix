@@ -696,3 +696,19 @@ func (s *Service) CancelDocument(ctx context.Context, principal permissions.Prin
 	}
 	return doc, nil
 }
+
+// LineProductNames maps each line's product variant to its product name, so a
+// purchase can be shown by item name instead of a bare line number. A variant
+// that cannot be resolved is left out; the caller falls back to the line number.
+func (s *Service) LineProductNames(ctx context.Context, principal permissions.Principal, lines []*domain.DocumentLine) map[uuid.UUID]string {
+	names := make(map[uuid.UUID]string, len(lines))
+	for _, l := range lines {
+		if _, seen := names[l.ProductVariantID]; seen {
+			continue
+		}
+		if _, product, err := s.catalogue.GetVariantWithProduct(ctx, principal, l.ProductVariantID); err == nil && product != nil {
+			names[l.ProductVariantID] = product.Name
+		}
+	}
+	return names
+}

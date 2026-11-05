@@ -49,6 +49,20 @@ const lineAmount = (r: Row) => Math.round(num(r.qty) * netRate(r) * 100) / 100;
 /** Vyapar-style multi-row purchase entry: pick the supplier, type items
  * down a grid (Enter walks item → qty → rate → discount → next row), add a
  * brand-new item or supplier without leaving, then Save. */
+/** Pins a dropdown to its anchor with fixed positioning so a scrolling table
+ * or panel can never clip it; opens upward when there is no room below. */
+function placeMenu(ul: HTMLUListElement | null) {
+  const anchor = ul?.parentElement;
+  if (!ul || !anchor) return;
+  const a = anchor.getBoundingClientRect();
+  ul.style.position = "fixed";
+  ul.style.left = `${a.left}px`;
+  ul.style.minWidth = `${a.width}px`;
+  const h = Math.min(ul.scrollHeight, 280);
+  const below = window.innerHeight - a.bottom;
+  ul.style.top = below >= h + 8 || a.top < h + 8 ? `${a.bottom + 4}px` : `${a.top - h - 4}px`;
+}
+
 export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved: (documentId: string) => void }) {
   const org = useOrgContext();
   const currency = org.organisation?.DefaultCurrencyCode || "INR";
@@ -309,12 +323,7 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
                   }}
                 />
                 {supplierOpen ? (
-                  <ul id="pe-supplier-list" className={styles.menu} role="listbox">
-                    <li>
-                      <button type="button" className={styles.addOption} onClick={() => setAddSupplier(true)}>
-                        + Add party{supplierQuery.trim() ? ` “${supplierQuery.trim()}”` : ""}
-                      </button>
-                    </li>
+                  <ul id="pe-supplier-list" ref={placeMenu} className={styles.menu} role="listbox">
                     {supplierList.map((p) => (
                       <li key={p.ID} role="option" aria-selected="false">
                         <button
@@ -331,6 +340,11 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
                       </li>
                     ))}
                     {suppliers.isPending ? <li className={styles.hint}>Loading…</li> : supplierList.length === 0 ? <li className={styles.hint}>No supplier found.</li> : null}
+                    <li>
+                      <button type="button" className={styles.addOption} onClick={() => setAddSupplier(true)}>
+                        + Add party{supplierQuery.trim() ? ` “${supplierQuery.trim()}”` : ""}
+                      </button>
+                    </li>
                   </ul>
                 ) : null}
               </>
@@ -364,7 +378,7 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
                   Amount
                 </th>
                 <th scope="col">
-                  <span className="sr-only">Remove</span>
+                  <span className="srOnly">Remove</span>
                 </th>
               </tr>
             </thead>
@@ -389,12 +403,7 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
                       onKeyDown={cellKey(r.key, "item")}
                     />
                     {activeRow === r.key && !r.variantId ? (
-                      <ul className={styles.menu} role="listbox">
-                        <li>
-                          <button type="button" className={styles.addOption} onMouseDown={(e) => e.preventDefault()} onClick={() => setItemModal({ rowKey: r.key, name: r.query.trim() })}>
-                            + Add new item{r.query.trim() ? ` “${r.query.trim()}”` : ""}
-                          </button>
-                        </li>
+                      <ul ref={placeMenu} className={styles.menu} role="listbox">
                         {results.map((x, i) => (
                           <li key={x.ProductVariantID} role="option" aria-selected={i === highlight}>
                             <button type="button" className={styles.option} data-active={i === highlight} onMouseDown={(e) => e.preventDefault()} onClick={() => void chooseItem(r.key, x)}>
@@ -405,6 +414,11 @@ export function PurchaseEntry({ onBack, onSaved }: { onBack: () => void; onSaved
                             </button>
                           </li>
                         ))}
+                        <li>
+                          <button type="button" className={styles.addOption} onMouseDown={(e) => e.preventDefault()} onClick={() => setItemModal({ rowKey: r.key, name: r.query.trim() })}>
+                            + Add new item{r.query.trim() ? ` “${r.query.trim()}”` : ""}
+                          </button>
+                        </li>
                       </ul>
                     ) : null}
                   </td>

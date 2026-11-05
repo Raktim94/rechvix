@@ -61,18 +61,32 @@
 .grid td {
   vertical-align: middle;
 }
+/* Fixed layout: the item name gets all the slack, number columns stay narrow
+   and aligned, and the remove column never spills past the panel edge. */
+.grid {
+  table-layout: fixed;
+  min-width: 760px;
+}
+.grid th:nth-child(1) { width: 40px; }
+.grid th:nth-child(3) { width: 96px; }
+.grid th:nth-child(4) { width: 80px; }
+.grid th:nth-child(5) { width: 150px; }
+.grid th:nth-child(6) { width: 110px; }
+.grid th:nth-child(7) { width: 130px; }
+.grid th:nth-child(8) { width: 48px; }
 .itemCol {
-  width: 34%;
-  min-width: 260px;
+  width: auto;
 }
 .itemCell {
   position: relative;
 }
 .grid input {
-  min-width: 72px;
+  min-width: 0;
+  width: 100%;
 }
 .itemCell input {
-  min-width: 220px;
+  min-width: 0;
+  width: 100%;
 }
 .remove {
   border: 0;

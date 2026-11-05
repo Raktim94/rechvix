@@ -31,6 +31,7 @@ interface PurchaseDocument {
 interface PurchaseLine {
   ID: string;
   LineNumber: number;
+  ProductVariantID: string;
   Quantity: string;
   UnitPrice: { amount: string; currency: string };
   LineTotal: { amount: string; currency: string };
@@ -99,7 +100,7 @@ export function PurchasesPage() {
 
   const activeDoc = useQuery({
     queryKey: ["purchase-document", activeDocId],
-    queryFn: () => api.get<{ document: PurchaseDocument; lines: PurchaseLine[] }>(`/purchases/documents/${activeDocId}`),
+    queryFn: () => api.get<{ document: PurchaseDocument; lines: PurchaseLine[]; line_names?: Record<string, string> }>(`/purchases/documents/${activeDocId}`),
     enabled: !!activeDocId,
   });
 
@@ -248,8 +249,8 @@ export function PurchasesPage() {
       <div className={layout.page}>
         <div className={layout.heading}>
           <div>
-            <h1>New purchase</h1>
-            <p className={layout.subtitle}>Record what you bought from a supplier.</p>
+            <h1>{activeDoc.data?.document.DocumentNumber || (activeDocId ? "Purchase" : "New purchase")}</h1>
+            <p className={layout.subtitle}>{activeDocId ? "Items received, payment made and what is still owed to this supplier." : "Record what you bought from a supplier."}</p>
           </div>
           <button
             type="button"
@@ -378,6 +379,7 @@ export function PurchasesPage() {
                     <thead>
                       <tr>
                         <th scope="col">#</th>
+                        <th scope="col">Item</th>
                         <th scope="col">Qty</th>
                         <th scope="col">Cost</th>
                         <th scope="col">Total</th>
@@ -387,6 +389,7 @@ export function PurchasesPage() {
                       {lines.map((l) => (
                         <tr key={l.ID}>
                           <td className="num">{l.LineNumber}</td>
+                          <td>{activeDoc.data?.line_names?.[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
                           <td className="num">{l.Quantity}</td>
                           <td className="num">{formatMoney(l.UnitPrice)}</td>
                           <td className="num">{formatMoney(l.LineTotal)}</td>

@@ -78,7 +78,8 @@ textarea {
 /* Visually hidden but still reachable by assistive tech — for a text
    equivalent of a canvas/SVG chart (WCAG 1.1.1), not for hiding real
    interactive controls (those need proper focus handling, not this). */
-.srOnly {
+.srOnly,
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
