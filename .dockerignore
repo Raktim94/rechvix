@@ -1,0 +1,17 @@
+# Keep the build context small and make the image build reproducible: the
+# web stage runs `npm ci` inside the container, and a copied-in host
+# node_modules (built for glibc, not Alpine) would overwrite it.
+.git
+**/node_modules
+**/dist
+**/test-results
+**/.vite
+.env
+.env.*
+!.env.example
+tests/e2e
+packaging
+casaos
+docs
+*.deb
+*.sha256
