@@ -237,7 +237,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
 
   const doc = useQuery({
     queryKey: ["sales-document", documentId],
-    queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[] }>(`/sales/documents/${documentId}`),
+    queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[]; line_names?: Record<string, string> }>(`/sales/documents/${documentId}`),
     enabled: !!documentId,
   });
 
@@ -702,7 +702,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
             </div>
           ) : null}
 
-          <details className={styles.moreOptions} style={{ gridColumn: "1 / -1" }} open={documentId || foreignCurrency ? true : undefined}>
+          <details className={styles.moreOptions} style={{ gridColumn: "1 / -1" }} open={!documentId && foreignCurrency ? true : undefined}>
             <summary>
               More options · language {doc.data?.document.InvoiceLanguage || invoiceLanguage || "company default"} · currency {doc.data?.document.CurrencyCode ?? invoiceCurrency}
             </summary>
@@ -796,7 +796,10 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                 + Add new item
               </button>
             </div>
-            {productResults.length > 0 ? (
+            {/* Browsing the whole catalogue helps on an empty sale; once items are
+                on the bill it only pushes them off screen, so then results show
+                only while the operator is searching. */}
+            {productResults.length > 0 && (productQuery.trim().length > 0 || lines.length === 0) ? (
               <div className={styles.resultsTable}>
                 <div className={styles.resultsHeader}>
                   <span>Item</span>
@@ -907,7 +910,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
                     {lines.map((l) => (
                       <tr key={l.ID}>
                         <td className={`num ${styles.colNum}`}>{l.LineNumber}</td>
-                        <td className={styles.itemCell}>{nameByVariant[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
+                        <td className={styles.itemCell}>{nameByVariant[l.ProductVariantID] ?? doc.data?.line_names?.[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
                         <td className={styles.hsnCell}>{l.HSNSACCode || "—"}</td>
                         {isIndia ? (
                           <td className={`num ${styles.colRight}`}>

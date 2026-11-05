@@ -34,7 +34,7 @@ export function SalesDetailPage({ id }: { id: string }) {
   const navigate = useNavigate();
   const doc = useQuery({
     queryKey: ["sales-document", id],
-    queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[] }>(`/sales/documents/${id}`),
+    queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[]; line_names?: Record<string, string> }>(`/sales/documents/${id}`),
   });
 
   // Converts this FINALIZED document into a new DRAFT of targetType via
@@ -212,6 +212,7 @@ export function SalesDetailPage({ id }: { id: string }) {
                   <thead>
                     <tr>
                       <th scope="col">#</th>
+                      <th scope="col">Item</th>
                       <th scope="col">{isIndia ? "HSN/SAC" : t("tax.category")}</th>
                       <th scope="col">Qty</th>
                       <th scope="col">Rate</th>
@@ -222,6 +223,7 @@ export function SalesDetailPage({ id }: { id: string }) {
                     {lines.map((l) => (
                       <tr key={l.ID}>
                         <td className="num">{l.LineNumber}</td>
+                        <td>{doc.data?.line_names?.[l.ProductVariantID] ?? <span className={ui.muted}>Item {l.LineNumber}</span>}</td>
                         <td>{l.HSNSACCode}</td>
                         <td className="num">{l.Quantity}</td>
                         <td className="num">{formatMoney(l.UnitPrice)}</td>

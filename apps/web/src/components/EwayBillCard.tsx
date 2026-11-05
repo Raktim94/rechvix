@@ -193,19 +193,9 @@ export function EwayBillCard({ documentId }: { documentId: string }) {
   const { eligibility, record } = status.data;
   const requirement = eligibility.Requirement;
 
-  if (requirement === "NOT_REQUIRED" && !record?.EWBNumber) {
-    return (
-      <div className={styles.card}>
-        <div className={styles.header}>
-          <h2>e-Way Bill</h2>
-          <span className={ui.badge} data-tone="neutral">
-            Not needed
-          </span>
-        </div>
-        <p className={styles.explainer}>This sale doesn't need an e-Way Bill.</p>
-      </div>
-    );
-  }
+  // Nothing to do and nothing on file: show nothing rather than a card (and a
+  // badge) announcing that no action is needed.
+  if (requirement === "NOT_REQUIRED" && !record?.EWBNumber) return null;
 
   if (record?.EWBNumber) {
     return (

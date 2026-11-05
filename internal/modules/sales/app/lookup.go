@@ -120,3 +120,21 @@ func BillingPriceInDocumentCurrency(price money.Money, doc *domain.Document) (mo
 	}
 	return converted.Round(money.RoundHalfUp), nil
 }
+
+// LineProductNames maps each line's product variant to its product name, so a
+// document can be shown by name after a reload or when a draft is resumed. A
+// variant that cannot be resolved (deleted, or hidden from this principal) is
+// left out rather than failing the whole document; the caller falls back to
+// the line number.
+func (s *Service) LineProductNames(ctx context.Context, principal permissions.Principal, lines []*domain.DocumentLine) map[uuid.UUID]string {
+	names := make(map[uuid.UUID]string, len(lines))
+	for _, l := range lines {
+		if _, seen := names[l.ProductVariantID]; seen {
+			continue
+		}
+		if _, product, err := s.catalogue.GetVariantWithProduct(ctx, principal, l.ProductVariantID); err == nil && product != nil {
+			names[l.ProductVariantID] = product.Name
+		}
+	}
+	return names
+}
