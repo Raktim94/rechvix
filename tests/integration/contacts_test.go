@@ -5,7 +5,9 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -117,5 +119,60 @@ func TestContacts_RLS_BlocksCrossOrganisationPartyRead(t *testing.T) {
 	}
 	if _, err := svc.GetParty(ctx, principalA, party.ID); err != nil {
 		t.Fatalf("GetParty as A for its own party: %v", err)
+	}
+}
+
+// Regression: typing the first word (or any fragment) of a party's name must
+// find it. The search used trigram similarity alone, which scores "Gupta"
+// against "Gupta Engineering Works" below its threshold, so the sale-counter
+// customer box offered only "+ New customer" for an existing customer.
+func TestContacts_SearchParties_MatchesNameFragmentsPhoneAndLiteralWildcards(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestContactsService(t)
+	principal := bootstrapOwnerPrincipal(t, ctx)
+
+	suffix := uuid.NewString()[:8]
+	phone := fmt.Sprintf("9%09d", time.Now().UnixNano()%1_000_000_000)
+	gupta, err := svc.CreateParty(ctx, principal, contactsapp.CreatePartyParams{
+		PartyType: contactsdomain.PartyCustomer, LegalName: "Gupta" + suffix + " Engineering Works", CurrencyCode: "INR", Phone: phone,
+	})
+	if err != nil {
+		t.Fatalf("CreateParty: %v", err)
+	}
+	if _, err := svc.CreateParty(ctx, principal, contactsapp.CreatePartyParams{
+		PartyType: contactsdomain.PartyCustomer, LegalName: "Other" + suffix + " Traders", CurrencyCode: "INR",
+	}); err != nil {
+		t.Fatalf("CreateParty: %v", err)
+	}
+
+	cases := map[string]string{
+		"first word":     "Gupta" + suffix,
+		"lower-case":     "gupta" + suffix,
+		"middle word":    "engineering works",
+		"phone fragment": phone[2:8],
+	}
+	for name, q := range cases {
+		got, err := svc.SearchParties(ctx, principal, q, 20)
+		if err != nil {
+			t.Fatalf("%s: SearchParties(%q): %v", name, q, err)
+		}
+		found := false
+		for _, p := range got {
+			found = found || p.ID == gupta.ID
+		}
+		if !found {
+			t.Errorf("%s: SearchParties(%q) did not return the party; got %d result(s)", name, q, len(got))
+		}
+	}
+
+	// A literal % must not behave as a match-everything wildcard.
+	got, err := svc.SearchParties(ctx, principal, "%%", 20)
+	if err != nil {
+		t.Fatalf("SearchParties(%%%%): %v", err)
+	}
+	for _, p := range got {
+		if p.ID == gupta.ID {
+			t.Errorf("SearchParties(%%%%) matched %q; wildcards must be escaped", p.LegalName)
+		}
 	}
 }

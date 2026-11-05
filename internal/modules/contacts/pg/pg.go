@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -75,23 +76,39 @@ func (r *PartyRepo) ListByOrganisation(ctx context.Context, orgID uuid.UUID) ([]
 	return scanParties(rows)
 }
 
-// SearchByName matches on name similarity (trigram) as well as a plain
-// substring match on phone, so the sale-counter search box can find a
-// customer by typing part of their phone number, not just their name.
+// SearchByName finds parties for the sale-counter search box. A bare trigram
+// similarity (%) misses the most common query — the first word of a longer
+// name ("Gupta" for "Gupta Engineering Works" scores well under the 0.3
+// threshold) — so a case-insensitive substring match on the names, email and
+// phone is OR-ed in, and trigram similarity stays as the typo-tolerant
+// fallback. Results rank prefix matches first, then by similarity.
 func (r *PartyRepo) SearchByName(ctx context.Context, orgID uuid.UUID, query string, limit int) ([]*domain.Party, error) {
 	const q = `
 		SELECT id, organisation_id, party_type, legal_name, COALESCE(trade_name,''), COALESCE(phone,''), COALESCE(email,''),
 		       currency_code, credit_limit_amount, payment_terms_days, COALESCE(notes,''), status, created_at, updated_at
 		FROM parties
-		WHERE organisation_id = $1 AND (legal_name % $2 OR trade_name % $2 OR phone ILIKE '%' || $2 || '%')
-		ORDER BY GREATEST(similarity(legal_name, $2), similarity(COALESCE(trade_name, ''), $2)) DESC
+		WHERE organisation_id = $1 AND (
+		      legal_name ILIKE '%' || $4 || '%'
+		   OR COALESCE(trade_name,'') ILIKE '%' || $4 || '%'
+		   OR COALESCE(email,'') ILIKE '%' || $4 || '%'
+		   OR COALESCE(phone,'') ILIKE '%' || $4 || '%'
+		   OR legal_name % $2 OR trade_name % $2)
+		ORDER BY (legal_name ILIKE $4 || '%' OR COALESCE(trade_name,'') ILIKE $4 || '%') DESC,
+		         GREATEST(similarity(legal_name, $2), similarity(COALESCE(trade_name, ''), $2)) DESC,
+		         legal_name
 		LIMIT $3`
-	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, query, limit)
+	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, query, limit, escapeLike(query))
 	if err != nil {
 		return nil, fmt.Errorf("contacts: searching parties: %w", err)
 	}
 	defer rows.Close()
 	return scanParties(rows)
+}
+
+// escapeLike neutralises LIKE wildcards in user input so "50%" or "a_b" are
+// searched literally rather than as patterns.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 func scanParty(row pgx.Row) (*domain.Party, error) {
