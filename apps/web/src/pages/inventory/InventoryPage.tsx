@@ -238,7 +238,7 @@ export function InventoryPage() {
       <div className={layout.heading}>
         <div>
           <h1>Inventory</h1>
-          <p className={layout.subtitle}>Search a product to see its stock, movement history, and adjust it.</p>
+          <p className={layout.subtitle}>What you have on the shelf, what is running low, and what it is worth.</p>
         </div>
         {/* This page could only ever search products that already existed —
             someone realising mid-stocktake that a product isn't in the
@@ -257,7 +257,7 @@ export function InventoryPage() {
             className={ui.input}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="e.g. Parle-G 800g"
+            placeholder="Search to adjust stock or see history, e.g. Hex bolt"
           />
           {lookup.data?.results?.length ? (
             <ul style={{ listStyle: "none", margin: "4px 0 0", padding: 0, border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
@@ -275,29 +275,22 @@ export function InventoryPage() {
 
       {selected ? (
         <StockCard product={selected.result} warehouseId={org.warehouse!.ID} baseUOMID={selected.baseUOMID} />
-      ) : (
-        // Without this, a first-time user sees a search box and two report
-        // tables and nothing telling them "Add stock" exists at all — it's
-        // actually the Stock adjustment panel inside StockCard above, which
-        // only renders once a specific product is selected (stock is always
-        // per-product). Confirmed via a real end-to-end repro: search alone
-        // never shows it, only clicking a result does.
-        <div className={layout.panel}>
-          <p className={layout.emptyState}>
-            To add stock, search for a product above and select it — you'll get a
-            "Stock adjustment" panel with an "Add stock (found / recount)" option.
-          </p>
-        </div>
-      )}
+      ) : null}
+
+      <div className={layout.panel}>
+        <h2>Stock on hand</h2>
+        <ReportTable
+          path={withLegalEntity("/reports/inventory/valuation?format=json", org.legalEntity?.ID)}
+          emptyLabel="No stock recorded yet. Search for a product above and choose “Add stock”, receive a purchase, or import opening stock from a spreadsheet."
+        />
+        <p className={ui.muted} style={{ marginTop: "var(--space-3)" }}>
+          Need to correct a count? Search the product above to open its stock card, history and adjustments.
+        </p>
+      </div>
 
       <div className={layout.panel}>
         <h2>Low stock</h2>
         <ReportTable path={withLegalEntity("/reports/inventory/low-stock?format=json", org.legalEntity?.ID)} emptyLabel="Nothing is running low." />
-      </div>
-
-      <div className={layout.panel}>
-        <h2>Stock valuation</h2>
-        <ReportTable path={withLegalEntity("/reports/inventory/valuation?format=json", org.legalEntity?.ID)} emptyLabel="No stock recorded yet." />
       </div>
     </div>
   );

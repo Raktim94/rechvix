@@ -398,7 +398,7 @@ function GSTDetailsForm({ legalEntityId, currentGSTIN, currentStateCode }: { leg
         <label htmlFor="settings-gstin">GSTIN (optional)</label>
         <input id="settings-gstin" className={ui.input} placeholder="Leave blank if not GST-registered" value={gstin} onChange={(e) => setGstin(e.target.value)} />
       </div>
-      <button type="button" className={ui.btnPrimary} disabled={!dirty || !stateCode || save.isPending} onClick={() => save.mutate()}>
+      <button type="button" className={ui.btnPrimary} style={{ gridColumn: "1 / -1", justifySelf: "start" }} disabled={!dirty || !stateCode || save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? "Saving…" : "Save GST details"}
       </button>
       {save.isError ? (

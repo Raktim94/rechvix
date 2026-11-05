@@ -6,6 +6,7 @@ import ReactECharts from "echarts-for-react";
 import styles from "./DashboardPage.module.css";
 import { DashboardFollowUps, PaymentModesPanel } from "../components/DashboardFollowUps";
 import { QuickAccess } from "../components/QuickAccess";
+import { SetupChecklist } from "../components/SetupChecklist";
 import { api } from "../lib/api-client";
 import { toLocalIsoDate } from "../lib/calendarGrid";
 import { chartPalette } from "../lib/chartColors";
@@ -463,6 +464,8 @@ export function DashboardPage() {
           </button>
         </div>
       </div>
+
+      <SetupChecklist />
 
       <QuickAccess />
 
