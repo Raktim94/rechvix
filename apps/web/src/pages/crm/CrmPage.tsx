@@ -138,10 +138,10 @@ function Board({ stages, opps, owners, selected, onOpen, onMove }: { stages: Sta
             }}
           >
             <div className={styles.columnHead}>
-              <h3 className={styles.columnTitle} data-kind={st.kind}>
+              <h2 className={styles.columnTitle} data-kind={st.kind}>
                 <span>{st.name}</span>
                 <span>{items.length}</span>
-              </h3>
+              </h2>
               <span className={styles.columnTotal}>{items.length > 0 ? formatTotals(items) : "—"}</span>
             </div>
             {items.length === 0 ? (

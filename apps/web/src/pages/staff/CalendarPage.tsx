@@ -245,6 +245,7 @@ export function CalendarPage() {
               <div key={task.ID} className={styles.taskRow} data-done={task.Status === "DONE"}>
                 <input
                   type="checkbox"
+                  aria-label={`Mark "${task.Title}" as done`}
                   checked={task.Status === "DONE"}
                   onChange={(e) => setTaskStatus.mutate({ id: task.ID, status: e.target.checked ? "DONE" : "PENDING" })}
                   style={{ marginTop: 3 }}

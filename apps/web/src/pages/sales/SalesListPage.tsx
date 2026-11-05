@@ -103,12 +103,9 @@ function PaymentBadge({ document }: { document: SalesDocument }) {
   const ps: PaymentState | null = paymentState(document);
   if (!ps) return null;
   return (
-    <>
-      {" "}
-      <span className={ui.badge} data-tone={PAYMENT_TONES[ps]}>
-        {PAYMENT_LABELS[ps]}
-      </span>
-    </>
+    <span className={ui.badge} data-tone={PAYMENT_TONES[ps]}>
+      {PAYMENT_LABELS[ps]}
+    </span>
   );
 }
 
@@ -207,7 +204,7 @@ export function SalesListPage() {
         <div className={ui.toolbar} style={{ marginBottom: 12 }}>
           <input
             className={ui.input}
-            placeholder="Search by number or customer…"
+            placeholder="Search sales…"
             aria-label="Search sales"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -335,10 +332,15 @@ export function SalesListPage() {
                     <td data-label="Customer">{customerNameById.get(d.CustomerPartyID) ?? "—"}</td>
                     <td data-label="Type">{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
                     <td>
-                      <span className={ui.badge} data-tone={statusTone(d.Status)}>
-                        {STATUS_LABELS[d.Status]}
-                      </span>
-                      <PaymentBadge document={d} />
+                      {/* A finalized invoice's useful state is whether it is paid, so the
+                          payment badge replaces the plain "Finalized" one. */}
+                      {paymentState(d) ? (
+                        <PaymentBadge document={d} />
+                      ) : (
+                        <span className={ui.badge} data-tone={statusTone(d.Status)}>
+                          {STATUS_LABELS[d.Status]}
+                        </span>
+                      )}
                       {workflowByDoc.get(d.ID) ? <> <StatusBadge name={workflowByDoc.get(d.ID)!.name} color={workflowByDoc.get(d.ID)!.color} /></> : null}
                     </td>
                     <td data-label="Date">{new Date(d.IssueDate).toLocaleDateString()}</td>

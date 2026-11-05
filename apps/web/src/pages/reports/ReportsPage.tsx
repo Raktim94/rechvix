@@ -158,7 +158,8 @@ function GrossProfitChart({ dark, legalEntityId, period }: { dark: boolean; lega
   const textColor = revenueColor;
 
   const option = {
-    grid: { left: 140, right: 24, top: 8, bottom: 32 },
+    // bottom leaves room for the axis labels AND the legend beneath them
+    grid: { left: 140, right: 24, top: 8, bottom: 64 },
     legend: {
       data: ["Revenue", "Profit"],
       bottom: 0,

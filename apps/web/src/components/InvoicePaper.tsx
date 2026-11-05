@@ -69,6 +69,8 @@ export function InvoicePaper({ documentId, company, stamp }: { documentId: strin
 
   const p = preview.data;
   const money = (amount: string) => formatMoney({ amount, currency: p.currency });
+  const sellerLines = p.seller.address.filter(Boolean);
+  const sellerContacts = [p.seller_phone, p.seller_email, p.seller_website].filter(Boolean);
   const hasBank = p.bank.name || p.bank.account || p.bank.upi;
   const showCode = p.lines.some((l) => l.code);
   const logo = company?.LogoPNG ? `data:image/png;base64,${company.LogoPNG}` : null;
@@ -125,19 +127,21 @@ export function InvoicePaper({ documentId, company, stamp }: { documentId: strin
       </dl>
 
       <section className={styles.parties}>
-        <div>
-          <h3>{t("invoice.from", { defaultValue: "From" })}</h3>
-          <p>
-            {p.seller.address.map((a) => (
-              <span key={a}>{a}</span>
-            ))}
-            {[p.seller_phone, p.seller_email, p.seller_website].filter(Boolean).map((c) => (
-              <span key={c} className={styles.muted}>
-                {c}
-              </span>
-            ))}
-          </p>
-        </div>
+        {sellerLines.length > 0 || sellerContacts.length > 0 ? (
+          <div>
+            <h3>{t("invoice.from", { defaultValue: "From" })}</h3>
+            <p>
+              {sellerLines.map((a) => (
+                <span key={a}>{a}</span>
+              ))}
+              {sellerContacts.map((c) => (
+                <span key={c} className={styles.muted}>
+                  {c}
+                </span>
+              ))}
+            </p>
+          </div>
+        ) : null}
         <div>
           <h3>{t("invoice.billedTo", { defaultValue: "Billed to" })}</h3>
           <p>

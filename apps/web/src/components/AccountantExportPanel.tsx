@@ -42,7 +42,7 @@ export function AccountantExportPanel({ company }: { company: LegalEntity }) {
     <div className={ui.field}><label htmlFor="accountant-from">Period start</label><input id="accountant-from" type="date" className={ui.input} required min="2026-01-01" max={to||"2026-12-31"} value={from} disabled={review.isPending} onChange={e=>updateFrom(e.target.value)} /></div>
     <div className={ui.field}><label htmlFor="accountant-to">Period end</label><input id="accountant-to" type="date" className={ui.input} required min={from||"2026-01-01"} max="2026-12-31" value={to} disabled={review.isPending} onChange={e=>updateTo(e.target.value)} /></div>
    </div>
-   <div className={ui.formActions} style={{ flexWrap: "wrap", justifyContent: "flex-start", gap: 8 }}>
+   <div className={ui.formActions} style={{ marginTop: 12, flexWrap: "wrap", justifyContent: "flex-start", gap: 8 }}>
     <button type="submit" className={ui.btnPrimary} disabled={!from||!to||from>to||review.isPending}>{review.isPending ? "Checking records…" : "Check accountant package"}</button>
     {review.data ? <><a className={ui.btnPrimary} href={apiUrl(path+"&format=zip")}>Download CA package</a><a className={ui.btnSecondary} href={apiUrl(path+"&format=xlsx")}>Workbook only</a></> : null}
    </div>

@@ -10,7 +10,16 @@ import ui from "./ui.module.css";
  * are not turned into "5,000". */
 const IDENTIFIER_HEADER = /sku|code|hsn|sac|number|no\.?$|id$|gstin|phone|pin|year/i;
 const NUMERIC = /^-?\d+(\.\d+)?$/;
+/** Status / type columns arrive as database enums ("TAX_INVOICE", "FINALIZED"); show them as words. Display only — exports keep the raw value. */
+const ENUM_HEADER = /^(status|type|document type|supply type)$/i;
+const ENUM_VALUE = /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$/;
+function humanizeEnum(value: string, header: string): string {
+  if (!ENUM_HEADER.test(header) || !ENUM_VALUE.test(value) || /^B2[BC]$/.test(value)) return value;
+  const words = value.toLowerCase().split("_").join(" ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 function formatCell(value: string, header: string): { text: string; numeric: boolean } {
+  value = humanizeEnum(value, header);
   if (!NUMERIC.test(value) || IDENTIFIER_HEADER.test(header)) return { text: value, numeric: false };
   const decimals = value.includes(".") ? (value.split(".")[1] ?? "").length : 0;
   const n = Number(value);

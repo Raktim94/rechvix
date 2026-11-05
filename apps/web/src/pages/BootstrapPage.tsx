@@ -107,7 +107,7 @@ export function BootstrapPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { countryCode: initialCountry, currencyCode: "", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, gstStateCode: "" },
+    defaultValues: { countryCode: initialCountry, currencyCode: "", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, gstStateCode: "", branchName: t("setup.defaultBranch", { defaultValue: "Main branch" }), warehouseName: t("setup.defaultWarehouse", { defaultValue: "Main warehouse" }) },
   });
 
   const countryCode = watch("countryCode");

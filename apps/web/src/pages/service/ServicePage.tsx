@@ -54,7 +54,7 @@ function IncidentDetail({ id, onClose }: { id: string; onClose: () => void }) {
         <h2 id="inc-heading">{i.number} · {i.title}</h2>
         <button type="button" className={ui.btnGhost} onClick={onClose}>Close</button>
       </div>
-      <p className={ui.muted}>{i.customer}{i.asset_name ? ` · ${i.asset_name}` : ""} · <span className={ui.badge} data-tone={PRIORITY_TONE[i.priority]}>{i.priority.toLowerCase()}</span> · {i.minutes_spent} min logged{i.scheduled_for ? ` · visit ${new Date(i.scheduled_for).toLocaleString()}` : ""}{link ? <> · <a href={link} target="_blank" rel="noreferrer">Show on map<span className="srOnly"> (opens in a new tab)</span></a></> : null}</p>
+      <p className={ui.muted}>{i.customer}{i.asset_name ? ` · ${i.asset_name}` : ""} · <span className={ui.badge} data-tone={PRIORITY_TONE[i.priority]}>{titleCase(i.priority)}</span> · {i.minutes_spent} min logged{i.scheduled_for ? ` · visit ${new Date(i.scheduled_for).toLocaleString()}` : ""}{link ? <> · <a href={link} target="_blank" rel="noreferrer">Show on map<span className="srOnly"> (opens in a new tab)</span></a></> : null}</p>
       {i.description ? <p>{i.description}</p> : null}
       <div className={ui.formGrid}>
         <div className={ui.field}>
@@ -68,21 +68,21 @@ function IncidentDetail({ id, onClose }: { id: string; onClose: () => void }) {
           <input id="inc-visit" type="datetime-local" className={ui.input} value={visit} onChange={(e) => setVisit(e.target.value)} />
         </div>
       </div>
-      <div className={ui.formActions} style={{ justifyContent: "flex-start" }}>
+      <div className={ui.formActions} style={{ marginTop: 12, justifyContent: "flex-start" }}>
         <button type="button" className={ui.btnSecondary} disabled={assign.isPending} onClick={() => assign.mutate()}>Assign to me{visit ? " and plan the visit" : ""}</button>
       </div>
-      <h3>Work log</h3>
+      <h3 style={{ margin: "20px 0 8px" }}>Work log</h3>
       <form onSubmit={(e) => { e.preventDefault(); comment.mutate(); }}>
         <div className={ui.formGrid}>
           <div className={ui.field}><label htmlFor="inc-note">Note</label><input id="inc-note" className={ui.input} value={note} onChange={(e) => setNote(e.target.value)} /></div>
           <div className={ui.field}><label htmlFor="inc-min">Minutes spent (optional)</label><input id="inc-min" type="number" min={1} max={1440} className={ui.input} value={minutes} onChange={(e) => setMinutes(e.target.value)} /></div>
         </div>
-        <div className={ui.formActions} style={{ justifyContent: "flex-start" }}><button type="submit" className={ui.btnPrimary} disabled={!note.trim() || comment.isPending}>Add to the log</button></div>
+        <div className={ui.formActions} style={{ marginTop: 12, justifyContent: "flex-start" }}><button type="submit" className={ui.btnPrimary} disabled={!note.trim() || comment.isPending}>Add to the log</button></div>
       </form>
       {err ? <p role="alert">{err instanceof ApiError ? err.message : "Something went wrong."}</p> : null}
       <ul style={{ listStyle: "none", padding: 0, margin: "12px 0 0", display: "flex", flexDirection: "column", gap: 6 }}>
         {[...updates].reverse().map((u) => (
-          <li key={u.id}><span className={ui.muted}>{new Date(u.created_at).toLocaleString()} · {u.kind.toLowerCase()}</span> {u.body}{u.minutes_spent ? ` (${u.minutes_spent} min)` : ""}</li>
+          <li key={u.id}><span className={ui.muted}>{new Date(u.created_at).toLocaleString()} · {titleCase(u.kind)}</span> {u.kind === "STATUS" ? (STATUS_LABEL[u.body] ?? u.body) : u.body}{u.minutes_spent ? ` (${u.minutes_spent} min)` : ""}</li>
         ))}
       </ul>
     </section>
@@ -103,6 +103,35 @@ function Incidents({ customers, assets }: { customers: Party[]; assets: Asset[] 
   const ownerAssets = assets.filter((a) => a.status === "ACTIVE" && (!form.party_id || a.party_id === form.party_id));
   return (
     <>
+      {open ? <IncidentDetail key={open} id={open} onClose={() => setOpen(null)} /> : null}
+      <section className={layout.panel} aria-labelledby="inc-list">
+        <h2 id="inc-list">Incidents</h2>
+        <div className={ui.field} style={{ maxWidth: 240 }}>
+          <label htmlFor="inc-filter">Show</label>
+          <select id="inc-filter" className={ui.input} value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Everything not closed</option>
+            {STATUS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+          </select>
+        </div>
+        {list.data && list.data.length === 0 ? <p className={layout.emptyState}>No incidents here.</p> : (
+          <div className={ui.tableScroll} tabIndex={0}>
+            <table className={ui.table}>
+              <caption className="srOnly">Incidents</caption>
+              <thead><tr><th scope="col">No.</th><th scope="col">Customer</th><th scope="col">Equipment</th><th scope="col">Problem</th><th scope="col">Priority</th><th scope="col">Status</th><th scope="col">Time</th></tr></thead>
+              <tbody>
+                {(list.data ?? []).map((i) => (
+                  <tr key={i.id}>
+                    <td><button type="button" className={ui.btnGhost} onClick={() => setOpen(i.id)}>{i.number}</button></td>
+                    <td>{i.customer}</td><td>{i.asset_name ?? ""}</td><td>{i.title}{i.source === "MAINTENANCE" ? " (maintenance)" : ""}</td>
+                    <td><span className={ui.badge} data-tone={PRIORITY_TONE[i.priority]}>{titleCase(i.priority)}</span></td>
+                    <td>{STATUS_LABEL[i.status]}</td><td>{i.minutes_spent ? `${i.minutes_spent} min` : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
       <section className={layout.panel} aria-labelledby="new-inc">
         <h2 id="new-inc">New incident</h2>
         <form onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
@@ -125,12 +154,12 @@ function Incidents({ customers, assets }: { customers: Party[]; assets: Asset[] 
             <div className={ui.field}>
               <label htmlFor="i-prio">Priority</label>
               <select id="i-prio" className={ui.input} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                {["LOW", "NORMAL", "HIGH", "URGENT"].map((p) => <option key={p} value={p}>{p.toLowerCase()}</option>)}
+                {["LOW", "NORMAL", "HIGH", "URGENT"].map((p) => <option key={p} value={p}>{titleCase(p)}</option>)}
               </select>
             </div>
+            <div className={ui.field} style={{ gridColumn: "1 / -1" }}><label htmlFor="i-desc">Details</label><textarea id="i-desc" className={ui.input} rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
           </div>
-          <div className={ui.field}><label htmlFor="i-desc">Details</label><textarea id="i-desc" className={ui.input} rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <div className={ui.formActions} style={{ justifyContent: "flex-start", flexWrap: "wrap", gap: 8 }}>
+          <div className={ui.formActions} style={{ marginTop: 12, justifyContent: "flex-start", flexWrap: "wrap", gap: 8 }}>
             <button type="submit" className={ui.btnPrimary} disabled={!form.title.trim() || (!form.party_id && !form.asset_id) || create.isPending}>Create incident</button>
             <button type="button" className={ui.btnSecondary} onClick={loc.locate}>Use my location for the site</button>
             {form.latitude ? <span className={ui.muted}>{form.latitude}, {form.longitude}</span> : null}
@@ -139,37 +168,12 @@ function Incidents({ customers, assets }: { customers: Party[]; assets: Asset[] 
           {create.isError ? <p role="alert">{create.error instanceof ApiError ? create.error.message : "Could not create the incident."}</p> : null}
         </form>
       </section>
-      {open ? <IncidentDetail key={open} id={open} onClose={() => setOpen(null)} /> : null}
-      <section className={layout.panel} aria-labelledby="inc-list">
-        <h2 id="inc-list">Incidents</h2>
-        <div className={ui.field} style={{ maxWidth: 240 }}>
-          <label htmlFor="inc-filter">Show</label>
-          <select id="inc-filter" className={ui.input} value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Everything not closed</option>
-            {STATUS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
-        </div>
-        {list.data && list.data.length === 0 ? <p className={layout.emptyState}>No incidents here.</p> : (
-          <div className={ui.tableScroll} tabIndex={0}>
-            <table className={ui.table}>
-              <caption className="srOnly">Incidents</caption>
-              <thead><tr><th scope="col">No.</th><th scope="col">Customer</th><th scope="col">Equipment</th><th scope="col">Problem</th><th scope="col">Priority</th><th scope="col">Status</th><th scope="col">Time</th></tr></thead>
-              <tbody>
-                {(list.data ?? []).map((i) => (
-                  <tr key={i.id}>
-                    <td><button type="button" className={ui.btnGhost} onClick={() => setOpen(i.id)}>{i.number}</button></td>
-                    <td>{i.customer}</td><td>{i.asset_name ?? ""}</td><td>{i.title}{i.source === "MAINTENANCE" ? " (maintenance)" : ""}</td>
-                    <td><span className={ui.badge} data-tone={PRIORITY_TONE[i.priority]}>{i.priority.toLowerCase()}</span></td>
-                    <td>{STATUS_LABEL[i.status]}</td><td>{i.minutes_spent ? `${i.minutes_spent} min` : ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </>
   );
+}
+
+function titleCase(s: string) {
+  return s.charAt(0) + s.slice(1).toLowerCase();
 }
 
 function Assets({ customers, assets }: { customers: Party[]; assets: Asset[] }) {
@@ -197,7 +201,7 @@ function Assets({ customers, assets }: { customers: Party[]; assets: Asset[] }) 
             <div className={ui.field}><label htmlFor="a-loc">Where it is</label><input id="a-loc" className={ui.input} value={f.location_note} onChange={(e) => setF({ ...f, location_note: e.target.value })} /></div>
             <div className={ui.field}><label htmlFor="a-war">Warranty until</label><input id="a-war" type="date" className={ui.input} value={f.warranty_until} onChange={(e) => setF({ ...f, warranty_until: e.target.value })} /></div>
           </div>
-          <div className={ui.formActions} style={{ justifyContent: "flex-start", flexWrap: "wrap", gap: 8 }}>
+          <div className={ui.formActions} style={{ marginTop: 12, justifyContent: "flex-start", flexWrap: "wrap", gap: 8 }}>
             <button type="submit" className={ui.btnPrimary} disabled={!f.party_id || !f.name.trim() || create.isPending}>Add equipment</button>
             <button type="button" className={ui.btnSecondary} onClick={loc.locate}>Use my location for the site</button>
             {f.latitude ? <span className={ui.muted}>{f.latitude}, {f.longitude}</span> : null}
@@ -260,7 +264,7 @@ function Plans({ assets }: { assets: Asset[] }) {
             <div className={ui.field}><label htmlFor="p-days">Every (days)</label><input id="p-days" type="number" min={1} max={3650} className={ui.input} value={f.every_days} onChange={(e) => setF({ ...f, every_days: Number(e.target.value) })} /></div>
             <div className={ui.field}><label htmlFor="p-first">First due</label><input id="p-first" type="date" className={ui.input} value={f.first_due} onChange={(e) => setF({ ...f, first_due: e.target.value })} /></div>
           </div>
-          <div className={ui.formActions} style={{ justifyContent: "flex-start" }}><button type="submit" className={ui.btnPrimary} disabled={!f.asset_id || !f.title.trim() || create.isPending}>Add plan</button></div>
+          <div className={ui.formActions} style={{ marginTop: 12, justifyContent: "flex-start" }}><button type="submit" className={ui.btnPrimary} disabled={!f.asset_id || !f.title.trim() || create.isPending}>Add plan</button></div>
           {create.isError ? <p role="alert">{create.error instanceof ApiError ? create.error.message : "Could not add the plan."}</p> : null}
         </form>
         {plans.data && plans.data.length > 0 ? (
