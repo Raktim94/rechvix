@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { QuickAddItemModal, type NewItem } from "../../components/QuickAddItemModal";
 import { QuickAddPartyModal } from "../../components/QuickAddPartyModal";
@@ -689,9 +689,24 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
               <p className={ui.muted} style={{ marginTop: 4 }}>
                 Decides CGST+SGST vs. IGST — cannot be changed after Start Sale.
               </p>
+              {!placeOfSupply ? (
+                <p className={ui.muted} style={{ marginTop: 4 }} role="status">
+                  Choose a state to continue.{" "}
+                  {org.legalEntity?.GSTStateCode ? null : (
+                    <>
+                      Set your business state in <Link to="/settings">Settings</Link> and this fills in automatically.
+                    </>
+                  )}
+                </p>
+              ) : null}
             </div>
           ) : null}
 
+          <details className={styles.moreOptions} style={{ gridColumn: "1 / -1" }} open={documentId || foreignCurrency ? true : undefined}>
+            <summary>
+              More options · language {doc.data?.document.InvoiceLanguage || invoiceLanguage || "company default"} · currency {doc.data?.document.CurrencyCode ?? invoiceCurrency}
+            </summary>
+            <div className={styles.moreOptionsBody}>
           <div className={ui.field}>
             <label htmlFor="invoice-language">Invoice language</label>
             <select id="invoice-language" className={ui.select} disabled={!!documentId} value={doc.data?.document.InvoiceLanguage ?? invoiceLanguage} onChange={e => setInvoiceLanguage(e.target.value)}>
@@ -712,6 +727,8 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
             <input id="invoice-rate" className={ui.input} inputMode="decimal" value={doc.data?.document.ExchangeRate ?? exchangeRate} disabled={!!documentId} onChange={e => setExchangeRate(e.target.value)} aria-describedby="invoice-rate-help" />
             <p id="invoice-rate-help" className={ui.muted}>Enter the rate agreed for this invoice. Catalogue prices are converted using this rate; books remain in {baseCurrency}.</p>
           </div> : null}
+            </div>
+          </details>
 
           {!documentId ? (
             <button
@@ -722,6 +739,11 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
             >
               {startSale.isPending ? "Starting…" : "Start sale"}
             </button>
+          ) : null}
+          {!documentId && !customer ? (
+            <p className={ui.muted} style={{ gridColumn: "1 / -1", margin: 0 }}>
+              Pick a customer above, or choose Walk-in / Cash sale, to start adding items.
+            </p>
           ) : null}
         </div>
         {startSale.isError ? (

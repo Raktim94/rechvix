@@ -226,3 +226,21 @@ export const MailIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M3 6h18v12H3z M3 7l9 6 9-6" />
   </Icon>
 );
+
+export const PipelineIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+  </Icon>
+);
+
+export const WrenchIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M14.7 6.3a4 4 0 005 5L21 12.6 12.6 21a2.1 2.1 0 01-3-3L18 9.6 16.7 8.3a4 4 0 01-2-2zM9 9L4 4" />
+  </Icon>
+);
+
+export const BankIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18" />
+  </Icon>
+);

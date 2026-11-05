@@ -73,6 +73,19 @@ function statusTone(status: SalesDocument["Status"]) {
 type StatusFilter = "ALL" | DocumentStatus;
 type TypeFilter = "ALL" | DocumentType;
 
+/** One-click views, ordered by how often a counter operator needs them.
+ * Quotations and orders mirror the old "Open quotations/orders" shortcuts:
+ * finalized ones are the ones still awaiting "Convert to…". */
+const VIEWS: { key: string; label: string; status: StatusFilter; type: TypeFilter }[] = [
+  { key: "all", label: "All", status: "ALL", type: "ALL" },
+  { key: "invoices", label: "Invoices", status: "FINALIZED", type: "TAX_INVOICE" },
+  { key: "drafts", label: "Drafts", status: "DRAFT", type: "ALL" },
+  { key: "quotes", label: "Quotations", status: "FINALIZED", type: "QUOTATION" },
+  { key: "orders", label: "Orders", status: "FINALIZED", type: "SALES_ORDER" },
+];
+
+const STATUS_LABELS: Record<DocumentStatus, string> = { DRAFT: "Draft", FINALIZED: "Finalized", CANCELLED: "Cancelled" };
+
 export function SalesListPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("ALL");
@@ -138,47 +151,26 @@ export function SalesListPage() {
       </div>
 
       <div className={layout.panel}>
-        <div className={ui.toolbar} style={{ marginBottom: 8, gap: 8 }}>
-          {/* Finalized-but-not-yet-converted quotations/orders are exactly
-              what SalesDetailPage's new "Convert to…" action acts on —
-              these one-click filters are the fastest way to find them,
-              since the list has no server-side way to tell "still open"
-              apart from a finalized document simply not having a document
-              referencing it yet (not modeled client-side, so this is a
-              proxy: finalized quotations/orders are usually awaiting
-              conversion in practice). */}
-          <button
-            type="button"
-            className={ui.btnGhost}
-            onClick={() => {
-              setType("QUOTATION");
-              setStatus("FINALIZED");
-            }}
-          >
-            Open quotations
-          </button>
-          <button
-            type="button"
-            className={ui.btnGhost}
-            onClick={() => {
-              setType("SALES_ORDER");
-              setStatus("FINALIZED");
-            }}
-          >
-            Open orders
-          </button>
-          {status !== "ALL" || type !== "ALL" ? (
-            <button
-              type="button"
-              className={ui.btnGhost}
-              onClick={() => {
-                setStatus("ALL");
-                setType("ALL");
-              }}
-            >
-              Clear filters
-            </button>
-          ) : null}
+        <div className={ui.segmented} role="group" aria-label="Sales views">
+          {VIEWS.map((v) => {
+            const count = (documents.data ?? []).filter((d) => (v.status === "ALL" || d.Status === v.status) && (v.type === "ALL" || d.DocumentType === v.type)).length;
+            const active = status === v.status && type === v.type;
+            return (
+              <button
+                key={v.key}
+                type="button"
+                className={ui.segment}
+                aria-pressed={active}
+                onClick={() => {
+                  setStatus(v.status);
+                  setType(v.type);
+                }}
+              >
+                {v.label}
+                {documents.data ? <span className={ui.segmentCount}>{count}</span> : null}
+              </button>
+            );
+          })}
         </div>
         <div className={ui.toolbar} style={{ marginBottom: 12 }}>
           <input
@@ -220,9 +212,33 @@ export function SalesListPage() {
         ) : documents.isPending ? (
           <div className={layout.skeleton} style={{ height: 240 }} aria-hidden="true" />
         ) : filtered.length === 0 ? (
-          <p className={layout.emptyState}>
-            {documents.data.length === 0 ? "No sales yet — start your first sale above." : "No sales match these filters."}
-          </p>
+          <div className={layout.emptyState}>
+            {documents.data.length === 0 ? (
+              <>
+                <p style={{ margin: "0 0 var(--space-3)" }}>No sales yet. Create your first invoice in under a minute.</p>
+                <Link to="/sales/new" className={ui.btnPrimary}>
+                  + New sale
+                </Link>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 var(--space-3)" }}>No sales match these filters.</p>
+                <button
+                  type="button"
+                  className={ui.btnSecondary}
+                  onClick={() => {
+                    setStatus("ALL");
+                    setType("ALL");
+                    setQuery("");
+                    setFrom("");
+                    setTo("");
+                  }}
+                >
+                  Clear filters
+                </button>
+              </>
+            )}
+          </div>
         ) : (
           <div>
             {picked.size > 0 ? (
@@ -280,7 +296,7 @@ export function SalesListPage() {
                     <td>{DOCUMENT_TYPE_LABELS[d.DocumentType]}</td>
                     <td>
                       <span className={ui.badge} data-tone={statusTone(d.Status)}>
-                        {d.Status}
+                        {STATUS_LABELS[d.Status]}
                       </span>
                       {workflowByDoc.get(d.ID) ? <> <StatusBadge name={workflowByDoc.get(d.ID)!.name} color={workflowByDoc.get(d.ID)!.color} /></> : null}
                     </td>

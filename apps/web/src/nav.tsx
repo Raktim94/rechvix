@@ -9,7 +9,10 @@ import {
   GstIcon,
   ImportIcon,
   IntegrationsIcon,
+  BankIcon,
   InventoryIcon,
+  PipelineIcon,
+  WrenchIcon,
   PurchasesIcon,
   ReportsIcon,
   SalesIcon,
@@ -58,8 +61,8 @@ export const NAV_GROUPS: NavGroup[] = [
     titleKey: "nav.group.relationships",
     items: [
       { to: "/contacts", labelKey: "nav.item.contacts", icon: <ContactsIcon /> },
-      { to: "/crm", labelKey: "nav.item.crm", icon: <ContactsIcon /> },
-      { to: "/service", labelKey: "nav.item.service", icon: <SettingsIcon /> },
+      { to: "/crm", labelKey: "nav.item.crm", icon: <PipelineIcon /> },
+      { to: "/service", labelKey: "nav.item.service", icon: <WrenchIcon /> },
     ],
   },
   {
@@ -67,7 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/accounting", labelKey: "nav.item.accounting", icon: <AccountingIcon /> },
       { to: "/expenses", labelKey: "nav.item.expenses", icon: <WalletIcon /> },
-      { to: "/sepa", labelKey: "nav.item.sepa", icon: <WalletIcon /> },
+      { to: "/sepa", labelKey: "nav.item.sepa", icon: <BankIcon /> },
       { to: "/gst", labelKey: "nav.item.tax", icon: <GstIcon /> },
       { to: "/reports", labelKey: "nav.item.reports", icon: <ReportsIcon /> },
     ],

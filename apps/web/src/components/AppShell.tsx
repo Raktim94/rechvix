@@ -14,6 +14,7 @@ import { navLabel } from "./navLabel";
 import { setFormatRegion } from "../i18n";
 import { useOrgContext } from "../lib/useOrgContext";
 import { useRetailMode, visibleNavGroups } from "../lib/retailMode";
+import { NAV_GROUPS } from "../nav";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -31,6 +32,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const createRef = useRef<HTMLDivElement>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // Browser tab / history / screen-reader page title follows the section
+  // ("Sales · rechvix") instead of every page being just "rechvix".
+  useEffect(() => {
+    const items = NAV_GROUPS.flatMap((g) => g.items);
+    const match = items
+      .filter((i) => (i.to === "/" ? pathname === "/" : pathname === i.to || pathname.startsWith(`${i.to}/`)))
+      .sort((a, b) => b.to.length - a.to.length)[0];
+    document.title = match ? `${navLabel(t, match, country)} · rechvix` : "rechvix";
+  }, [pathname, t, country]);
 
   useEffect(() => {
     if (!menuOpen && !createOpen) return;
