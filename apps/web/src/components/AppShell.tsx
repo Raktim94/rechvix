@@ -9,6 +9,7 @@ import { PlusIcon, SearchIcon } from "./icons";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { useAuth } from "../auth/AuthProvider";
 import { useTheme } from "../theme/ThemeProvider";
+import { MobileNav } from "./MobileNav";
 import { LanguageMenuItems } from "./LanguageMenuItems";
 import { navLabel } from "./navLabel";
 import { setFormatRegion } from "../i18n";
@@ -98,10 +99,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // On phones the nav is a horizontally scrolling tab bar: keep the current page's tab in view.
-  useEffect(() => {
-    document.querySelector<HTMLElement>(`.${styles.navLinkActive}`)?.scrollIntoView({ inline: "center", block: "nearest" });
-  }, [pathname]);
 
   return (
     <div className={styles.shell}>
@@ -142,6 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </a>
         </p>
       </nav>
+      <MobileNav />
 
       <header className={styles.topbar}>
         <button type="button" className={styles.search} onClick={() => setPaletteOpen(true)} aria-label={t("shell.searchPlaceholder")}>

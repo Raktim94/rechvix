@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "Servicedienst",
       "sepa": "SEPA-incasso"
-    }
+    },
+    "more": "Meer"
   },
   "shell": {
     "skipToContent": "Ga naar hoofdinhoud",

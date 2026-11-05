@@ -61,21 +61,8 @@
 }
 
 @media (max-width: 767px) {
+  /* Phones use MobileNav (bottom bar + "More" sheet) instead of the rail. */
   .nav {
-    border-right: none;
-    border-top: 1px solid var(--color-rail-border);
-    flex-direction: row;
-    justify-content: space-around;
-    overflow-x: auto;
-    padding: var(--space-1) 0;
-    min-height: auto;
-    /* More tabs than fit: hide the scrollbar and fade the right edge so it
-       reads as "swipe for more" instead of a clipped label. */
-    scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
-  }
-  .nav::-webkit-scrollbar {
     display: none;
   }
 }

@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "Assistenza tecnica",
       "sepa": "Addebito SEPA"
-    }
+    },
+    "more": "Altro"
   },
   "shell": {
     "skipToContent": "Vai al contenuto principale",

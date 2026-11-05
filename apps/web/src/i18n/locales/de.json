@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "Kundendienst",
       "sepa": "SEPA-Lastschrift"
-    }
+    },
+    "more": "Mehr"
   },
   "shell": {
     "skipToContent": "Zum Hauptinhalt springen",

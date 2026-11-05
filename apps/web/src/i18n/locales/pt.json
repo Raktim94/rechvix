@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "Assistência técnica",
       "sepa": "Débito direto SEPA"
-    }
+    },
+    "more": "Mais"
   },
   "shell": {
     "skipToContent": "Saltar para o conteúdo principal",

@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "Servicio técnico",
       "sepa": "Adeudos SEPA"
-    }
+    },
+    "more": "Más"
   },
   "shell": {
     "skipToContent": "Saltar al contenido principal",

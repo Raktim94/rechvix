@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "Field service",
       "sepa": "Direct debit"
-    }
+    },
+    "more": "More"
   },
   "shell": {
     "skipToContent": "Skip to main content",

@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "फ़ील्ड सेवा",
       "sepa": "SEPA डायरेक्ट डेबिट"
-    }
+    },
+    "more": "और"
   },
   "shell": {
     "skipToContent": "मुख्य सामग्री पर जाएँ",

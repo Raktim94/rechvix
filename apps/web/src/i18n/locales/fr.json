@@ -47,7 +47,8 @@
       "crm": "CRM",
       "service": "Service sur site",
       "sepa": "Prélèvement SEPA"
-    }
+    },
+    "more": "Plus"
   },
   "shell": {
     "skipToContent": "Aller au contenu principal",
