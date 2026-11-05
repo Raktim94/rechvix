@@ -13,6 +13,23 @@
 
 # Changelog
 
+## Unreleased
+
+Everyday-use polish across billing, purchasing, reporting and phones. No database migration. API changes are additive.
+
+- **Fixed: customer search missed name fragments.** Typing the first word of a customer ("Gupta") found nothing for "Gupta Engineering Works", so the billing box offered only "+ New customer". Search now matches substrings of the name, trade name, email and phone (case-insensitive, wildcards escaped), ranks prefix matches first and keeps trigram matching for typos. Integration test included.
+- **Item names everywhere.** `GET /sales/documents/{id}` and `GET /purchases/documents/{id}` also return `line_names` (variant id to product name). Resumed drafts no longer show "Item 1", the finalized invoice page and saved purchase bills gain an Item column, and a saved purchase shows its bill number as the heading.
+- **Collect payment faster.** "Record payment" leads the invoice actions, opens the form with the full balance filled in, and disappears once the invoice is paid in full. Rarely used panels (payment links, e-signature, recurring, email, share links) sit under one disclosure.
+- **Sales list.** All / Invoices / Drafts / Quotations / Orders views with counts, an empty state with a New sale button, secondary filters behind "More filters".
+- **Billing screen.** Language, currency and exchange rate fold into "More options"; Start sale explains why it is disabled; the catalogue list no longer pushes the bill off screen once items are added; stock counts show as plain text unless low or out.
+- **Inventory** opens on a stock-on-hand table instead of an empty search. **Reports** gain a period selector (last 30 days, this month, last month, quarter, financial year, custom) applied to every dated report, chart and export. **GST / Tax** leads with filing and accountant files.
+- **Dashboard "Get started" checklist** driven by real data (business state, items, first customer, first invoice) that hides itself once complete.
+- **Phones.** A bottom bar (Home, Sales, Catalogue, Contacts, More) with a full-menu sheet replaces the 16-item scrolling strip; sales, catalogue, contacts and purchases lists become stacked rows instead of tables that hide their totals off screen.
+- **Design.** No gradients or glow shadows, no endlessly looping skeleton shimmer, no card-inside-card (empty states, billing total, nested import panel), real SVG icons instead of text glyphs and emoji, status badges only where they say something, concentric radii where boxes still nest.
+- **Accessibility.** Defined the missing `.sr-only` class (screen-reader-only captions were rendering visibly), labelled the calendar assignee select, per-section browser tab titles. axe-core (WCAG 2.1 AA and best practice) reports no violations across all 20 app routes at 1440 and 390 px.
+- **Deployment.** Optional `HTTP_BIND` in the Compose file to publish the app on 127.0.0.1 behind a same-host TLS proxy; the default is unchanged.
+- **Not yet done:** the purchases list has no total column (the purchase document does not carry one), and many screens still use English literals outside the eight-language files.
+
 ## 0.22.0
 
 CRM, brought up to the everyday standard of a sales team's tools (adapting Zulivio's lead scoring, My Day queue, funnel and bulk-assignment conventions). No database migration and no new endpoints; everything below is drawn from the leads already in the CRM.
