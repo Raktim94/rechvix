@@ -40,3 +40,29 @@
   margin-top: var(--space-3);
   border-top: 1px solid var(--color-border);
 }
+
+/* Rarely used panels (payment links, e-signature, recurring, email, share links)
+   sit behind one disclosure so payment and the invoice stay the focus. */
+.moreActions {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+.moreActions > summary {
+  cursor: pointer;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.moreActions > summary:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+.moreActionsBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-top: var(--space-3);
+}

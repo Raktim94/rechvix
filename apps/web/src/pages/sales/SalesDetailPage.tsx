@@ -37,6 +37,19 @@ export function SalesDetailPage({ id }: { id: string }) {
     queryFn: () => api.get<{ document: SalesDocument; lines: SalesDocumentLine[]; line_names?: Record<string, string> }>(`/sales/documents/${id}`),
   });
 
+  // Same query (and cache entry) PaymentPanel uses, so the header action can
+  // hide itself once the invoice is paid in full.
+  const receipts = useQuery({
+    queryKey: ["sales-doc-receipts", id],
+    queryFn: () => api.getListField<{ Amount: { amount: string } }>(`/accounting/sales-documents/${id}/receipts`, "receipts"),
+    enabled: doc.data?.document.Status === "FINALIZED",
+  });
+  const paidInFull = (() => {
+    const total = Number(doc.data?.document.GrandTotalAmount?.amount ?? "0");
+    const paid = (receipts.data ?? []).reduce((sum, r) => sum + Number(r.Amount.amount), 0);
+    return total > 0 && paid >= total;
+  })();
+
   // Converts this FINALIZED document into a new DRAFT of targetType via
   // the generic sales.Service.ConvertDocument (POST .../convert, no
   // line_quantities = every line copied at full quantity) — the
@@ -115,6 +128,21 @@ export function SalesDetailPage({ id }: { id: string }) {
           </Link>
         ) : (
           <div className={styles.headerActions}>
+            {/* Collecting payment is the most common next step after a sale, so it
+                leads the action row instead of sitting at the bottom of the page. */}
+            {document.Status === "FINALIZED" && PAYABLE_TYPES.has(document.DocumentType) && !paidInFull ? (
+              <button
+                type="button"
+                className={ui.btnPrimary}
+                onClick={() => {
+                  const doc = window.document;
+                  doc.getElementById("payment")?.scrollIntoView({ block: "center" });
+                  doc.getElementById("record-payment-RECEIVE")?.click();
+                }}
+              >
+                Record payment
+              </button>
+            ) : null}
             <PrintTemplateMenu documentId={document.ID} />
             {document.Status === "FINALIZED"
               ? (CONVERTIBLE_TARGETS[document.DocumentType] ?? []).map((target) => (
@@ -249,15 +277,25 @@ export function SalesDetailPage({ id }: { id: string }) {
       </div>
 
       {document.Status === "FINALIZED" && PAYABLE_TYPES.has(document.DocumentType) ? (
-        <PaymentPanel documentId={document.ID} partyId={document.CustomerPartyID} grandTotal={document.GrandTotalAmount} direction="RECEIVE" />
+        <div id="payment" style={{ scrollMarginTop: 80 }}>
+          <PaymentPanel documentId={document.ID} partyId={document.CustomerPartyID} grandTotal={document.GrandTotalAmount} direction="RECEIVE" />
+        </div>
       ) : null}
 
       <DocumentStatusPicker documentId={document.ID} />
-      {document.Status === "FINALIZED" && (document.DocumentType === "TAX_INVOICE" || document.DocumentType === "POS_INVOICE" || document.DocumentType === "DEBIT_NOTE") ? <PaymentLinksPanel documentId={document.ID} outstanding /> : null}
-      {document.Status === "FINALIZED" ? <SignatureRequestPanel documentId={document.ID} /> : null}
-      {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? <RepeatInvoiceForm documentId={document.ID} /> : null}
-      {document.Status !== "DRAFT" ? <EmailDocumentPanel documentType="sales_document" documentId={document.ID} subject={`${document.DocumentNumber}`} /> : null}
-      {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}
+      {(
+        <details className={styles.moreActions}>
+          <summary>More ways to share, sign and automate</summary>
+          <div className={styles.moreActionsBody}>
+            {document.Status === "FINALIZED" && (document.DocumentType === "TAX_INVOICE" || document.DocumentType === "POS_INVOICE" || document.DocumentType === "DEBIT_NOTE") ? <PaymentLinksPanel documentId={document.ID} outstanding /> : null}
+            {document.Status === "FINALIZED" ? <SignatureRequestPanel documentId={document.ID} /> : null}
+            {document.Status === "FINALIZED" && document.DocumentType === "TAX_INVOICE" ? <RepeatInvoiceForm documentId={document.ID} /> : null}
+            {document.Status !== "DRAFT" ? <EmailDocumentPanel documentType="sales_document" documentId={document.ID} subject={`${document.DocumentNumber}`} /> : null}
+            {document.Status !== "DRAFT" ? <ShareLinksPanel documentType="sales_document" documentId={document.ID} /> : null}
+
+          </div>
+        </details>
+      )}
 
       <CreateReturnModal open={returnModalOpen} onOpenChange={setReturnModalOpen} document={document} lines={lines} />
       <CancelDocumentModal open={cancelModalOpen} onOpenChange={setCancelModalOpen} document={document} />

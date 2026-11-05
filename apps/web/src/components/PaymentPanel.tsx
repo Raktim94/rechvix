@@ -132,8 +132,19 @@ export function PaymentPanel({
       <div className={ui.toolbar}>
         <h2 style={{ margin: 0 }}>{isReceive ? "Payment received" : "Payment made"}</h2>
         <div className={ui.toolbarSpacer} />
-        {!showForm ? (
-          <button type="button" className={ui.btnPrimary} onClick={() => setShowForm(true)}>
+        {!showForm && outstanding <= 0 && grandTotalNumber > 0 ? (
+          <span className={ui.badge} data-tone="positive">
+            Paid in full
+          </span>
+        ) : null}
+        {!showForm && !(outstanding <= 0 && grandTotalNumber > 0) ? (
+          <button type="button" id={`record-payment-${direction}`} className={ui.btnPrimary}
+            onClick={() => {
+              // Most payments settle the whole balance, so open with it filled in.
+              if (outstanding > 0) pickQuickAmount("FULL");
+              setShowForm(true);
+            }}
+          >
             + Record {isReceive ? "payment received" : "payment made"}
           </button>
         ) : null}
