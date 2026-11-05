@@ -14,6 +14,7 @@ import layout from "../DashboardPage.module.css";
 import { CancelPurchaseModal } from "./CancelPurchaseModal";
 import { ImportAiMarkdownButton } from "./ImportAiMarkdownButton";
 import { PurchaseEntry } from "./PurchaseEntry";
+import { humanize } from "../../lib/humanize";
 import { PurchaseScanReviewModal, type ResolvedScanLine } from "./PurchaseScanReviewModal";
 
 type PurchaseStatus = "DRAFT" | "FINALIZED" | "CANCELLED";
@@ -527,7 +528,7 @@ export function PurchasesPage() {
           </div>
         ) : (
           <div className={ui.tableScroll} tabIndex={0}>
-            <table className={ui.table}>
+            <table className={`${ui.table} ${ui.tableStack}`}>
               <thead>
                 <tr>
                   <th scope="col">Number</th>
@@ -540,7 +541,7 @@ export function PurchasesPage() {
               <tbody>
                 {filteredDocuments.map((d) => (
                   <tr key={d.ID}>
-                    <td>
+                    <td data-primary>
                       {/* A real <button> (SalesListPage's own row pattern
                           uses <Link> — this screen has no URL route per
                           document yet, so button is the equivalent
@@ -550,14 +551,14 @@ export function PurchasesPage() {
                         {d.DocumentNumber || "(draft)"}
                       </button>
                     </td>
-                    <td>{supplierNameById.get(d.SupplierPartyID) ?? "—"}</td>
-                    <td>{d.DocumentType}</td>
+                    <td data-label="Supplier">{supplierNameById.get(d.SupplierPartyID) ?? "—"}</td>
+                    <td data-label="Type">{humanize(d.DocumentType)}</td>
                     <td>
                       <span className={ui.badge} data-tone={d.Status === "FINALIZED" ? "positive" : d.Status === "CANCELLED" ? "negative" : "warning"}>
-                        {d.Status}
+                        {humanize(d.Status)}
                       </span>
                     </td>
-                    <td>{new Date(d.DocumentDate).toLocaleDateString()}</td>
+                    <td data-label="Date">{new Date(d.DocumentDate).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>

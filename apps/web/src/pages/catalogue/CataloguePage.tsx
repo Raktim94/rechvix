@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { humanize } from "../../lib/humanize";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
@@ -865,7 +866,7 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
               </p>
             ) : null}
             <div className={ui.tableScroll} tabIndex={0}>
-              <table className={ui.table}>
+              <table className={`${ui.table} ${ui.tableStack}`}>
                 <thead>
                   <tr>
                     <th scope="col">
@@ -890,18 +891,21 @@ export function CataloguePage({ openNewForm = false }: { openNewForm?: boolean }
                     const priceItem = p.DefaultVariantID ? priceByVariantId.get(p.DefaultVariantID) : undefined;
                     return (
                       <tr key={p.ID} style={p.Status === "INACTIVE" ? { opacity: 0.6 } : undefined}>
-                        <td>
+                        <td data-hide-stacked>
                           <input type="checkbox" aria-label={`Select ${p.Name}`} checked={selectedIds.has(p.ID)} onChange={() => toggleSelected(p.ID)} />
                         </td>
-                        <td>{p.Name}</td>
-                        <td>{p.HSNSACCode}</td>
-                        <td>{priceItem ? formatMoney(priceItem.Price) : <span className={ui.muted}>Not set</span>}</td>
-                        <td>{p.CategoryID ? (categoryNameById.get(p.CategoryID) ?? "—") : "—"}</td>
-                        <td>{p.BrandID ? (brandNameById.get(p.BrandID) ?? "—") : "—"}</td>
+                        <td data-primary>{p.Name}</td>
+                        <td data-label="HSN/SAC">{p.HSNSACCode}</td>
+                        <td data-end>{priceItem ? formatMoney(priceItem.Price) : <span className={ui.muted}>Price not set</span>}</td>
+                        <td data-label="Category">{p.CategoryID ? (categoryNameById.get(p.CategoryID) ?? "—") : "—"}</td>
+                        <td data-label="Brand">{p.BrandID ? (brandNameById.get(p.BrandID) ?? "—") : "—"}</td>
+                        {/* "Active" is the normal state and says nothing; only flag the exception. */}
                         <td>
-                          <span className={ui.badge} data-tone={p.Status === "ACTIVE" ? "positive" : "neutral"}>
-                            {p.Status}
-                          </span>
+                          {p.Status !== "ACTIVE" ? (
+                            <span className={ui.badge} data-tone="neutral">
+                              {humanize(p.Status)}
+                            </span>
+                          ) : null}
                         </td>
                         <td>
                           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>

@@ -388,7 +388,8 @@
   .tableStack td {
     grid-column: 1 / -1;
   }
-  .tableStack td:empty {
+  .tableStack td:empty,
+  .tableStack td[data-hide-stacked] {
     display: none;
   }
   .tableStack td[data-label]::before {

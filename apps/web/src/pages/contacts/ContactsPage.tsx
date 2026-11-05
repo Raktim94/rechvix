@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { humanize } from "../../lib/humanize";
 import { ImportPanel } from "../../components/ImportPanel";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
@@ -181,7 +182,7 @@ export function ContactsPage() {
           <p className={layout.emptyState}>{parties.data.length === 0 ? "No contacts yet." : "No contacts match this filter."}</p>
         ) : (
           <div className={ui.tableScroll} tabIndex={0}>
-            <table className={ui.table}>
+            <table className={`${ui.table} ${ui.tableStack}`}>
               <thead>
                 <tr>
                   <th scope="col">Name</th>
@@ -194,19 +195,19 @@ export function ContactsPage() {
               <tbody>
                 {filteredParties.map((p) => (
                   <tr key={p.ID}>
-                    <td>
+                    <td data-primary>
                       <Link to="/contacts/$id" params={{ id: p.ID }} className={ui.linkRow}>
                         {p.LegalName}
                       </Link>
                     </td>
                     <td>
                       <span className={ui.badge} data-tone="neutral">
-                        {p.PartyType}
+                        {humanize(p.PartyType)}
                       </span>
                     </td>
-                    <td>{p.Phone}</td>
-                    <td>{p.Email}</td>
-                    <td className="num">
+                    <td data-label="Phone">{p.Phone}</td>
+                    <td data-label="Email">{p.Email}</td>
+                    <td className="num" data-end>
                       <PartyBalanceCell partyId={p.ID} />
                     </td>
                   </tr>
