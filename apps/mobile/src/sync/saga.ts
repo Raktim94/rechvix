@@ -24,7 +24,7 @@ interface DocView {
   document: { ID: string; Status: string; DocumentNumber: string; GrandTotalAmount: Money | null };
   lines: { ID: string }[] | null;
 }
-interface ReceiptList { receipts: { Amount: Money }[] | null }
+interface ReceiptList { receipts: { Amount: Money; ReferenceNumber?: string }[] | null }
 
 /** A prerequisite isn't on the server yet. Not an error: the sale simply waits for the next sync. */
 export class NotReadyError extends Error {}
@@ -99,6 +99,24 @@ export async function runSale(
       });
     }
     p.receipted = true;
+    await save(p);
+  }
+
+  // Each phone-recorded payment has a stable reference. If the request succeeded but the app
+  // closed before saving progress, the next retry finds that receipt and does not create it again.
+  const payments = payload.payments ?? [];
+  for (let i = p.paymentCount ?? 0; i < payments.length; i++) {
+    const entry = payments[i]!;
+    const reference = `${customerReference(localId)}:payment:${i + 1}`;
+    const existing = await api.get<ReceiptList>(`/accounting/sales-documents/${docId}/receipts`);
+    const alreadyRecorded = (existing.receipts ?? []).some((receipt) => receipt.ReferenceNumber === reference);
+    if (!alreadyRecorded) {
+      await api.post("/accounting/receipts", {
+        party_id: customerId, sales_document_id: docId, amount: entry.amount,
+        method: entry.method, reference_number: reference,
+      });
+    }
+    p.paymentCount = i + 1;
     await save(p);
   }
   return { progress: p, docNumber: view.document.DocumentNumber, total };
