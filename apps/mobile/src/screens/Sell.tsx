@@ -201,7 +201,7 @@ function Done({ info, currency, onView, onNew }: { info: { id: string; number: s
       const s = await db.first<{ payload: string; created_at: number; local_number: string | null }>("SELECT payload, created_at, local_number FROM sales WHERE local_id=?", [info.id]);
       if (s) {
         const p = JSON.parse(s.payload) as { customerName: string; lines: SaleLine[]; paymentMethod: string | null };
-        await shareInvoice({ number: s.local_number ?? info.number, date: s.created_at, business: profile, customerName: p.customerName, lines: p.lines, paymentMethod: p.paymentMethod, currency });
+        await shareInvoice({ number: s.local_number ?? info.number, date: s.created_at, business: profile, customerName: p.customerName, lines: p.lines, paymentMethod: p.paymentMethod, currency, theme: profile.invoiceTheme });
       }
     } finally { setBusy(false); }
   }
