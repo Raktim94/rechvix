@@ -3,7 +3,7 @@
   Fails unless the Store package and the package that was install-tested hold exactly the same files.
 
 .DESCRIPTION
-  Only the signature (AppxSignature.p7x) and the content-types list that mentions it may differ. Every other entry, including
+  Only signature metadata may differ: the signature itself (AppxSignature.p7x), the content-types list that mentions it, and the code-integrity catalog (AppxMetadata/CodeIntegrity.cat) that signing regenerates. Every other entry, including
   both executables, the bundled PostgreSQL, the web app and the manifest, must be byte-identical. This is what lets "the
   installer test passed" mean "the file we upload to the Store works".
 #>
@@ -30,7 +30,7 @@ function Get-EntryHashes([string]$path) {
 
 $a = Get-EntryHashes $Store
 $b = Get-EntryHashes $Tested
-$ignore = @("AppxSignature.p7x", "[Content_Types].xml")
+$ignore = @("AppxSignature.p7x", "[Content_Types].xml", "AppxMetadata/CodeIntegrity.cat")
 $all = @($a.Keys) + @($b.Keys) | Sort-Object -Unique
 $diff = $all | Where-Object { ($ignore -notcontains $_) -and ($a[$_] -ne $b[$_]) }
 if ($diff) { throw "The Store package and the tested package differ in: $($diff -join ', ')" }
