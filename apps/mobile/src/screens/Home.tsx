@@ -4,6 +4,7 @@ import { listSales, type Product } from "../db/repo";
 import { useLocal } from "../lib/hooks";
 import { formatMoney, num } from "../lib/money";
 import { calcTotals } from "../lib/tax";
+import { outstandingAmount } from "../lib/receivables";
 import { useApp } from "../state/app";
 import { radius, space, usePalette } from "../theme";
 import { Card, Icon, Label, Screen, Tap, type IconName } from "../ui/kit";
@@ -37,8 +38,8 @@ export function Home({ go, open, addItem, addCustomer }: { go: (t: Go) => void; 
   const start = new Date(); start.setHours(0, 0, 0, 0);
   const today = sales.filter((s) => s.created_at >= start.getTime());
   const todayTotal = today.reduce((n, s) => n + total(s), 0);
-  const unpaid = sales.filter((s) => !s.payload.paymentMethod);
-  const unpaidTotal = unpaid.reduce((n, s) => n + total(s), 0);
+  const unpaid = sales.filter((s) => outstandingAmount(s) > 0.004);
+  const unpaidTotal = unpaid.reduce((n, s) => n + outstandingAmount(s), 0);
   const hour = new Date().getHours();
   const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
