@@ -6,7 +6,7 @@ import { productByCode, searchParties, searchProducts, type Party, type Product,
 import { shareInvoice } from "../lib/share";
 import { useLocal } from "../lib/hooks";
 import { bumpQty, formatMoney, isValidQty, lineAmount, num } from "../lib/money";
-import { calcTotals } from "../lib/tax";
+import { calcTotals, exclusiveUnitPrice } from "../lib/tax";
 import { useApp } from "../state/app";
 import { fonts, radius, space, usePalette } from "../theme";
 import { Button, Card, Chip, Divider, Empty, Header, Icon, IconButton, Label, Screen, Tap } from "../ui/kit";
@@ -22,6 +22,7 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [q, setQ] = useState("");
   const [pay, setPay] = useState<string | null>("CASH");
+  const [priceIncludesTax, setPriceIncludesTax] = useState(true);
   const [pickCustomer, setPickCustomer] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanHint, setScanHint] = useState<string | null>(null);
@@ -51,7 +52,10 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
     if (p) { add(p); setScanHint(`Added ${p.name}`); } else setScanHint(`No item with code ${code}.`);
   }
 
-  const totals = calcTotals(lines);
+  const pricedLines = useMemo(() => lines.map((l) => priceIncludesTax
+    ? { ...l, price: String(exclusiveUnitPrice(l.price, l.gstRate)), grossPrice: l.price }
+    : l), [lines, priceIncludesTax]);
+  const totals = calcTotals(pricedLines);
   const bad = lines.find((l) => !isValidQty(l.qty));
   const priceMissing = lines.some((l) => num(l.price) <= 0);
   const over = lines.filter((l) => { const s = stockById.get(l.variantId); return s != null && num(l.qty) > num(s); });
@@ -60,7 +64,7 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
   async function save() {
     if (!who) return;
     setSaving(true);
-    const r = await saveSale({ customerId: who.id, customerName: who.name, lines, paymentMethod: pay });
+    const r = await saveSale({ customerId: who.id, customerName: who.name, lines: pricedLines, paymentMethod: pay });
     setSaving(false);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDone({ id: r.localId, number: r.number, total: totals.total });
@@ -88,6 +92,7 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
                 style={{ flex: 1, minHeight: 52, paddingHorizontal: 10, fontSize: 17, color: c.text, fontFamily: fonts.body }} />
             </View>
             <IconButton name="barcode-outline" label="Scan barcode" tone="accent" onPress={() => { setScanHint(null); setScanning(true); }} />
+            <IconButton name="add-circle-outline" label="Add product while billing" onPress={addItem} />
           </View>
 
           {anyItems === 0 ? (
@@ -125,10 +130,11 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
                       </View>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                         <Stepper label="Decrease" icon="remove" onPress={() => change(l.variantId, -1)} />
-                        <T v="money" style={{ minWidth: 40, textAlign: "center", fontSize: 18 }}>{l.qty}</T>
+                        <TextInput accessibilityLabel={`Quantity of ${l.name}`} value={l.qty} onChangeText={(v) => setLines((ls) => ls.map((x) => x.variantId === l.variantId ? { ...x, qty: v.replace(/[^0-9.]/g, "") } : x))} keyboardType="decimal-pad" selectTextOnFocus
+                          style={{ width: 58, minHeight: 44, borderRadius: radius.sm + 2, borderWidth: 1, borderColor: isValidQty(l.qty) ? c.border : c.negative, color: c.text, paddingHorizontal: 6, fontSize: 16, textAlign: "center", fontFamily: fonts.mono }} />
                         <Stepper label="Increase" icon="add" onPress={() => change(l.variantId, 1)} />
                         <T v="small" muted>×</T>
-                        <TextInput accessibilityLabel={`Price of ${l.name}`} value={l.price} onChangeText={(t) => setPrice(l.variantId, t.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad"
+                        <TextInput accessibilityLabel={`${priceIncludesTax ? "Final price including GST" : "Price before GST"} for ${l.name}`} value={l.price} onChangeText={(t) => setPrice(l.variantId, t.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" selectTextOnFocus
                           style={{ flex: 1, minWidth: 84, minHeight: 44, borderRadius: radius.sm + 2, borderWidth: 1, borderColor: num(l.price) <= 0 ? c.negative : c.border, color: c.text, paddingHorizontal: 10, fontSize: 16, textAlign: "right", fontFamily: fonts.mono }} />
                       </View>
                     </View>
@@ -138,6 +144,15 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
               </Card>
               {over.length > 0 ? <T v="small" color={c.warning}>Only {stockById.get(over[0]!.variantId)} of {over[0]!.name} in stock.{linked ? " The server may refuse this sale." : ""}</T> : null}
               {priceMissing ? <T v="small" color={c.negative}>An item has no price. Set one before saving.</T> : null}
+
+              <View style={{ gap: 8 }}>
+                <Label>Item price mode</Label>
+                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                  <Chip title="Final price includes GST" active={priceIncludesTax} onPress={() => setPriceIncludesTax(true)} />
+                  <Chip title="Add GST on top" active={!priceIncludesTax} onPress={() => setPriceIncludesTax(false)} />
+                </View>
+                <T v="small" muted>{priceIncludesTax ? "Enter the amount the customer will pay. GST is calculated backwards from this final price." : "GST is added to the entered item price."}</T>
+              </View>
 
               <Label>Payment</Label>
               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{PAY.map((p) => <Chip key={p.label} title={p.label} active={pay === p.key} onPress={() => setPay(p.key)} />)}</View>
@@ -149,7 +164,7 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: space.lg, backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.border, gap: 10 }}>
         <View style={{ gap: 3 }}>
           <Row k={`${lines.length} item${lines.length === 1 ? "" : "s"} · subtotal`} v={formatMoney(totals.subtotal, currency)} />
-          {totals.tax > 0 ? <Row k={`GST${linked ? " (estimate)" : ""}`} v={formatMoney(totals.tax, currency)} /> : profile?.country === "IN" && lines.length > 0 && !lines.some((l) => num(l.gstRate) > 0) && linked ? <T v="small" muted>Tax is added by the server when this syncs.</T> : null}
+          {totals.tax > 0 ? <Row k={`GST${priceIncludesTax ? " included" : ""}${linked ? " (estimate)" : ""}`} v={formatMoney(totals.tax, currency)} /> : profile?.country === "IN" && lines.length > 0 && !lines.some((l) => num(l.gstRate) > 0) && linked ? <T v="small" muted>Tax is added by the server when this syncs.</T> : null}
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" }}><T v="h3">Total</T><T v="moneyLg">{formatMoney(totals.total, currency)}</T></View>
         </View>
         <Button title={linked ? "Save sale" : "Save invoice"} onPress={() => void save()} disabled={!canSave} busy={saving} icon="checkmark-circle-outline" />
