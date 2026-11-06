@@ -596,6 +596,9 @@ type RecordReceiptParams struct {
 	Method          domain.PaymentMethod
 	ReferenceNumber string
 	ReceivedAt      time.Time
+	// ClientRef makes the call idempotent: if a receipt with this reference already exists it is returned unchanged
+	// (provided it matches this request) and nothing is booked a second time.
+	ClientRef string
 }
 
 // RecordReceipt books money received from a customer: Dr Bank/Cash (or the
@@ -608,7 +611,16 @@ func (s *Service) RecordReceipt(ctx context.Context, principal permissions.Princ
 		return nil, err
 	}
 	if !p.Amount.IsPositive() {
-		return nil, fmt.Errorf("accounting: receipt amount must be positive")
+		return nil, domain.Invalid("receipt amount must be positive")
+	}
+	p.ClientRef = strings.TrimSpace(p.ClientRef)
+	if len(p.ClientRef) > 200 {
+		return nil, domain.Invalid("client_ref is too long")
+	}
+	if p.ClientRef != "" {
+		if existing, err := s.existingByClientRef(ctx, principal, p); existing != nil || err != nil {
+			return existing, err
+		}
 	}
 	now := s.now()
 	receivedAt := p.ReceivedAt
@@ -651,14 +663,105 @@ func (s *Service) RecordReceipt(ctx context.Context, principal permissions.Princ
 		rec = &domain.Receipt{
 			ID: id, OrganisationID: principal.OrganisationID, PartyID: p.PartyID, SalesDocumentID: p.SalesDocumentID,
 			Amount: amount, BankAccountID: p.BankAccountID, Method: p.Method, ReferenceNumber: p.ReferenceNumber,
-			ReceivedAt: receivedAt, JournalID: j.ID, CreatedBy: principal.UserID, CreatedAt: now,
+			ReceivedAt: receivedAt, JournalID: j.ID, CreatedBy: principal.UserID, CreatedAt: now, ClientRef: p.ClientRef,
 		}
 		return s.receipts.Create(ctx, rec)
 	})
+	if errors.Is(err, domain.ErrDuplicateClientRef) {
+		// Two identical requests raced: the loser's transaction (and its journal) rolled back; return the winner's receipt.
+		existing, getErr := s.existingByClientRef(ctx, principal, p)
+		if existing != nil || getErr != nil {
+			return existing, getErr
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	return rec, nil
+}
+
+// existingByClientRef returns the receipt already booked under p.ClientRef, or (nil, nil) when there is none. A reused
+// client_ref with different details is an error: it means the caller is mixing up its own ids, and silently returning
+// the old receipt would hide that.
+func (s *Service) existingByClientRef(ctx context.Context, principal permissions.Principal, p RecordReceiptParams) (*domain.Receipt, error) {
+	var found *domain.Receipt
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		r, err := s.receipts.GetByClientRef(ctx, principal.OrganisationID, p.ClientRef)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = r
+		return nil
+	})
+	if err != nil || found == nil {
+		return nil, err
+	}
+	sameDoc := (found.SalesDocumentID == nil && p.SalesDocumentID == nil) ||
+		(found.SalesDocumentID != nil && p.SalesDocumentID != nil && *found.SalesDocumentID == *p.SalesDocumentID)
+	if found.PartyID != p.PartyID || !sameDoc || !found.Amount.Decimal().Equal(p.Amount) {
+		return nil, domain.Invalid(fmt.Sprintf("client_ref %q was already used for a different receipt", p.ClientRef))
+	}
+	return found, nil
+}
+
+// ReverseReceipt undoes a receipt entered by mistake WITHOUT erasing it: a new journal with every line's debit and credit
+// swapped is posted (the original journal stays immutable), and the receipt row records who reversed it, when and why. The
+// customer's receivable goes back up by the same amount, and every "paid against this invoice" total ignores reversed receipts.
+func (s *Service) ReverseReceipt(ctx context.Context, principal permissions.Principal, id uuid.UUID, reason string) (*domain.Receipt, error) {
+	if err := s.post(ctx, principal); err != nil {
+		return nil, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, domain.Invalid("a reason is required to reverse a receipt")
+	}
+	if len(reason) > 500 {
+		return nil, domain.Invalid("the reversal reason is too long (500 characters at most)")
+	}
+	var out *domain.Receipt
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		rec, err := s.receipts.GetByID(ctx, principal.OrganisationID, id)
+		if err != nil {
+			return err
+		}
+		if rec.ReversedAt != nil {
+			return domain.ErrReceiptAlreadyReversed
+		}
+		lines, err := s.journalLines.ListByJournal(ctx, principal.OrganisationID, rec.JournalID)
+		if err != nil {
+			return err
+		}
+		desc := fmt.Sprintf("Reversal of receipt %s: %s", rec.ID, reason)
+		reqLines := make([]JournalLineRequest, 0, len(lines))
+		for _, l := range lines {
+			acct, err := s.accounts.GetByID(ctx, principal.OrganisationID, l.AccountID)
+			if err != nil {
+				return fmt.Errorf("accounting: resolving account for reversal: %w", err)
+			}
+			reqLines = append(reqLines, JournalLineRequest{AccountCode: acct.Code, PartyID: l.PartyID, Debit: l.Credit.Decimal(), Credit: l.Debit.Decimal(), Description: desc})
+		}
+		original := rec.JournalID
+		now := s.now()
+		j, err := s.PostTx(ctx, principal, JournalRequest{
+			OrganisationID: principal.OrganisationID, SourceType: "receipt_reversal", SourceID: &rec.ID,
+			JournalDate: now, Description: desc, CreatedBy: principal.UserID, Lines: reqLines, ReversedJournalID: &original,
+		})
+		if err != nil {
+			return err
+		}
+		if err := s.receipts.MarkReversed(ctx, principal.OrganisationID, rec.ID, principal.UserID, j.ID, reason, now); err != nil {
+			return err
+		}
+		out, err = s.receipts.GetByID(ctx, principal.OrganisationID, rec.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ListReceiptsForSalesDocument is the invoice-detail screen's read path

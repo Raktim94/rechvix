@@ -207,7 +207,7 @@ func (s *Service) document(ctx context.Context, id uuid.UUID) (*docInfo, error) 
 	var paid, credited decimal.Decimal
 	err := s.pool.Q(ctx).QueryRow(ctx, `
 		SELECT d.document_number, d.customer_party_id, d.legal_entity_id, d.currency_code, d.base_currency_code, d.status, d.document_type, COALESCE(d.grand_total_amount, 0),
-		       COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = d.id), 0),
+		       COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = d.id AND r.reversed_at IS NULL), 0),
 		       COALESCE((SELECT SUM(COALESCE(c.grand_total_amount, 0)) FROM sales_documents c WHERE c.reference_document_id = d.id AND c.status = 'FINALIZED' AND c.document_type IN ('CREDIT_NOTE', 'SALES_RETURN')), 0)
 		FROM sales_documents d WHERE d.id = $1`, id).Scan(&d.number, &d.partyID, &d.legalEntity, &d.currency, &d.baseCur, &d.status, &d.docType, &total, &paid, &credited)
 	if err != nil {

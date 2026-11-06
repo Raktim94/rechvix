@@ -747,7 +747,7 @@ func (s *Service) Portal(ctx context.Context, slug, token string) (*Portal, erro
 		rows, err := s.pool.Q(ctx).Query(ctx, `
 			SELECT d.id, d.document_number, d.document_type, to_char(d.issue_date, 'YYYY-MM-DD'), COALESCE(d.grand_total_amount, 0)::text, d.currency_code,
 			       CASE WHEN d.document_type IN ('TAX_INVOICE', 'POS_INVOICE', 'DEBIT_NOTE')
-			            THEN (COALESCE(d.grand_total_amount, 0) - COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = d.id), 0))::text ELSE '' END
+			            THEN (COALESCE(d.grand_total_amount, 0) - COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = d.id AND r.reversed_at IS NULL), 0))::text ELSE '' END
 			FROM sales_documents d WHERE d.organisation_id = $1 AND d.customer_party_id = $2 AND d.status = 'FINALIZED'
 			  AND d.document_type IN ('QUOTATION', 'PROFORMA_INVOICE', 'SALES_ORDER', 'DELIVERY_CHALLAN', 'TAX_INVOICE', 'POS_INVOICE', 'CREDIT_NOTE', 'DEBIT_NOTE')
 			ORDER BY d.issue_date DESC, d.document_number DESC LIMIT 200`, sess.org, sess.party)

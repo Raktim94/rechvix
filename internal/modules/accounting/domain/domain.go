@@ -159,6 +159,14 @@ type Receipt struct {
 	JournalID       uuid.UUID
 	CreatedBy       uuid.UUID
 	CreatedAt       time.Time
+	// ClientRef is the caller's own id for this receipt: a repeated POST with the same value returns the existing
+	// receipt instead of booking the money again (safe retries for clients on unreliable connections).
+	ClientRef string
+	// A reversed receipt keeps its row: nothing is erased. ReversedAt is nil for a live receipt.
+	ReversedAt        *time.Time
+	ReversedBy        *uuid.UUID
+	ReversalReason    string
+	ReversalJournalID *uuid.UUID
 }
 
 // Payment is money paid to a supplier (party_id is the supplier).
@@ -314,6 +322,9 @@ type BankAccountRepository interface {
 
 type ReceiptRepository interface {
 	Create(ctx context.Context, r *Receipt) error
+	GetByID(ctx context.Context, orgID, id uuid.UUID) (*Receipt, error)
+	GetByClientRef(ctx context.Context, orgID uuid.UUID, clientRef string) (*Receipt, error)
+	MarkReversed(ctx context.Context, orgID, id, by, reversalJournalID uuid.UUID, reason string, at time.Time) error
 	ListByParty(ctx context.Context, orgID, partyID uuid.UUID) ([]*Receipt, error)
 	// ListBySalesDocument answers "how much has actually been received
 	// against THIS invoice" — RecordReceiptParams.SalesDocumentID was

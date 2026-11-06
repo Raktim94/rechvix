@@ -596,7 +596,7 @@ func (r *Repo) PaymentModes(ctx context.Context, f domain.Filter) ([]domain.Paym
 	q := fmt.Sprintf(`
 		SELECT rc.payment_method, COUNT(*), COALESCE(SUM(rc.amount), 0)
 		FROM receipts rc LEFT JOIN sales_documents sd ON sd.id = rc.sales_document_id
-		WHERE rc.organisation_id = $1 %s
+		WHERE rc.organisation_id = $1 AND rc.reversed_at IS NULL %s
 		GROUP BY rc.payment_method
 		ORDER BY SUM(rc.amount) DESC, rc.payment_method`, condAppend(w))
 	rows, err := r.pool.Q(ctx).Query(ctx, q, w.args...)
@@ -987,7 +987,7 @@ func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) 
 			COALESCE((SELECT SUM(COALESCE(grand_total_base_amount, grand_total_amount)) FROM sales_documents
 				WHERE organisation_id = $1 AND status = 'FINALIZED' AND issue_date = $2::date), 0) AS today_sales,
 			COALESCE((SELECT SUM(rc.amount) FROM receipts rc
-				WHERE rc.organisation_id = $1 AND rc.received_at >= $3), 0) AS today_collections,
+				WHERE rc.organisation_id = $1 AND rc.received_at >= $3 AND rc.reversed_at IS NULL), 0) AS today_collections,
 			COALESCE((SELECT SUM(pdl.line_total_amount) FROM purchase_documents pd
 				JOIN purchase_document_lines pdl ON pdl.purchase_document_id = pd.id
 				WHERE pd.organisation_id = $1 AND pd.status = 'FINALIZED' AND pd.document_date = $2::date), 0) AS today_purchases,

@@ -33,6 +33,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Post("/accounting/journals", h.postJournal)
 	r.Get("/accounting/journals/{id}", h.getJournal)
 	r.Post("/accounting/receipts", h.recordReceipt)
+	r.Post("/accounting/receipts/{id}/reverse", h.reverseReceipt)
 	r.Post("/accounting/payments", h.recordPayment)
 	r.Get("/accounting/sales-documents/{id}/receipts", h.listReceiptsForSalesDocument)
 	r.Get("/accounting/purchase-documents/{id}/payments", h.listPaymentsForPurchaseDocument)
@@ -60,7 +61,12 @@ func decodeJSON[T any](r *http.Request) (T, error) {
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	var forbidden *permissions.ErrForbidden
+	var invalid *domain.InvalidInput
 	switch {
+	case errors.As(err, &invalid):
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_INPUT", invalid.Msg))
+	case errors.Is(err, domain.ErrReceiptAlreadyReversed):
+		httpx.WriteError(w, r, httpx.NewConflict("ALREADY_REVERSED", "This receipt has already been reversed."))
 	case errors.Is(err, domain.ErrNotFound):
 		httpx.WriteError(w, r, httpx.NewNotFound("NOT_FOUND", "The requested resource was not found."))
 	case errors.Is(err, domain.ErrAccountNotFound):
@@ -313,6 +319,8 @@ type recordReceiptRequest struct {
 	Method          string          `json:"method"`
 	ReferenceNumber string          `json:"reference_number"`
 	ReceivedAt      *time.Time      `json:"received_at"`
+	// ClientRef makes retries safe: the same value returns the receipt already booked instead of booking it again.
+	ClientRef string `json:"client_ref"`
 }
 
 func (h *Handlers) recordReceipt(w http.ResponseWriter, r *http.Request) {
@@ -327,13 +335,41 @@ func (h *Handlers) recordReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 	rec, err := h.svc.RecordReceipt(r.Context(), principal(r), app.RecordReceiptParams{
 		PartyID: req.PartyID, SalesDocumentID: req.SalesDocumentID, Amount: req.Amount, BankAccountID: req.BankAccountID,
-		Method: domain.PaymentMethod(req.Method), ReferenceNumber: req.ReferenceNumber, ReceivedAt: receivedAt,
+		Method: domain.PaymentMethod(req.Method), ReferenceNumber: req.ReferenceNumber, ReceivedAt: receivedAt, ClientRef: req.ClientRef,
 	})
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, rec)
+}
+
+type reverseReceiptRequest struct {
+	Reason string `json:"reason"`
+}
+
+// reverseReceipt: POST /accounting/receipts/{id}/reverse. Corrects a receipt entered by mistake without deleting it.
+func (h *Handlers) reverseReceipt(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "id must be a UUID."))
+		return
+	}
+	req, err := decodeJSON[reverseReceiptRequest](r)
+	if err != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_BODY", "Could not parse the request body."))
+		return
+	}
+	rec, err := h.svc.ReverseReceipt(r.Context(), principal(r), id, req.Reason)
+	switch {
+	case errors.Is(err, domain.ErrReceiptAlreadyReversed):
+		httpx.WriteError(w, r, httpx.NewConflict("ALREADY_REVERSED", "This receipt has already been reversed."))
+		return
+	case err != nil:
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, rec)
 }
 
 type recordPaymentRequest struct {

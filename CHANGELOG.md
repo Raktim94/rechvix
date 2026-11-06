@@ -15,6 +15,8 @@
 
 ## Unreleased
 
+- **Receipts are safe to retry and safe to correct (migration 0065).** `POST /accounting/receipts` accepts an optional `client_ref`: the same value returns the receipt already booked instead of booking it twice (a phone on a flaky connection can retry freely). New `POST /accounting/receipts/{id}/reverse` (with a required `reason`) undoes a receipt entered by mistake without deleting it: a reversing journal is posted, the receipt records who, when and why, and the customer's balance and the invoice's paid amount go back up. Reversed receipts are ignored by every "paid against this invoice" total (invoice lists, reminders, SEPA, online payments, shop, dashboard collections, payment-mode report). Validation problems on receipts now answer 400 `INVALID_INPUT` instead of 500.
+
 Everyday-use polish across billing, purchasing, reporting and phones. No database migration. API changes are additive.
 
 - **Fixed: customer search missed name fragments.** Typing the first word of a customer ("Gupta") found nothing for "Gupta Engineering Works", so the billing box offered only "+ New customer". Search now matches substrings of the name, trade name, email and phone (case-insensitive, wildcards escaped), ranks prefix matches first and keeps trigram matching for typos. Integration test included.

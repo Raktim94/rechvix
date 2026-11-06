@@ -1533,13 +1533,51 @@ paths:
                 method: { $ref: "#/components/schemas/PaymentMethod" }
                 reference_number: { type: string }
                 received_at: { type: string, format: date-time, nullable: true }
+                client_ref:
+                  type: string
+                  maxLength: 200
+                  description: >
+                    Optional caller-chosen id that makes the call safe to retry. A second request with the same client_ref (and the same
+                    party, invoice and amount) returns the receipt already booked, with 201, and books nothing again. Reusing it for a
+                    different receipt is a 400 INVALID_INPUT.
       responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Receipt" } } } }
+        "201": { description: Created (or the existing receipt, when client_ref matched), content: { application/json: { schema: { $ref: "#/components/schemas/Receipt" } } } }
         "400":
-          description: UNBALANCED_JOURNAL / EMPTY_JOURNAL.
+          description: UNBALANCED_JOURNAL / EMPTY_JOURNAL / INVALID_INPUT (non-positive amount, client_ref reused for a different receipt).
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "409":
           description: PERIOD_LOCKED.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /accounting/receipts/{id}/reverse:
+    post:
+      tags: [Accounting]
+      summary: Reverse a receipt entered by mistake. Nothing is deleted - a reversing journal is posted and the receipt records who, when and why.
+      description: >
+        Posts a journal that swaps every debit and credit of the original (the original stays immutable) and stamps ReversedAt/ReversedBy/
+        ReversalReason/ReversalJournalID on the receipt. The customer's receivable and the invoice's PaidAmount go back up by the amount;
+        reversed receipts are excluded from every "paid against this invoice" total. A receipt can be reversed once.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500, description: Required. Why the receipt is being reversed. }
+      responses:
+        "200": { description: The receipt, now marked reversed, content: { application/json: { schema: { $ref: "#/components/schemas/Receipt" } } } }
+        "400":
+          description: INVALID_INPUT (missing or over-long reason).
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: Receipt not found.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: ALREADY_REVERSED / PERIOD_LOCKED.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
   /accounting/payments:
@@ -3203,6 +3241,11 @@ components:
         JournalID: { type: string, format: uuid }
         CreatedBy: { type: string, format: uuid }
         CreatedAt: { type: string, format: date-time }
+        ClientRef: { type: string, description: "The caller's idempotency reference, if one was sent." }
+        ReversedAt: { type: string, format: date-time, nullable: true, description: "Set once the receipt has been reversed; null for a live receipt." }
+        ReversedBy: { type: string, format: uuid, nullable: true }
+        ReversalReason: { type: string }
+        ReversalJournalID: { type: string, format: uuid, nullable: true }
 
     Payment:
       type: object

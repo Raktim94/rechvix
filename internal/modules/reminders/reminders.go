@@ -182,7 +182,7 @@ func (s *Service) RunOnce(ctx context.Context, orgID uuid.UUID) (int, error) {
 				WHERE d.organisation_id = $1 AND d.status = 'FINALIZED' AND d.document_type IN ('TAX_INVOICE', 'POS_INVOICE', 'DEBIT_NOTE')
 			)
 			SELECT i.id, i.document_number, i.customer_party_id, p.legal_name, COALESCE(p.email, ''),
-			       i.total - COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = i.id), 0)
+			       i.total - COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = i.id AND r.reversed_at IS NULL), 0)
 			              - COALESCE((SELECT SUM(COALESCE(c.grand_total_base_amount, c.grand_total_amount, 0)) FROM sales_documents c
 			                          WHERE c.reference_document_id = i.id AND c.status = 'FINALIZED' AND c.document_type IN ('CREDIT_NOTE', 'SALES_RETURN')), 0) AS outstanding,
 			       i.due,

@@ -332,7 +332,7 @@ func (s *Service) CreateBatch(ctx context.Context, principal permissions.Princip
 			var total, paid, credited decimal.Decimal
 			err := s.pool.Q(ctx).QueryRow(ctx, `
 				SELECT d.id, d.document_number, d.customer_party_id, p.legal_name, d.status, d.document_type, d.currency_code, d.base_currency_code, d.legal_entity_id, COALESCE(d.grand_total_amount, 0),
-				       COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = d.id), 0),
+				       COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.sales_document_id = d.id AND r.reversed_at IS NULL), 0),
 				       COALESCE((SELECT SUM(COALESCE(c.grand_total_amount, 0)) FROM sales_documents c WHERE c.reference_document_id = d.id AND c.status = 'FINALIZED' AND c.document_type IN ('CREDIT_NOTE', 'SALES_RETURN')), 0)
 				FROM sales_documents d JOIN parties p ON p.id = d.customer_party_id WHERE d.id = $1`, did).
 				Scan(&inv.id, &inv.number, &inv.party, &inv.customer, &status, &docType, &cur, &base, &le, &total, &paid, &credited)

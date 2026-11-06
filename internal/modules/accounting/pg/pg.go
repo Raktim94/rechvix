@@ -424,20 +424,69 @@ func NewReceiptRepo(pool *database.Pool) *ReceiptRepo { return &ReceiptRepo{pool
 
 func (r *ReceiptRepo) Create(ctx context.Context, rec *domain.Receipt) error {
 	const q = `
-		INSERT INTO receipts (id, organisation_id, party_id, sales_document_id, amount, currency_code, bank_account_id, payment_method, reference_number, received_at, journal_id, created_by, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`
+		INSERT INTO receipts (id, organisation_id, party_id, sales_document_id, amount, currency_code, bank_account_id, payment_method, reference_number, received_at, journal_id, created_by, created_at, client_ref)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
 	_, err := r.pool.Q(ctx).Exec(ctx, q, rec.ID, rec.OrganisationID, rec.PartyID, rec.SalesDocumentID, rec.Amount.Decimal(),
 		rec.Amount.Currency(), rec.BankAccountID, string(rec.Method), nullIfEmpty(rec.ReferenceNumber), rec.ReceivedAt,
-		rec.JournalID, rec.CreatedBy, rec.CreatedAt)
+		rec.JournalID, rec.CreatedBy, rec.CreatedAt, nullIfEmpty(rec.ClientRef))
 	if err != nil {
+		if pgUniqueViolation(err) && rec.ClientRef != "" {
+			return domain.ErrDuplicateClientRef
+		}
 		return fmt.Errorf("accounting: inserting receipt: %w", err)
+	}
+	return nil
+}
+
+const receiptColumns = `id, organisation_id, party_id, sales_document_id, amount, currency_code, bank_account_id, payment_method,
+			COALESCE(reference_number, ''), received_at, journal_id, created_by, created_at,
+			COALESCE(client_ref, ''), reversed_at, reversed_by, COALESCE(reversal_reason, ''), reversal_journal_id`
+
+func (r *ReceiptRepo) scanOne(ctx context.Context, where string, args ...any) (*domain.Receipt, error) {
+	var rec domain.Receipt
+	var amount decimal.Decimal
+	var currency, method string
+	err := r.pool.Q(ctx).QueryRow(ctx, "SELECT "+receiptColumns+" FROM receipts WHERE "+where, args...).Scan(
+		&rec.ID, &rec.OrganisationID, &rec.PartyID, &rec.SalesDocumentID, &amount, &currency, &rec.BankAccountID, &method,
+		&rec.ReferenceNumber, &rec.ReceivedAt, &rec.JournalID, &rec.CreatedBy, &rec.CreatedAt,
+		&rec.ClientRef, &rec.ReversedAt, &rec.ReversedBy, &rec.ReversalReason, &rec.ReversalJournalID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("accounting: reading receipt: %w", err)
+	}
+	rec.Amount = money.MustNew(amount, currency)
+	rec.Method = domain.PaymentMethod(method)
+	return &rec, nil
+}
+
+func (r *ReceiptRepo) GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Receipt, error) {
+	return r.scanOne(ctx, "organisation_id = $1 AND id = $2", orgID, id)
+}
+
+func (r *ReceiptRepo) GetByClientRef(ctx context.Context, orgID uuid.UUID, clientRef string) (*domain.Receipt, error) {
+	return r.scanOne(ctx, "organisation_id = $1 AND client_ref = $2", orgID, clientRef)
+}
+
+// MarkReversed stamps the reversal on the receipt. The WHERE reversed_at IS NULL makes a second reversal a no-op that reports
+// not-found to the caller, never a second journal.
+func (r *ReceiptRepo) MarkReversed(ctx context.Context, orgID, id, by, reversalJournalID uuid.UUID, reason string, at time.Time) error {
+	tag, err := r.pool.Q(ctx).Exec(ctx, `UPDATE receipts SET reversed_at = $3, reversed_by = $4, reversal_journal_id = $5, reversal_reason = $6
+		WHERE organisation_id = $1 AND id = $2 AND reversed_at IS NULL`, orgID, id, at, by, reversalJournalID, reason)
+	if err != nil {
+		return fmt.Errorf("accounting: marking receipt reversed: %w", err)
+	}
+	if tag == 0 {
+		return domain.ErrReceiptAlreadyReversed
 	}
 	return nil
 }
 
 func (r *ReceiptRepo) ListByParty(ctx context.Context, orgID, partyID uuid.UUID) ([]*domain.Receipt, error) {
 	const q = `SELECT id, organisation_id, party_id, sales_document_id, amount, currency_code, bank_account_id, payment_method,
-			COALESCE(reference_number, ''), received_at, journal_id, created_by, created_at
+			COALESCE(reference_number, ''), received_at, journal_id, created_by, created_at,
+			COALESCE(client_ref, ''), reversed_at, reversed_by, COALESCE(reversal_reason, ''), reversal_journal_id
 		FROM receipts WHERE organisation_id = $1 AND party_id = $2 ORDER BY received_at DESC`
 	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, partyID)
 	if err != nil {
@@ -450,7 +499,8 @@ func (r *ReceiptRepo) ListByParty(ctx context.Context, orgID, partyID uuid.UUID)
 		var amount decimal.Decimal
 		var currency, method string
 		if err := rows.Scan(&rec.ID, &rec.OrganisationID, &rec.PartyID, &rec.SalesDocumentID, &amount, &currency,
-			&rec.BankAccountID, &method, &rec.ReferenceNumber, &rec.ReceivedAt, &rec.JournalID, &rec.CreatedBy, &rec.CreatedAt); err != nil {
+			&rec.BankAccountID, &method, &rec.ReferenceNumber, &rec.ReceivedAt, &rec.JournalID, &rec.CreatedBy, &rec.CreatedAt,
+			&rec.ClientRef, &rec.ReversedAt, &rec.ReversedBy, &rec.ReversalReason, &rec.ReversalJournalID); err != nil {
 			return nil, fmt.Errorf("accounting: scanning receipt: %w", err)
 		}
 		rec.Amount = money.MustNew(amount, currency)
@@ -504,7 +554,8 @@ func (r *PaymentRepo) ListByParty(ctx context.Context, orgID, partyID uuid.UUID)
 
 func (r *ReceiptRepo) ListBySalesDocument(ctx context.Context, orgID, salesDocumentID uuid.UUID) ([]*domain.Receipt, error) {
 	const q = `SELECT id, organisation_id, party_id, sales_document_id, amount, currency_code, bank_account_id, payment_method,
-			COALESCE(reference_number, ''), received_at, journal_id, created_by, created_at
+			COALESCE(reference_number, ''), received_at, journal_id, created_by, created_at,
+			COALESCE(client_ref, ''), reversed_at, reversed_by, COALESCE(reversal_reason, ''), reversal_journal_id
 		FROM receipts WHERE organisation_id = $1 AND sales_document_id = $2 ORDER BY received_at DESC`
 	rows, err := r.pool.Q(ctx).Query(ctx, q, orgID, salesDocumentID)
 	if err != nil {
@@ -517,7 +568,8 @@ func (r *ReceiptRepo) ListBySalesDocument(ctx context.Context, orgID, salesDocum
 		var amount decimal.Decimal
 		var currency, method string
 		if err := rows.Scan(&rec.ID, &rec.OrganisationID, &rec.PartyID, &rec.SalesDocumentID, &amount, &currency,
-			&rec.BankAccountID, &method, &rec.ReferenceNumber, &rec.ReceivedAt, &rec.JournalID, &rec.CreatedBy, &rec.CreatedAt); err != nil {
+			&rec.BankAccountID, &method, &rec.ReferenceNumber, &rec.ReceivedAt, &rec.JournalID, &rec.CreatedBy, &rec.CreatedAt,
+			&rec.ClientRef, &rec.ReversedAt, &rec.ReversedBy, &rec.ReversalReason, &rec.ReversalJournalID); err != nil {
 			return nil, fmt.Errorf("accounting: scanning receipt: %w", err)
 		}
 		rec.Amount = money.MustNew(amount, currency)
