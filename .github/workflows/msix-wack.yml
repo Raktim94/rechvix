@@ -1,0 +1,66 @@
+name: MSIX certification check (WACK)
+
+# Runs Microsoft's Windows App Certification Kit (the basis of Microsoft Store validation) against the package produced by a
+# "Desktop MSIX" run. It downloads that run's artifact rather than rebuilding, so it checks the exact bytes that were tested.
+# Run it from the Actions tab and give it the run id of a green "Desktop MSIX" run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run id of the Desktop MSIX run whose package to check"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  wack:
+    name: Windows App Certification Kit
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rechvix-desktop-msix
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: pkg
+
+      - name: Trust the test certificate
+        shell: pwsh
+        run: |
+          $pwd = ConvertTo-SecureString -String "rechvix-test" -Force -AsPlainText
+          Import-PfxCertificate -FilePath pkg\RechvixTestCert.pfx -CertStoreLocation Cert:\LocalMachine\TrustedPeople -Password $pwd | Out-Null
+          Import-PfxCertificate -FilePath pkg\RechvixTestCert.pfx -CertStoreLocation Cert:\LocalMachine\Root -Password $pwd | Out-Null
+
+      - name: Run the certification tests
+        shell: pwsh
+        run: |
+          $kit = "C:\Program Files (x86)\Windows Kits\10\App Certification Kit\appcert.exe"
+          if (-not (Test-Path $kit)) { throw "App Certification Kit not found on this runner." }
+          & $kit reset
+          & $kit test -appxpackagepath (Resolve-Path pkg\Rechvix-SideloadTest.msix).Path -reportoutputpath "$PWD\wack-report.xml"
+          Write-Host "appcert exit code: $LASTEXITCODE"
+          exit 0   # the verdict is read from the report below, so a failure is reported in detail rather than as a bare exit code
+
+      - name: Summarise the verdict
+        shell: pwsh
+        run: |
+          if (-not (Test-Path wack-report.xml)) { throw "No report was produced." }
+          [xml]$r = Get-Content wack-report.xml
+          $overall = $r.REPORT.OVERALL_RESULT
+          Write-Host "OVERALL_RESULT: $overall"
+          $fails = @($r.SelectNodes("//TEST[RESULT/text()='FAIL']"))
+          foreach ($t in $fails) { Write-Host ("FAIL: " + $t.NAME + " - " + $t.DESCRIPTION) }
+          foreach ($t in @($r.SelectNodes("//TEST[RESULT/text()='WARNING']"))) { Write-Host ("WARNING: " + $t.NAME) }
+          if ($overall -eq "FAIL") { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wack-report
+          path: wack-report.xml
+          retention-days: 30
