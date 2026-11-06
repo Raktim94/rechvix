@@ -33,6 +33,7 @@ export function invoiceHtml(d: InvoiceData): string {
   const theme = d.theme ?? d.business.invoiceTheme ?? "classic";
   const themeColors = { classic: "#0f6e5c", clean: "#2454a6", bold: "#153f2e" } as const;
   const themeCss = theme === "clean" ? "th{border-bottom:1px solid #c9d6e8}td{border-bottom:1px solid #e7edf5}.grand td{border-top:1px solid #2454a6}" : theme === "bold" ? "h1{font-size:26px;text-transform:uppercase;letter-spacing:.4px}th{background:#153f2e;color:#fff;padding:9px 5px}.grand td{background:#eef4ef}" : "th{border-bottom:2px solid #16211c}";
+  const hasInclusivePrice = d.lines.some((l) => l.grossPrice != null);
   const lineTotal = (l: SaleLine) => l.grossPrice != null ? round2(num(l.qty) * num(l.grossPrice) - num(l.discount)) : lineAmount(l);
   const split = gstSplit(d.business, d.customerGstin);
   const taxRows = t.byRate.filter((r) => r.rate > 0).map((r) =>
@@ -57,8 +58,8 @@ export function invoiceHtml(d: InvoiceData): string {
  <div class="muted">${esc(d.business.address)}${d.business.phone ? "<br>Phone " + esc(d.business.phone) : ""}${d.business.gstin ? "<br>GSTIN " + esc(d.business.gstin) : ""}</div></div>
  <div style="text-align:right"><div style="font-size:16px;font-weight:700">TAX INVOICE</div><div>${esc(d.number)}</div><div class="muted">${esc(new Date(d.date).toLocaleDateString())}</div></div></div>
 <div style="margin-top:18px"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.6px">Billed to</div><div style="font-size:15px;font-weight:600">${esc(d.customerName)}</div>${d.customerGstin ? `<div class="muted">GSTIN ${esc(d.customerGstin)}</div>` : ""}</div>
-<table><thead><tr><th>#</th><th>Item</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">GST</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
-<table class="totals"><tr><td>Subtotal</td><td class="r">${m(t.subtotal)}</td></tr>${taxRows}<tr class="grand"><td>Total</td><td class="r">${m(total)}</td></tr>
+<table><thead><tr><th>#</th><th>Item</th><th class="r">Qty</th><th class="r">${hasInclusivePrice ? "Unit price (incl. GST)" : "Rate"}</th><th class="r">GST</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
+<table class="totals"><tr><td>${hasInclusivePrice ? "Taxable subtotal" : "Subtotal"}</td><td class="r">${m(t.subtotal)}</td></tr>${taxRows}<tr class="grand"><td>Total</td><td class="r">${m(total)}</td></tr>
 <tr><td class="muted">Payment</td><td class="r muted">${d.paymentMethod ? esc(d.paymentMethod.toLowerCase()) : "credit"}</td></tr><tr><td class="muted">Paid</td><td class="r muted">${m(paid)}</td></tr><tr><td class="muted">Balance due</td><td class="r muted">${m(due)}</td></tr></table>
 <div class="foot">Thank you for your business.${d.business.name ? "" : ""}</div></body></html>`;
 }
