@@ -33,7 +33,7 @@ export function invoiceHtml(d: InvoiceData): string {
     split === "IGST"
       ? `<tr><td>IGST @ ${r.rate}%</td><td class="r">${m(r.tax)}</td></tr>`
       : `<tr><td>CGST @ ${r.rate / 2}%</td><td class="r">${m(r.tax / 2)}</td></tr><tr><td>SGST @ ${r.rate / 2}%</td><td class="r">${m(r.tax / 2)}</td></tr>`).join("");
-  const rows = d.lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td class="r">${esc(l.qty)}</td><td class="r">${m(num(l.price))}</td><td class="r">${l.gstRate ? esc(l.gstRate) + "%" : "–"}</td><td class="r">${m(lineAmount(l))}</td></tr>`).join("");
+  const rows = d.lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td class="r">${esc(l.qty)}</td><td class="r">${m(num(l.grossPrice ?? l.price))}</td><td class="r">${l.gstRate ? esc(l.gstRate) + "%" : "–"}</td><td class="r">${m(lineAmount(l))}</td></tr>`).join("");
   const total = d.serverTotal ? num(d.serverTotal) : t.total;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
