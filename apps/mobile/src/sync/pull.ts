@@ -1,6 +1,6 @@
 import type { Api } from "../api/client";
 import type { Db } from "../db/types";
-import { getOrg, kvSet, setOrg, type Org } from "../db/repo";
+import { getOrg, kvSet, reapplyPendingStock, setOrg, type Org } from "../db/repo";
 
 interface LegalEntity { ID: string; OrganisationID: string; LegalName: string; CountryCode: string; BaseCurrencyCode: string; GSTStateCode: string; Status: string }
 interface Branch { ID: string; Status: string }
@@ -50,7 +50,21 @@ export async function pullMaster(api: Api, db: Db, now: () => number = Date.now)
     );
     products++;
   }
-  await db.run("DELETE FROM products WHERE gen < ?", [gen]);
+  // Stale server rows go; so do local items that have been uploaded (the server's own copy was just pulled).
+  // Local items not yet uploaded are never touched.
+  await db.run("DELETE FROM products WHERE gen < ? AND (origin='server' OR pushed=1)", [gen]);
+
+  // Tax rates belong to the HSN code. Fetch each distinct code once so offline invoices show the same GST the server will add.
+  if (le.CountryCode === "IN") {
+    const codes = await db.all<{ hsn: string }>("SELECT DISTINCT hsn FROM products WHERE hsn != '' AND origin='server' LIMIT 80");
+    for (const { hsn } of codes) {
+      try {
+        const r = await api.get<{ tax_rates: { GSTRate?: string; gst_rate?: string }[] | null }>(`/gst/tax-rates/${encodeURIComponent(hsn)}`);
+        const rate = r.tax_rates?.[0]?.GSTRate ?? r.tax_rates?.[0]?.gst_rate;
+        if (rate != null) await db.run("UPDATE products SET gst_rate=? WHERE hsn=? AND origin='server'", [String(rate), hsn]);
+      } catch { /* leave the rate unknown; the server still taxes the sale correctly */ }
+    }
+  }
 
   // Customers (and the shared walk-in customer, created once if the business never had one).
   let parties = (await api.get<{ parties: PartyRow[] | null }>("/contacts/parties")).parties ?? [];
@@ -71,7 +85,7 @@ export async function pullMaster(api: Api, db: Db, now: () => number = Date.now)
     );
     count++;
   }
-  await db.run("DELETE FROM parties WHERE gen < ?", [gen]);
+  await db.run("DELETE FROM parties WHERE gen < ? AND (origin='server' OR pushed=1)", [gen]);
 
   // Recent invoices from anywhere, for the history list. Best effort: history is nice to have, not needed to sell.
   try {
@@ -91,6 +105,7 @@ export async function pullMaster(api: Api, db: Db, now: () => number = Date.now)
     gstStateCode: le.GSTStateCode, branchId: branch.ID, warehouseId: wh.ID, priceListId: priceList.ID, walkInPartyId: walkIn.ID,
   };
   await setOrg(db, org);
+  await reapplyPendingStock(db);
   await kvSet(db, "last_pull_at", String(gen));
   void prev;
   return { products, parties: count };

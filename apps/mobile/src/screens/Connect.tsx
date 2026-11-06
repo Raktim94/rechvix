@@ -1,12 +1,13 @@
 import React, { useState } from "react";
-import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { isCleartext, normalizeServer } from "../lib/server";
 import { useApp } from "../state/app";
 import { space, usePalette } from "../theme";
-import { Body, Button, Field, H1, Screen } from "../ui/kit";
+import { Button, Field, Header, Icon, Screen } from "../ui/kit";
+import { T } from "../ui/text";
 
 export function Connect() {
-  const { connect, server } = useApp();
+  const { connect, server, cancelLinking } = useApp();
   const c = usePalette();
   const [addr, setAddr] = useState(server ?? "");
   const [busy, setBusy] = useState(false);
@@ -24,14 +25,17 @@ export function Connect() {
   return (
     <Screen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: space.xl, paddingTop: 56, gap: space.lg }} keyboardShouldPersistTaps="handled">
-          <Image source={require("../../assets/icon.png")} style={{ width: 56, height: 56, borderRadius: 14 }} accessibilityIgnoresInvertColors />
-          <H1>Connect to your Rechvix</H1>
-          <Body muted>Enter the address you use to open Rechvix in a browser. You only do this once.</Body>
-          <Field label="Server address" value={addr} onChangeText={setAddr} placeholder="books.yourshop.com" autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={go} error={err} />
-          {preview && isCleartext(preview) ? <Body small muted style={{ color: c.warning }}>This address is not encrypted. That is normal on a shop network, but don't use it over public Wi-Fi.</Body> : null}
-          <Button title="Connect" onPress={go} busy={busy} />
-          <View><Body small muted>On a shop network without a certificate, an address like 192.168.1.40:8080 works too.</Body></View>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+          <Header title="Connect a server" onBack={cancelLinking} />
+          <View style={{ padding: space.lg, gap: space.lg }}>
+            <T v="body" muted>Enter the address you use to open Rechvix in a browser. Everything you've made on this phone uploads and merges with your business data.</T>
+            <Field label="Server address" value={addr} onChangeText={setAddr} placeholder="books.yourshop.com" autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="go" onSubmitEditing={go} error={err} />
+            {preview && isCleartext(preview) ? (
+              <View style={{ flexDirection: "row", gap: 10 }}><Icon name="warning-outline" size={20} color={c.warning} /><T v="small" color={c.warning} style={{ flex: 1 }}>This address is not encrypted. That is normal on a shop network, but don't use it over public Wi-Fi.</T></View>
+            ) : null}
+            <Button title="Connect" onPress={go} busy={busy} icon="link-outline" />
+            <T v="small" muted>On a shop network without a certificate, an address like 192.168.1.40:8080 works too.</T>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

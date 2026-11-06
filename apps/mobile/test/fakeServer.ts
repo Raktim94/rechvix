@@ -1,7 +1,7 @@
 import { ApiError, NetworkError } from "../src/api/client";
 import type { SagaApi } from "../src/sync/saga";
 
-interface Doc { ID: string; Status: string; DocumentNumber: string; ref: string; lines: { ID: string; qty: string; price: string }[]; total: string }
+interface Doc { ID: string; Status: string; DocumentNumber: string; ref: string; lines: { ID: string; qty: string; price: string; variant: string }[]; total: string }
 
 /** A stand-in for the Rechvix sales API that behaves like the real one where it matters: lines only on drafts,
  *  finalise assigns the next number and posts exactly once, receipts accumulate. `crashAt` simulates the connection
@@ -13,6 +13,12 @@ export class FakeServer implements SagaApi {
   nextNo = 1;
   calls: string[] = [];
   crashAt: string | null = null;
+  parties: { ID: string; LegalName: string; PartyType: string }[] = [];
+  products: { ID: string; Name: string; hsn: string }[] = [];
+  variants: { ID: string; productId: string; sku: string }[] = [];
+  openingStock: { variant: string; qty: string }[] = [];
+  prices: { variant: string; amount: string }[] = [];
+  taxRates = new Map<string, string>();
   reject: { path: RegExp; status: number; code: string; message: string } | null = null;
 
   private maybeCrash(step: string): void {
@@ -28,6 +34,15 @@ export class FakeServer implements SagaApi {
     }
     m = /^\/accounting\/sales-documents\/([^/]+)\/receipts$/.exec(path);
     if (m) return { receipts: this.receipts.filter((r) => r.doc === m![1]).map((r) => ({ Amount: { amount: r.amount, currency: "INR" } })) } as T;
+    m = /^\/contacts\/parties\?q=(.*)$/.exec(path);
+    if (m) { const q = decodeURIComponent(m[1]!).toLowerCase(); return { parties: this.parties.filter((p) => p.LegalName.toLowerCase().includes(q)) } as T; }
+    m = /^\/sales\/billing-lookup\?q=([^&]*)/.exec(path);
+    if (m) { const q = decodeURIComponent(m[1]!).toLowerCase(); return { results: this.variants.filter((v) => v.sku.toLowerCase().includes(q)).map((v) => ({ ProductID: v.productId, ProductVariantID: v.ID, SKUCode: v.sku, QuantityOnHand: String(this.openingStock.filter((o) => o.variant === v.ID).reduce((n, o) => n + Number(o.qty), 0)) })) } as T; }
+    if (path === "/catalogue/units") return { units_of_measure: [{ ID: "u-pcs", Code: "PCS" }, { ID: "u-kg", Code: "KG" }] } as T;
+    m = /^\/catalogue\/products\/([^/]+)$/.exec(path);
+    if (m) return { BaseUOMID: "u-pcs" } as T;
+    m = /^\/gst\/tax-rates\/(.+)$/.exec(path);
+    if (m) { const r = this.taxRates.get(decodeURIComponent(m[1]!)); return { tax_rates: r ? [{ GSTRate: r }] : [] } as T; }
     throw new Error(`fake: unhandled GET ${path}`);
   }
 
@@ -36,6 +51,7 @@ export class FakeServer implements SagaApi {
     if (this.reject?.path.test(path)) throw new ApiError(this.reject.status, this.reject.code, this.reject.message);
     const b = (body ?? {}) as Record<string, string>;
     if (path === "/sales/documents") {
+      if (!this.parties.some((p) => p.ID === b.customer_party_id) && b.customer_party_id !== "cust" && !String(b.customer_party_id).startsWith("c")) throw new ApiError(500, "INTERNAL_ERROR", `FK: no customer ${b.customer_party_id}`);
       const id = `doc-${this.docs.size + 1}`;
       this.docs.set(id, { ID: id, Status: "DRAFT", DocumentNumber: "", ref: b.customer_reference ?? "", lines: [], total: "0" });
       this.maybeCrash("after-create");
@@ -45,7 +61,8 @@ export class FakeServer implements SagaApi {
     if (m) {
       const d = this.docs.get(m[1]!)!;
       if (d.Status !== "DRAFT") throw new ApiError(409, "NOT_DRAFT", "Document is not a draft.");
-      d.lines.push({ ID: `l${d.lines.length + 1}`, qty: b.quantity!, price: b.unit_price! });
+      if (String(b.product_variant_id).endsWith("-local")) throw new ApiError(400, "BAD_REQUEST", "Request body is malformed.");
+      d.lines.push({ ID: `l${d.lines.length + 1}`, qty: b.quantity!, price: b.unit_price!, variant: b.product_variant_id! });
       if (this.crashAt === `after-line-${d.lines.length}`) { this.crashAt = null; throw new NetworkError(); }
       return {} as T;
     }
@@ -66,6 +83,21 @@ export class FakeServer implements SagaApi {
       this.maybeCrash("after-receipt");
       return {} as T;
     }
+    if (path === "/contacts/parties") {
+      const p = { ID: `party-${this.parties.length + 1}`, LegalName: b.legal_name!, PartyType: b.party_type! };
+      this.parties.push(p); this.maybeCrash("after-party"); return p as T;
+    }
+    if (path === "/catalogue/products") { const p = { ID: `prod-${this.products.length + 1}`, Name: b.name!, hsn: b.hsn_sac_code ?? "" }; this.products.push(p); return p as T; }
+    if (path === "/catalogue/variants") {
+      const v = { ID: `var-${this.variants.length + 1}`, productId: b.product_id!, sku: b.sku_code! };
+      this.variants.push(v); this.maybeCrash("after-variant"); return v as T;
+    }
+    if (path === "/catalogue/barcodes") return {} as T;
+    if (path === "/inventory/opening-stock") { this.openingStock.push({ variant: b.product_variant_id!, qty: b.quantity! }); this.maybeCrash("after-stock"); return {} as T; }
+    if (path === "/pricing/price-lists/ensure-default") return { ID: "pl-1" } as T;
+    m = /^\/pricing\/price-lists\/[^/]+\/items$/.exec(path);
+    if (m) { this.prices.push({ variant: b.product_variant_id!, amount: b.amount! }); this.maybeCrash("after-price"); return {} as T; }
+    if (path === "/gst/tax-rates") { this.taxRates.set(b.hsn_sac_code!, b.gst_rate!); return {} as T; }
     throw new Error(`fake: unhandled POST ${path}`);
   }
 }

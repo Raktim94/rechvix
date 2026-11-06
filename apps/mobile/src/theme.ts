@@ -34,3 +34,15 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 export const radius = { sm: 8, md: 10, lg: 14 } as const;
 /** Tabular numerals so columns of rupee figures line up. */
 export const tabular = { fontVariant: ["tabular-nums" as const] };
+
+/** Brand type from the web app: Space Grotesk for display, IBM Plex Sans for reading, IBM Plex Mono for figures
+ *  (real tabular digits, so rupee columns line up like a printed ledger). Custom families have one file per weight. */
+export const fonts = {
+  display: "SpaceGrotesk_700Bold",
+  displayMedium: "SpaceGrotesk_500Medium",
+  body: "IBMPlexSans_400Regular",
+  bodyMedium: "IBMPlexSans_500Medium",
+  bodySemi: "IBMPlexSans_600SemiBold",
+  mono: "IBMPlexMono_500Medium",
+  monoBold: "IBMPlexMono_600SemiBold",
+} as const;

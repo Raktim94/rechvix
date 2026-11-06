@@ -26,19 +26,37 @@ interface DocView {
 }
 interface ReceiptList { receipts: { Amount: Money }[] | null }
 
+/** A prerequisite isn't on the server yet. Not an error: the sale simply waits for the next sync. */
+export class NotReadyError extends Error {}
+
 export const customerReference = (localId: string): string => `mobile:${localId}`;
 
+/** Maps ids made on the phone (items/customers created offline) to the server's ids once those have been uploaded.
+ *  Returns null when something a sale needs hasn't reached the server yet. */
+export interface Resolver {
+  party(localId: string): string | null;
+  item(localId: string): { variantId: string; unitId: string } | null;
+}
+export const identityResolver: Resolver = { party: (id) => id, item: (id) => ({ variantId: id, unitId: "" }) };
+
 export async function runSale(
-  api: SagaApi, org: Org, localId: string, payload: SalePayload, start: Progress, save: (p: Progress) => Promise<void>,
+  api: SagaApi, org: Org, localId: string, payload: SalePayload, start: Progress, save: (p: Progress) => Promise<void>, resolve: Resolver = identityResolver,
 ): Promise<{ progress: Progress; docNumber: string; total: string }> {
   const p: Progress = { ...start };
+  const customerId = resolve.party(payload.customerId);
+  if (!customerId) throw new NotReadyError("The customer hasn't been uploaded yet.");
+  const lines = payload.lines.map((l) => {
+    const m = resolve.item(l.variantId);
+    if (!m) throw new NotReadyError(`"${l.name}" hasn't been uploaded yet.`);
+    return { ...l, variantId: m.variantId, unitId: m.unitId || l.unitId };
+  });
 
   if (!p.docId) {
     const created = await api.post<{ ID: string }>("/sales/documents", {
       legal_entity_id: org.legalEntityId,
       branch_id: org.branchId,
       warehouse_id: org.warehouseId,
-      customer_party_id: payload.customerId,
+      customer_party_id: customerId,
       document_type: "TAX_INVOICE",
       customer_reference: customerReference(localId),
       ...(org.country === "IN" ? { place_of_supply_state_code: org.gstStateCode || "00" } : { customer_country: org.country }),
@@ -55,8 +73,8 @@ export async function runSale(
   let view = await api.get<DocView>(`/sales/documents/${docId}`);
   if (view.document.Status === "DRAFT") {
     // Lines are added strictly in order, so the number already on the server says where to carry on.
-    for (let i = view.lines?.length ?? 0; i < payload.lines.length; i++) {
-      const l = payload.lines[i]!;
+    for (let i = view.lines?.length ?? 0; i < lines.length; i++) {
+      const l = lines[i]!;
       await api.post(`/sales/documents/${docId}/lines`, {
         product_variant_id: l.variantId, unit_id: l.unitId, quantity: l.qty, unit_price: l.price, line_discount_amount: l.discount || "0",
       });
@@ -76,7 +94,7 @@ export async function runSale(
     const outstanding = round2(num(total) - paid);
     if (outstanding > 0.004) {
       await api.post("/accounting/receipts", {
-        party_id: payload.customerId, sales_document_id: docId, amount: outstanding.toFixed(2),
+        party_id: customerId, sales_document_id: docId, amount: outstanding.toFixed(2),
         method: payload.paymentMethod, reference_number: customerReference(localId),
       });
     }

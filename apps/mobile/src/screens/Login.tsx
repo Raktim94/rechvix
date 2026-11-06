@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { useApp } from "../state/app";
-import { space, usePalette } from "../theme";
-import { Body, Button, Card, Field, H1, Screen } from "../ui/kit";
+import { radius, space, usePalette } from "../theme";
+import { Button, Field, Header, Icon, Screen } from "../ui/kit";
+import { T } from "../ui/text";
 
 export function Login() {
-  const { login, email: saved, server, counts, sessionExpired, forgetServer } = useApp();
+  const { login, email: saved, server, counts, sessionExpired, cancelLinking, linking, disconnect } = useApp();
   const c = usePalette();
   const [email, setEmail] = useState(saved ?? "");
   const [password, setPassword] = useState("");
@@ -26,21 +27,22 @@ export function Login() {
   return (
     <Screen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: space.xl, paddingTop: 48, gap: space.lg }} keyboardShouldPersistTaps="handled">
-          <H1>Sign in</H1>
-          {sessionExpired && waiting > 0 ? (
-            <Card style={{ backgroundColor: c.warningSoft, borderColor: c.warning }}>
-              <Body>Your session ended. {waiting} sale{waiting === 1 ? " is" : "s are"} safe on this phone and will sync as soon as you sign in.</Body>
-            </Card>
-          ) : (
-            <Body muted>{server ? `Signing in to ${server.replace(/^https?:\/\//, "")}` : ""}</Body>
-          )}
-          <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" textContentType="username" autoComplete="email" />
-          <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="password" returnKeyType="go" onSubmitEditing={go} />
-          {needMfa ? <Field label="Authenticator code" value={mfa} onChangeText={setMfa} keyboardType="number-pad" maxLength={6} /> : null}
-          {err ? <Body small style={{ color: c.negative }}>{err}</Body> : null}
-          <Button title="Sign in" onPress={go} busy={busy} />
-          {waiting === 0 ? <View><Button title="Use a different server" kind="quiet" onPress={() => void forgetServer()} /></View> : null}
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+          <Header title="Sign in" onBack={linking ? cancelLinking : undefined} sub={server ? server.replace(/^https?:\/\//, "") : undefined} />
+          <View style={{ padding: space.lg, gap: space.lg }}>
+            {sessionExpired && waiting > 0 ? (
+              <View style={{ flexDirection: "row", gap: 10, padding: 14, borderRadius: radius.lg, backgroundColor: c.warningSoft }}>
+                <Icon name="time-outline" size={22} color={c.warning} />
+                <T v="small" style={{ flex: 1 }}>Your session ended. {waiting} sale{waiting === 1 ? " is" : "s are"} safe on this phone and will sync as soon as you sign in.</T>
+              </View>
+            ) : null}
+            <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" textContentType="username" autoComplete="email" />
+            <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="password" returnKeyType="go" onSubmitEditing={go} />
+            {needMfa ? <Field label="Authenticator code" value={mfa} onChangeText={setMfa} keyboardType="number-pad" maxLength={6} /> : null}
+            {err ? <T v="small" color={c.negative}>{err}</T> : null}
+            <Button title="Sign in and sync" onPress={go} busy={busy} icon="sync-outline" />
+            {sessionExpired ? <Button title="Work without the server" kind="quiet" onPress={() => void disconnect()} /> : null}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

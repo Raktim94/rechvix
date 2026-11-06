@@ -32,6 +32,29 @@ const MIGRATIONS: string[] = [
     customer_id TEXT NOT NULL, total TEXT, gen INTEGER NOT NULL DEFAULT 0
   );
   `,
+  // v2: standalone mode. The phone can own items and customers (origin='local') and number its own invoices.
+  `
+  ALTER TABLE products ADD COLUMN origin TEXT NOT NULL DEFAULT 'server';
+  ALTER TABLE products ADD COLUMN pushed INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE products ADD COLUMN gst_rate TEXT;
+  ALTER TABLE products ADD COLUMN barcode TEXT NOT NULL DEFAULT '';
+  ALTER TABLE products ADD COLUMN unit_label TEXT NOT NULL DEFAULT 'pcs';
+  ALTER TABLE products ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE products ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX products_barcode ON products(barcode);
+
+  ALTER TABLE parties ADD COLUMN origin TEXT NOT NULL DEFAULT 'server';
+  ALTER TABLE parties ADD COLUMN pushed INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE parties ADD COLUMN gstin TEXT NOT NULL DEFAULT '';
+  ALTER TABLE parties ADD COLUMN address TEXT NOT NULL DEFAULT '';
+  ALTER TABLE parties ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+
+  -- Once a local item/customer reaches the server, its server id is recorded here so unsent sales that still
+  -- mention the local id keep working. extra = JSON (item: productId, unitId and which upload steps are done).
+  CREATE TABLE id_map (kind TEXT NOT NULL, local_id TEXT NOT NULL, server_id TEXT NOT NULL, extra TEXT NOT NULL DEFAULT '{}', PRIMARY KEY(kind, local_id));
+
+  ALTER TABLE sales ADD COLUMN local_number TEXT;
+  `,
 ];
 
 export async function migrate(db: Db): Promise<void> {
