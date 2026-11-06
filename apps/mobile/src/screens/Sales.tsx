@@ -104,13 +104,13 @@ export function SaleDetail({ id, onClose }: { id: string; onClose: () => void })
   const total = saleAmount(sale);
   const due = outstandingAmount(sale);
   const canEdit = !linked && sale.state !== "synced" && !sale.progress.docId;
-  const editTotals = calcTotals(editLines.map((l) => l.grossPrice != null ? { ...l, price: String(exclusiveUnitPrice(l.grossPrice, l.gstRate)) } : l));
+  const editInvalid = editLines.some((l) => !/^\\d+(\\.\\d{1,4})?$/.test(l.qty) || num(l.qty) <= 0 || num(l.grossPrice ?? l.price) <= 0);
 
   async function share() {
     if (!profile || !sale) return;
     setSharing(true);
     try {
-      await shareInvoice({ number: sale.doc_number ?? sale.local_number ?? "Invoice", date: sale.created_at, business: profile, customerName: sale.payload.customerName, customerGstin: party?.gstin, lines: sale.payload.lines, paymentMethod: sale.payload.paymentMethod, currency, serverTotal: sale.total, theme: profile.invoiceTheme });
+      await shareInvoice({ number: sale.doc_number ?? sale.local_number ?? "Invoice", date: sale.created_at, business: profile, customerName: sale.payload.customerName, customerGstin: party?.gstin, lines: sale.payload.lines, paymentMethod: sale.payload.paymentMethod, currency, serverTotal: sale.total, payments: sale.payload.payments, theme: profile.invoiceTheme });
     } finally { setSharing(false); }
   }
 
@@ -149,7 +149,7 @@ export function SaleDetail({ id, onClose }: { id: string; onClose: () => void })
               </View>
             ))}
           </Card>
-          {editing ? <View style={{ flexDirection: "row", gap: 10 }}><Button title="Save invoice changes" icon="checkmark" style={{ flex: 1 }} onPress={async () => { try { await updateSaleLines(db!, sale.local_id, editLines.map((l) => l.grossPrice != null ? { ...l, price: String(exclusiveUnitPrice(l.grossPrice, l.gstRate)) } : l)); changed(); setEditing(false); } catch (e) { Alert.alert("Could not save", e instanceof Error ? e.message : "Try again."); } }} /><Button title="Cancel" kind="quiet" style={{ flex: 1 }} onPress={() => setEditing(false)} /></View> : canEdit ? <Button title="Edit invoice" kind="quiet" icon="create-outline" onPress={() => { setEditLines(sale.payload.lines.map((l) => ({ ...l }))); setEditing(true); }} /> : null>
+          {editing ? <View style={{ flexDirection: "row", gap: 10 }}><Button title="Save invoice changes" icon="checkmark" disabled={editInvalid} style={{ flex: 1 }} onPress={async () => { try { await updateSaleLines(db!, sale.local_id, editLines.map((l) => l.grossPrice != null ? { ...l, price: String(exclusiveUnitPrice(l.grossPrice, l.gstRate)) } : l)); changed(); setEditing(false); } catch (e) { Alert.alert("Could not save", e instanceof Error ? e.message : "Try again."); } }} /><Button title="Cancel" kind="quiet" style={{ flex: 1 }} onPress={() => setEditing(false)} /></View> : canEdit ? <Button title="Edit invoice" kind="quiet" icon="create-outline" onPress={() => { setEditLines(sale.payload.lines.map((l) => ({ ...l }))); setEditing(true); }} /> : null>
 
           <Card style={{ gap: 8 }}>
             <KV k="Subtotal" v={formatMoney(t.subtotal, currency)} />
@@ -171,7 +171,7 @@ export function SaleDetail({ id, onClose }: { id: string; onClose: () => void })
                 <Header title="Record payment" onBack={() => setPaymentOpen(false)} />
                 <T v="small" muted>Outstanding balance: {formatMoney(due, currency)}</T>
                 <Field label="Amount received" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="decimal-pad" />
-                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{["CASH", "UPI", "CARD", "BANK"].map((m) => <Chip key={m} title={m} active={paymentMethod === m} onPress={() => setPaymentMethod(m)} />)}</View>
+                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{["CASH", "UPI", "CARD", "BANK_TRANSFER"].map((m) => <Chip key={m} title={m === "BANK_TRANSFER" ? "Bank transfer" : m} active={paymentMethod === m} onPress={() => setPaymentMethod(m)} />)}</View>
                 <Button title="Save payment" disabled={num(paymentAmount) <= 0 || num(paymentAmount) > due + 0.004} onPress={async () => { const entry: PaymentEntry = { amount: round2(num(paymentAmount)).toFixed(2), method: paymentMethod, recordedAt: Date.now() }; await recordSalePayment(db!, sale.local_id, entry); changed(); setPaymentOpen(false); }} />
               </View>
             </View>
