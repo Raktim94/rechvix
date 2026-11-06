@@ -14,12 +14,15 @@ export interface Org {
 }
 
 export interface SaleLine { variantId: string; name: string; unitId: string; qty: string; price: string; discount: string; gstRate?: string | null; /** Customer-facing entered price when the bill was tax-inclusive. */ grossPrice?: string }
+export interface PaymentEntry { amount: string; method: string; recordedAt: number; note?: string }
 export interface SalePayload {
   customerId: string;
   customerName: string;
   lines: SaleLine[];
   /** null = pay later (credit). Otherwise the sale is receipted in full once the server has computed the total. */
   paymentMethod: string | null;
+  /** Additional payments recorded against an unpaid invoice on this phone. */
+  payments?: PaymentEntry[];
 }
 export interface Progress { docId?: string; finalized?: boolean; receipted?: boolean }
 export type SaleState = "pending" | "syncing" | "synced" | "failed";
@@ -67,6 +70,30 @@ export async function insertSale(db: Db, localId: string, payload: SalePayload, 
     for (const l of payload.lines) {
       await db.run("UPDATE products SET stock = CAST(CAST(stock AS REAL) - ? AS TEXT) WHERE variant_id=? AND stock IS NOT NULL", [Number(l.qty), l.variantId]);
     }
+  });
+}
+export async function recordSalePayment(db: Db, localId: string, payment: PaymentEntry): Promise<void> {
+  const row = await db.first<{ payload: string }>("SELECT payload FROM sales WHERE local_id=?", [localId]);
+  if (!row) throw new Error("Invoice not found.");
+  const payload = JSON.parse(row.payload) as SalePayload;
+  payload.payments = [...(payload.payments ?? []), payment];
+  await db.run("UPDATE sales SET payload=? WHERE local_id=?", [JSON.stringify(payload), localId]);
+}
+export async function updateSaleLines(db: Db, localId: string, lines: SaleLine[]): Promise<void> {
+  await db.tx(async () => {
+    const row = await db.first<{ payload: string; state: string; progress: string }>("SELECT payload,state,progress FROM sales WHERE local_id=?", [localId]);
+    if (!row || row.state === "synced" || (JSON.parse(row.progress) as Progress).docId) throw new Error("Only an invoice that has not reached the server can be edited on this phone.");
+    const payload = JSON.parse(row.payload) as SalePayload;
+    for (const old of payload.lines) {
+      const next = lines.find((l) => l.variantId === old.variantId);
+      const diff = Number(old.qty) - Number(next?.qty ?? 0);
+      if (diff) await db.run("UPDATE products SET stock=CAST(CAST(stock AS REAL)+? AS TEXT) WHERE variant_id=? AND stock IS NOT NULL", [diff, old.variantId]);
+    }
+    for (const next of lines) {
+      if (!payload.lines.some((l) => l.variantId === next.variantId)) await db.run("UPDATE products SET stock=CAST(CAST(stock AS REAL)-? AS TEXT) WHERE variant_id=? AND stock IS NOT NULL", [Number(next.qty), next.variantId]);
+    }
+    payload.lines = lines;
+    await db.run("UPDATE sales SET payload=?,total=NULL,error=NULL WHERE local_id=?", [JSON.stringify(payload), localId]);
   });
 }
 export async function listSales(db: Db, limit = 200): Promise<Sale[]> {
