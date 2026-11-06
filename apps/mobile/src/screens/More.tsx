@@ -83,6 +83,11 @@ export function ProfileEditor({ onClose }: { onClose: () => void }) {
           <Field label="Address" value={p.address} onChangeText={(v) => set("address", v)} multiline style={{ minHeight: 76, paddingTop: 12, textAlignVertical: "top" }} />
           <Field label="GSTIN" value={p.gstin} onChangeText={(v) => { const g = v.toUpperCase(); set("gstin", g); if (/^\d\d/.test(g)) set("gstState", g.slice(0, 2)); }} autoCapitalize="characters" autoCorrect={false} />
           <Field label="Invoice number prefix" value={p.invoicePrefix} onChangeText={(v) => set("invoicePrefix", v)} autoCapitalize="characters" hint={org ? "Used until a sale reaches your server, which then numbers it." : "Invoices are numbered INV-0001, INV-0002…"} />
+          <View style={{ gap: 8 }}><Label>Invoice design</Label><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Chip title="Classic" active={(p.invoiceTheme ?? "classic") === "classic"} onPress={() => set("invoiceTheme", "classic")} />
+            <Chip title="Clean" active={p.invoiceTheme === "clean"} onPress={() => set("invoiceTheme", "clean")} />
+            <Chip title="Bold" active={p.invoiceTheme === "bold"} onPress={() => set("invoiceTheme", "bold")} />
+          </View><T v="small" muted>Choose the look used when you share invoice PDFs.</T></View>
           {p.country === "IN" ? (
             <View style={{ gap: 8 }}><Label>Usual GST rate for new items</Label>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{GST_RATES.map((r) => <Chip key={r} title={`${r}%`} active={p.defaultGst === r} onPress={() => set("defaultGst", r)} />)}</View></View>
