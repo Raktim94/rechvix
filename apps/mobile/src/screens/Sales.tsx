@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { Alert, FlatList, ScrollView, View } from "react-native";
-import { discardSale, getSale, listSales, recentServerDocs, retrySale, type Sale, type ServerDoc } from "../db/repo";
+import { Alert, FlatList, Modal, ScrollView, TextInput, View } from "react-native";
+import { discardSale, getSale, listSales, recentServerDocs, retrySale, recordSalePayment, updateSaleLines, type PaymentEntry, type Sale, type SaleLine, type ServerDoc } from "../db/repo";
 import { useLocal } from "../lib/hooks";
-import { formatMoney, lineAmount, num } from "../lib/money";
+import { formatMoney, lineAmount, num, round2 } from "../lib/money";
 import { shareInvoice } from "../lib/share";
-import { calcTotals } from "../lib/tax";
+import { calcTotals, exclusiveUnitPrice } from "../lib/tax";
+import { outstandingAmount, saleAmount } from "../lib/receivables";
 import { useApp } from "../state/app";
 import { fonts, space, usePalette } from "../theme";
-import { Badge, Body, Button, Card, Chip, Divider, Empty, Header, Label, Screen, Tap } from "../ui/kit";
+import { Badge, Body, Button, Card, Chip, Divider, Empty, Field, Header, Label, Screen, Tap } from "../ui/kit";
 import { T } from "../ui/text";
 
 type Tone = "good" | "warn" | "bad" | "info" | "neutral";
@@ -18,7 +19,7 @@ export function stateBadge(s: Sale, linked: boolean): { text: string; tone: Tone
   if (s.state === "syncing") return { text: "Syncing…", tone: "info" };
   return { text: "Waiting to sync", tone: "warn" };
 }
-const saleTotal = (s: Sale): number => (s.total ? num(s.total) : calcTotals(s.payload.lines).total);
+const saleTotal = (s: Sale): number => saleAmount(s);
 
 export function SaleRow({ sale, last, onPress }: { sale: Sale; last?: boolean; onPress: () => void }) {
   const { currency, linked } = useApp();
@@ -50,7 +51,7 @@ export function Sales({ open }: { open: (id: string) => void }) {
   const local = useLocal((db) => listSales(db), []);
   const server = useLocal((db) => recentServerDocs(db), [] as ServerDoc[]);
   const mine = new Set(local.map((s) => s.progress.docId).filter(Boolean));
-  const shown = local.filter((s) => f === "all" ? true : f === "unpaid" ? !s.payload.paymentMethod : f === "waiting" ? s.state === "pending" || s.state === "syncing" : s.state === "failed");
+  const shown = local.filter((s) => f === "all" ? true : f === "unpaid" ? outstandingAmount(s) > 0.004 : f === "waiting" ? s.state === "pending" || s.state === "syncing" : s.state === "failed");
   const others = f === "all" ? server.filter((d) => !mine.has(d.id)) : [];
   return (
     <Screen>
@@ -87,15 +88,23 @@ export function Sales({ open }: { open: (id: string) => void }) {
 }
 
 export function SaleDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { db, syncNow, syncing, online, linked, currency, profile } = useApp();
+  const { db, syncNow, syncing, online, linked, currency, profile, changed } = useApp();
   const c = usePalette();
   const sale = useLocal((d) => getSale(d, id), null as Sale | null, [id]);
   const party = useLocal((d) => d.first<{ gstin: string }>("SELECT gstin FROM parties WHERE id=(SELECT json_extract(payload,'$.customerId') FROM sales WHERE local_id=?)", [id]), null as { gstin: string } | null, [id]);
   const [sharing, setSharing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editLines, setEditLines] = useState<SaleLine[]>([]);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
   if (!sale) return <Screen><Header title="Sale" onBack={onClose} /><Empty title="Sale not found" /></Screen>;
   const b = stateBadge(sale, linked);
   const t = calcTotals(sale.payload.lines);
-  const total = sale.total ? num(sale.total) : t.total;
+  const total = saleAmount(sale);
+  const due = outstandingAmount(sale);
+  const canEdit = !linked && sale.state !== "synced" && !sale.progress.docId;
+  const editTotals = calcTotals(editLines.map((l) => l.grossPrice != null ? { ...l, price: String(exclusiveUnitPrice(l.grossPrice, l.gstRate)) } : l));
 
   async function share() {
     if (!profile || !sale) return;
@@ -125,26 +134,48 @@ export function SaleDetail({ id, onClose }: { id: string; onClose: () => void })
           {sale.state === "pending" && sale.error ? <T v="small" color={c.warning}>Last attempt: {sale.error}</T> : null}
 
           <Card style={{ padding: 0 }}>
-            {sale.payload.lines.map((l, i) => (
+            {(editing ? editLines : sale.payload.lines).map((l, i) => (
               <View key={l.variantId}>
-                <View style={{ padding: space.lg, flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
-                  <View style={{ flex: 1 }}><T v="strong">{l.name}</T><T v="small" muted>{l.qty} × {formatMoney(num(l.price), currency)}{l.gstRate ? ` · GST ${l.gstRate}%` : ""}</T></View>
-                  <T v="money">{formatMoney(lineAmount(l), currency)}</T>
+                <View style={{ padding: space.lg, flexDirection: "row", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                  <View style={{ flex: 1, gap: 6 }}><T v="strong">{l.name}</T>
+                    {editing ? <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TextInput accessibilityLabel={`Quantity of ${l.name}`} keyboardType="decimal-pad" value={l.qty} onChangeText={(v) => setEditLines((xs) => xs.map((x) => x.variantId === l.variantId ? { ...x, qty: v.replace(/[^0-9.]/g, "") } : x))} style={{ width: 76, minHeight: 44, borderWidth: 1, borderColor: c.border, color: c.text, borderRadius: 8, paddingHorizontal: 8 }} />
+                      <TextInput accessibilityLabel={`Price of ${l.name}`} keyboardType="decimal-pad" value={l.grossPrice ?? l.price} onChangeText={(v) => setEditLines((xs) => xs.map((x) => x.variantId === l.variantId ? (x.grossPrice != null ? { ...x, grossPrice: v.replace(/[^0-9.]/g, "") } : { ...x, price: v.replace(/[^0-9.]/g, "") }) : x))} style={{ flex: 1, minHeight: 44, borderWidth: 1, borderColor: c.border, color: c.text, borderRadius: 8, paddingHorizontal: 8 }} />
+                    </View> : <T v="small" muted>{l.qty} × {formatMoney(num(l.grossPrice ?? l.price), currency)}{l.gstRate ? ` · GST ${l.gstRate}%` : ""}</T>}
+                  </View>
+                  <T v="money">{formatMoney(l.grossPrice != null ? round2(num(l.qty) * num(l.grossPrice) - num(l.discount)) : lineAmount(l), currency)}</T>
                 </View>
-                {i < sale.payload.lines.length - 1 ? <Divider /> : null}
+                {i < (editing ? editLines : sale.payload.lines).length - 1 ? <Divider /> : null}
               </View>
             ))}
           </Card>
+          {editing ? <View style={{ flexDirection: "row", gap: 10 }}><Button title="Save invoice changes" icon="checkmark" style={{ flex: 1 }} onPress={async () => { try { await updateSaleLines(db!, sale.local_id, editLines.map((l) => l.grossPrice != null ? { ...l, price: String(exclusiveUnitPrice(l.grossPrice, l.gstRate)) } : l)); changed(); setEditing(false); } catch (e) { Alert.alert("Could not save", e instanceof Error ? e.message : "Try again."); } }} /><Button title="Cancel" kind="quiet" style={{ flex: 1 }} onPress={() => setEditing(false)} /></View> : canEdit ? <Button title="Edit invoice" kind="quiet" icon="create-outline" onPress={() => { setEditLines(sale.payload.lines.map((l) => ({ ...l }))); setEditing(true); }} /> : null>
 
           <Card style={{ gap: 8 }}>
             <KV k="Subtotal" v={formatMoney(t.subtotal, currency)} />
             {t.tax > 0 && !sale.total ? <KV k="GST" v={formatMoney(t.tax, currency)} /> : null}
             <KV k={sale.total ? "Total with tax" : "Total"} v={formatMoney(total, currency)} strong />
-            <KV k="Payment" v={sale.payload.paymentMethod ? sale.payload.paymentMethod.toLowerCase() : "due"} />
+            <KV k="Paid" v={formatMoney(total - due, currency)} />
+            <KV k="Amount due" v={formatMoney(due, currency)} strong={due > 0} />
+            <KV k="Payment" v={sale.payload.paymentMethod ? sale.payload.paymentMethod.toLowerCase() : "credit"} />
             <KV k="Made" v={new Date(sale.created_at).toLocaleString()} />
+            {(sale.payload.payments ?? []).map((p, i) => <KV key={i} k={`Payment ${i + 1} · ${p.method}`} v={formatMoney(num(p.amount), currency)} />)}
           </Card>
+          {due > 0.004 ? <Button title="Record a payment" icon="wallet-outline" kind="quiet" onPress={() => { setPaymentAmount(due.toFixed(2)); setPaymentOpen(true); }} /> : null}
+          {linked && sale.state === "synced" && (sale.payload.payments?.length ?? 0) > 0 ? <T v="small" muted>Payments added on this phone are local records. Record matching receipts on your connected server.</T> : null}
 
           <Button title="Share invoice (PDF)" icon="share-outline" onPress={() => void share()} busy={sharing} />
+          <Modal visible={paymentOpen} animationType="slide" transparent onRequestClose={() => setPaymentOpen(false)}>
+            <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.35)" }}>
+              <View style={{ backgroundColor: c.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: space.lg, gap: space.lg }}>
+                <Header title="Record payment" onBack={() => setPaymentOpen(false)} />
+                <T v="small" muted>Outstanding balance: {formatMoney(due, currency)}</T>
+                <Field label="Amount received" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="decimal-pad" />
+                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{["CASH", "UPI", "CARD", "BANK"].map((m) => <Chip key={m} title={m} active={paymentMethod === m} onPress={() => setPaymentMethod(m)} />)}</View>
+                <Button title="Save payment" disabled={num(paymentAmount) <= 0 || num(paymentAmount) > due + 0.004} onPress={async () => { const entry: PaymentEntry = { amount: round2(num(paymentAmount)).toFixed(2), method: paymentMethod, recordedAt: Date.now() }; await recordSalePayment(db!, sale.local_id, entry); changed(); setPaymentOpen(false); }} />
+              </View>
+            </View>
+          </Modal>
 
           {linked && sale.state === "failed" ? (
             <View style={{ gap: 10 }}>
