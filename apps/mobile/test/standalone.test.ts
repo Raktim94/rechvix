@@ -3,7 +3,6 @@ import { test } from "node:test";
 import type { Api } from "../src/api/client";
 import { createItem, createParty, getSale, insertSale, mapGet, reapplyPendingStock, setOrg, takeInvoiceNumber, type Org, type SalePayload } from "../src/db/repo";
 import { migrate } from "../src/db/schema";
-import { calcTotals } from "../src/lib/tax";
 import { SyncEngine } from "../src/sync/engine";
 import { FakeServer } from "./fakeServer";
 import { memoryDb } from "./nodedb";
@@ -25,12 +24,6 @@ async function standaloneSale(db: Awaited<ReturnType<typeof setup>>["db"]) {
   await insertSale(db, "sale-1", pl, 2, await takeInvoiceNumber(db, "INV-"));
   return pl;
 }
-
-test("standalone totals: GST per line, grouped by rate", () => {
-  const t = calcTotals([{ qty: "2", price: "25", discount: "0", gstRate: "18" }, { qty: "1", price: "100", discount: "10", gstRate: "5" }, { qty: "1", price: "10", discount: "0" }]);
-  assert.equal(t.subtotal, 150); assert.equal(t.tax, 13.5); assert.equal(t.total, 163.5);
-  assert.deepEqual(t.byRate.map((r) => [r.rate, r.tax]), [[0, 0], [5, 4.5], [18, 9]]);
-});
 
 test("invoice numbers on the phone are gap-free and sequential", async () => {
   const db = memoryDb(); await migrate(db);

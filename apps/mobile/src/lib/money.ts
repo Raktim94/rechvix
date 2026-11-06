@@ -1,3 +1,5 @@
+import { minorToNumber } from "./decimal";
+
 /** Offline estimates only. The server stays the source of truth: tax, rounding and the grand total are
  *  computed there when the sale is finalised, so everything here is labelled "before tax" in the UI. */
 export function num(v: string | number | null | undefined): number {
@@ -26,4 +28,11 @@ export const isValidQty = (s: string): boolean => /^\d+(\.\d{1,4})?$/.test(s) &&
 export function bumpQty(qty: string, delta: number): string {
   const next = round2(num(qty) + delta);
   return String(next < 0 ? 0 : next);
+}
+
+
+// ---------------------------------------------------------------- minor-unit (BigInt) display helpers
+/** Money held as whole minor units (paise/cents), formatted for display only. All arithmetic stays in BigInt. */
+export function formatMinor(m: bigint, currency = "INR"): string {
+  return formatMoney(minorToNumber(m), currency);
 }

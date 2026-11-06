@@ -40,11 +40,11 @@ export function Card({ children, style }: { children: React.ReactNode; style?: S
  *  Layout props (flex, width, margins...) go on the outer Pressable, where the parent's layout can see them; the rest is the visual box. */
 const LAYOUT = ["flex", "flexGrow", "flexShrink", "flexBasis", "alignSelf", "width", "minWidth", "maxWidth", "margin", "marginTop", "marginBottom", "marginLeft", "marginRight", "marginHorizontal", "marginVertical", "position", "left", "right", "top", "bottom"] as const;
 export function Tap({ children, onPress, style, label, disabled, haptic = true }: { children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; label?: string; disabled?: boolean; haptic?: boolean }) {
-  const scale = React.useRef(new Animated.Value(1)).current;
+  const [scale] = React.useState(() => new Animated.Value(1));
   const to = (v: number) => Animated.timing(scale, { toValue: v, duration: 90, useNativeDriver: true }).start();
   const flat = (StyleSheet.flatten(style) ?? {}) as Record<string, unknown>;
   const outer: Record<string, unknown> = {}, inner: Record<string, unknown> = {};
-  for (const k of Object.keys(flat)) (LAYOUT as readonly string[]).includes(k) ? (outer[k] = flat[k]) : (inner[k] = flat[k]);
+  for (const k of Object.keys(flat)) { if ((LAYOUT as readonly string[]).includes(k)) outer[k] = flat[k]; else inner[k] = flat[k]; }
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled} style={outer as ViewStyle}
       onPressIn={() => to(0.97)} onPressOut={() => to(1)}

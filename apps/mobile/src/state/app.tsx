@@ -1,13 +1,16 @@
 import NetInfo from "@react-native-community/netinfo";
 import * as SecureStore from "expo-secure-store";
-import React, { createContext, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, use, useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { Api, ApiError } from "../api/client";
 import { openDb } from "../db/expo";
 import {
-  countByState, getOrg, getProfile, insertSale, kvDel, kvGet, kvSet, resetSyncing, setProfile, takeInvoiceNumber, createParty,
-  DEFAULT_PROFILE, type Org, type Profile, type SalePayload, type SaleState,
+  countByState, getOrg, getProfile, kvDel, kvGet, kvSet, resetSyncing, setProfile, createParty,
+  type Org, type Profile, type SaleState,
 } from "../db/repo";
+import { cartActions, getCart, initCart } from "./cart";
+import { checkout, type CheckoutResult } from "./checkout";
+import { cancelSyncedInvoice, type Cancelled } from "../sync/correct";
 import { migrate } from "../db/schema";
 import type { Db } from "../db/types";
 import { normalizeServer, probeServer } from "../lib/server";
@@ -52,7 +55,10 @@ export interface AppCtx {
   changed(): void;
   completeSetup(p: Profile): Promise<void>;
   saveProfile(p: Profile): Promise<void>;
-  saveSale(payload: SalePayload): Promise<{ localId: string; number: string }>;
+  /** Saves the bill in the cart (new invoice, or the edit of an unsynced one) and starts a fresh cart. */
+  saveCart(): Promise<CheckoutResult>;
+  /** Cancels an invoice the server holds (reversing its payments first). Throws CorrectionError with a plain-language reason on failure. */
+  correctInvoice(localId: string, reason: string): Promise<Cancelled>;
 }
 
 const Ctx = createContext<AppCtx | null>(null);
@@ -92,7 +98,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const engineRef = useRef<SyncEngine | null>(null);
   const linkedRef = useRef(false);
   const linked = !!server && hasCookie;
-  linkedRef.current = linked;
+  useEffect(() => { linkedRef.current = linked; }, [linked]);
 
   const refresh = useCallback(async () => {
     const d = dbRef.current;
@@ -105,7 +111,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setVersion((v) => v + 1);
   }, []);
 
-  const api = useMemo(
+  // The callbacks read the refs when a request is made (never during render); the compiler lint cannot tell, hence the disable.
+  /* eslint-disable react-hooks/refs */
+  const [api] = useState(
     () =>
       new Api({
         baseUrl: () => serverRef.current,
@@ -113,8 +121,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         onCookie: (c) => { cookieRef.current = c; setHasCookie(true); void SecureStore.setItemAsync(COOKIE_KEY, c); },
         onUnauthorized: () => { if (linkedRef.current) setSessionExpired(true); },
       }),
-    [],
   );
+  /* eslint-enable react-hooks/refs */
 
   // ---- boot ----
   useEffect(() => {
@@ -133,7 +141,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       cookieRef.current = await SecureStore.getItemAsync(COOKIE_KEY);
       setHasCookie(!!cookieRef.current);
       await refresh();
-      setPhase((await getProfile(d)) ? "ready" : "welcome");
+      const prof = await getProfile(d);
+      await initCart(d, prof?.pricingMode ?? "INCLUSIVE");
+      setPhase(prof ? "ready" : "welcome");
     })().catch(() => setPhase("welcome"));
     return () => { cancelled = true; };
   }, [api, refresh]);
@@ -247,15 +257,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await refresh();
   }, [api, clearSession, refresh]);
 
-  const saveSale = useCallback(async (payload: SalePayload): Promise<{ localId: string; number: string }> => {
+  const saveCart = useCallback(async (): Promise<CheckoutResult> => {
     const d = dbRef.current!;
-    const localId = uid();
-    const number = await takeInvoiceNumber(d, (await getProfile(d))?.invoicePrefix ?? DEFAULT_PROFILE.invoicePrefix);
-    await insertSale(d, localId, payload, Date.now(), number);
+    const cart = getCart();
+    const r = await checkout(d, cart, { uid, now: Date.now() });
+    cartActions.clear((await getProfile(d))?.pricingMode ?? "INCLUSIVE");
     await refresh();
-    void syncNow(); // no-op when standalone; in the background when linked. The sale is already safe on the phone.
-    return { localId, number };
+    void syncNow(); // no-op when standalone; in the background when linked. The invoice is already safe on the phone.
+    return r;
   }, [refresh, syncNow]);
+
+  const correctInvoice = useCallback(async (localId: string, reason: string): Promise<Cancelled> => {
+    try { return await cancelSyncedInvoice(api, dbRef.current!, localId, reason, Date.now()); } finally { await refresh(); }
+  }, [api, refresh]);
 
   const changed = useCallback(() => { void refresh().then(() => syncNow()); }, [refresh, syncNow]);
 
@@ -264,7 +278,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     currency: org?.currency ?? profile?.currency ?? "INR",
     businessName: profile?.name || org?.legalName || "Rechvix",
     linked, server, email, linking, online, syncing, counts, lastSyncAt, sessionExpired, lastSync, version,
-    startLinking, cancelLinking, connect, login, logout, disconnect, syncNow, changed, completeSetup, saveProfile, saveSale,
+    startLinking, cancelLinking, connect, login, logout, disconnect, syncNow, changed, completeSetup, saveProfile, saveCart, correctInvoice,
   };
   return <Ctx value={value}>{children}</Ctx>;
 }

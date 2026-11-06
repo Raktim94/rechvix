@@ -23,7 +23,7 @@ async function setup() {
 test("migrations are idempotent", async () => {
   const db: Db = memoryDb();
   await migrate(db); await migrate(db);
-  assert.equal((await db.first<{ user_version: number }>("PRAGMA user_version"))!.user_version, 2);
+  assert.equal((await db.first<{ user_version: number }>("PRAGMA user_version"))!.user_version, 3);
 });
 
 test("offline: sales stay queued in order and nothing is lost", async () => {

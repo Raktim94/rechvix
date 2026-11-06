@@ -8,8 +8,10 @@ interface Doc { ID: string; Status: string; DocumentNumber: string; ref: string;
  *  dying *after the server did the work* (the nastiest case: the phone never hears the answer). */
 export class FakeServer implements SagaApi {
   docs = new Map<string, Doc>();
-  receipts: { doc: string; amount: string; method: string }[] = [];
+  receipts: { id: string; doc: string | undefined; amount: string; method: string; clientRef?: string; party?: string; reversed: boolean; reason?: string }[] = [];
+  createBodies: Record<string, string>[] = [];
   finalizeCount = 0;
+  cancelCount = 0;
   nextNo = 1;
   calls: string[] = [];
   crashAt: string | null = null;
@@ -33,7 +35,7 @@ export class FakeServer implements SagaApi {
       return { document: { ID: d.ID, Status: d.Status, DocumentNumber: d.Status === "FINALIZED" ? d.DocumentNumber : "", GrandTotalAmount: d.Status === "FINALIZED" ? { amount: d.total, currency: "INR" } : null }, lines: d.lines } as T;
     }
     m = /^\/accounting\/sales-documents\/([^/]+)\/receipts$/.exec(path);
-    if (m) return { receipts: this.receipts.filter((r) => r.doc === m![1]).map((r) => ({ Amount: { amount: r.amount, currency: "INR" } })) } as T;
+    if (m) return { receipts: this.receipts.filter((r) => r.doc === m![1] && !r.reversed).map((r) => ({ Amount: { amount: r.amount, currency: "INR" } })) } as T;
     m = /^\/contacts\/parties\?q=(.*)$/.exec(path);
     if (m) { const q = decodeURIComponent(m[1]!).toLowerCase(); return { parties: this.parties.filter((p) => p.LegalName.toLowerCase().includes(q)) } as T; }
     m = /^\/sales\/billing-lookup\?q=([^&]*)/.exec(path);
@@ -51,6 +53,7 @@ export class FakeServer implements SagaApi {
     if (this.reject?.path.test(path)) throw new ApiError(this.reject.status, this.reject.code, this.reject.message);
     const b = (body ?? {}) as Record<string, string>;
     if (path === "/sales/documents") {
+      this.createBodies.push(b);
       if (!this.parties.some((p) => p.ID === b.customer_party_id) && b.customer_party_id !== "cust" && !String(b.customer_party_id).startsWith("c")) throw new ApiError(500, "INTERNAL_ERROR", `FK: no customer ${b.customer_party_id}`);
       const id = `doc-${this.docs.size + 1}`;
       this.docs.set(id, { ID: id, Status: "DRAFT", DocumentNumber: "", ref: b.customer_reference ?? "", lines: [], total: "0" });
@@ -78,9 +81,28 @@ export class FakeServer implements SagaApi {
       this.maybeCrash("after-finalize");
       return {} as T;
     }
+    m = /^\/sales\/documents\/([^/]+)\/cancel$/.exec(path);
+    if (m) {
+      const d = this.docs.get(m[1]!)!;
+      if (d.Status !== "FINALIZED") throw new ApiError(409, "DOCUMENT_NOT_FINALIZED", "Only a FINALIZED document can be converted or cancelled.");
+      d.Status = "CANCELLED"; this.cancelCount++; this.maybeCrash("after-cancel");
+      return {} as T;
+    }
     if (path === "/accounting/receipts") {
-      this.receipts.push({ doc: b.sales_document_id!, amount: b.amount!, method: b.method! });
+      const dup = b.client_ref ? this.receipts.find((r) => r.clientRef === b.client_ref) : undefined;
+      if (dup) return { ID: dup.id } as T;           // the real server returns the receipt it already booked
+      const rec = { id: `rc-${this.receipts.length + 1}`, doc: b.sales_document_id, amount: b.amount!, method: b.method!, clientRef: b.client_ref, party: b.party_id, reversed: false };
+      this.receipts.push(rec);
       this.maybeCrash("after-receipt");
+      return { ID: rec.id } as T;
+    }
+    m = /^\/accounting\/receipts\/([^/]+)\/reverse$/.exec(path);
+    if (m) {
+      const r = this.receipts.find((x) => x.id === m![1]);
+      if (!r) throw new ApiError(404, "NOT_FOUND", "no such receipt");
+      if (r.reversed) throw new ApiError(409, "ALREADY_REVERSED", "already reversed");
+      if (!b.reason) throw new ApiError(400, "INVALID_INPUT", "a reason is required");
+      r.reversed = true; r.reason = b.reason; this.maybeCrash("after-reverse");
       return {} as T;
     }
     if (path === "/contacts/parties") {

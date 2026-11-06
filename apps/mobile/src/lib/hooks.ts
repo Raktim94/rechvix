@@ -14,6 +14,16 @@ export function useLocal<T>(fn: (db: NonNullable<ReturnType<typeof useApp>["db"]
   return v;
 }
 
+/** The current time, refreshed every 30 s, so screens that depend on "now" (overdue, today) stay right without reading the clock during render. */
+export function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
+  return now;
+}
+
+/** The clock for event handlers (saving a payment, logging a reminder). */
+export const nowMs = (): number => Date.now();
+
 export function ago(ms: number | null, now = Date.now()): string {
   if (!ms) return "never";
   const s = Math.max(0, Math.round((now - ms) / 1000));

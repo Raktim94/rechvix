@@ -33,7 +33,7 @@ test("happy path: one invoice, three lines, finalised once, receipted in full at
   assert.equal(srv.finalizeCount, 1);
   assert.equal(out.docNumber, "INV/000001");
   assert.equal(out.total, "1746.40"); // (50+1400+30) * 1.18 — tax added by the server
-  assert.deepEqual(srv.receipts, [{ doc: "doc-1", amount: "1746.40", method: "CASH" }]);
+  assert.deepEqual(srv.receipts.map((r) => ({ doc: r.doc, amount: r.amount, method: r.method })), [{ doc: "doc-1", amount: "1746.40", method: "CASH" }]);
 });
 
 test("pay later: no receipt is posted", async () => {

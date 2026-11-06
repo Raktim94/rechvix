@@ -1,11 +1,12 @@
 import { ApiError, NetworkError, type Api } from "../api/client";
 import type { Db } from "../db/types";
-import { dueSales, getOrg, kvSet, mapGet, markState, resetSyncing, saveProgress, type Org } from "../db/repo";
+import { dueSales, getOrg, kvSet, mapGet, markState, resetSyncing, saveProgress } from "../db/repo";
 import { pullMaster } from "./pull";
+import { pushPayments } from "./payments";
 import { pushItems, pushParties } from "./push";
 import { NotReadyError, runSale, type Resolver } from "./saga";
 
-export interface SyncResult { pushed: number; failed: number; pulled: boolean; offline: boolean; authRequired: boolean; message?: string }
+export interface SyncResult { pushed: number; failed: number; pulled: boolean; offline: boolean; authRequired: boolean; message?: string; paymentsPosted?: number; paymentsFailed?: number }
 
 const MAX_SERVER_ERROR_ATTEMPTS = 5;
 
@@ -83,6 +84,15 @@ export class SyncEngine {
         res.failed++;
       }
       this.onChange();
+    }
+
+    try {
+      const pay = await pushPayments(this.api, this.db);
+      res.paymentsPosted = pay.posted; res.paymentsFailed = pay.failed;
+      res.failed += pay.failed;
+    } catch (e) {
+      if (!this.classify(e, res)) res.message = res.message ?? `Couldn't send payments: ${e instanceof Error ? e.message : "unknown error"}`;
+      return res;
     }
 
     await this.pull(res);

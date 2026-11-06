@@ -1,0 +1,695 @@
+[
+ {
+  "name": "inclusive 105 @5%, qty 1",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "105",
+    "discount": "0",
+    "rate": "5"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "100.00",
+     "tax": "5",
+     "total": "105.00"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "2.50"
+    },
+    {
+     "label": "SGST",
+     "amount": "2.50"
+    }
+   ],
+   "subtotal": "100.00",
+   "grandTotal": "105.00"
+  }
+ },
+ {
+  "name": "inclusive 105 @5%, qty 2",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "2",
+    "price": "105",
+    "discount": "0",
+    "rate": "5"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "200.00",
+     "tax": "10",
+     "total": "210.00"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "5.00"
+    },
+    {
+     "label": "SGST",
+     "amount": "5.00"
+    }
+   ],
+   "subtotal": "200.00",
+   "grandTotal": "210.00"
+  }
+ },
+ {
+  "name": "inclusive 118 @18%",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "118",
+    "discount": "0",
+    "rate": "18"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "100.00",
+     "tax": "18",
+     "total": "118.00"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "9.00"
+    },
+    {
+     "label": "SGST",
+     "amount": "9.00"
+    }
+   ],
+   "subtotal": "100.00",
+   "grandTotal": "118.00"
+  }
+ },
+ {
+  "name": "inclusive zero-rated",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "100",
+    "discount": "0",
+    "rate": "0"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "100.00",
+     "tax": "",
+     "total": "100.00"
+    }
+   ],
+   "taxes": [],
+   "subtotal": "100.00",
+   "grandTotal": "100.00"
+  }
+ },
+ {
+  "name": "inclusive odd price rounding 12%",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "99.99",
+    "discount": "0",
+    "rate": "12"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "89.27",
+     "tax": "10.72",
+     "total": "99.99"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "5.36"
+    },
+    {
+     "label": "SGST",
+     "amount": "5.36"
+    }
+   ],
+   "subtotal": "89.27",
+   "grandTotal": "99.99"
+  }
+ },
+ {
+  "name": "inclusive 28% fraction qty 2.5",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "2.5",
+    "price": "33.33",
+    "discount": "0",
+    "rate": "28"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "65.11",
+     "tax": "18.22",
+     "total": "83.33"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "9.11"
+    },
+    {
+     "label": "SGST",
+     "amount": "9.11"
+    }
+   ],
+   "subtotal": "65.11",
+   "grandTotal": "83.33"
+  }
+ },
+ {
+  "name": "inclusive qty 0.75 @5%",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "0.75",
+    "price": "149",
+    "discount": "0",
+    "rate": "5"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "106.43",
+     "tax": "5.32",
+     "total": "111.75"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "2.66"
+    },
+    {
+     "label": "SGST",
+     "amount": "2.66"
+    }
+   ],
+   "subtotal": "106.43",
+   "grandTotal": "111.75"
+  }
+ },
+ {
+  "name": "inclusive with line discount",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "3",
+    "price": "19.99",
+    "discount": "0.50",
+    "rate": "18"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "50.39",
+     "tax": "9.08",
+     "total": "59.47"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "4.54"
+    },
+    {
+     "label": "SGST",
+     "amount": "4.54"
+    }
+   ],
+   "subtotal": "50.39",
+   "grandTotal": "59.47"
+  }
+ },
+ {
+  "name": "inclusive mixed rates",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "105",
+    "discount": "0",
+    "rate": "5"
+   },
+   {
+    "qty": "3",
+    "price": "19.99",
+    "discount": "0.50",
+    "rate": "18"
+   },
+   {
+    "qty": "2",
+    "price": "56.5",
+    "discount": "0",
+    "rate": "12"
+   },
+   {
+    "qty": "4",
+    "price": "10",
+    "discount": "0",
+    "rate": "0"
+   },
+   {
+    "qty": "1",
+    "price": "1280.01",
+    "discount": "10",
+    "rate": "28"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "100.00",
+     "tax": "5",
+     "total": "105.00"
+    },
+    {
+     "taxable": "50.39",
+     "tax": "9.08",
+     "total": "59.47"
+    },
+    {
+     "taxable": "100.90",
+     "tax": "12.1",
+     "total": "113.00"
+    },
+    {
+     "taxable": "40.00",
+     "tax": "",
+     "total": "40.00"
+    },
+    {
+     "taxable": "992.19",
+     "tax": "277.82",
+     "total": "1270.01"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "152.00"
+    },
+    {
+     "label": "SGST",
+     "amount": "152.00"
+    }
+   ],
+   "subtotal": "1283.48",
+   "grandTotal": "1587.48"
+  }
+ },
+ {
+  "name": "inclusive inter-state IGST",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": "27",
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "118",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "3",
+    "price": "33.33",
+    "discount": "0",
+    "rate": "5"
+   },
+   {
+    "qty": "1",
+    "price": "99.99",
+    "discount": "0",
+    "rate": "12"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "100.00",
+     "tax": "18.00",
+     "total": "118.00"
+    },
+    {
+     "taxable": "95.23",
+     "tax": "4.76",
+     "total": "99.99"
+    },
+    {
+     "taxable": "89.28",
+     "tax": "10.71",
+     "total": "99.99"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "IGST",
+     "amount": "33.47"
+    }
+   ],
+   "subtotal": "284.51",
+   "grandTotal": "317.98"
+  }
+ },
+ {
+  "name": "exclusive 100 @5%",
+  "mode": "EXCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "100",
+    "discount": "0",
+    "rate": "5"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "100.00",
+     "tax": "5",
+     "total": "100.00"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "2.50"
+    },
+    {
+     "label": "SGST",
+     "amount": "2.50"
+    }
+   ],
+   "subtotal": "100.00",
+   "grandTotal": "105.00"
+  }
+ },
+ {
+  "name": "exclusive mixed + discount",
+  "mode": "EXCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "2",
+    "price": "49.99",
+    "discount": "1",
+    "rate": "5"
+   },
+   {
+    "qty": "3",
+    "price": "19.99",
+    "discount": "0.50",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "333.33",
+    "discount": "0",
+    "rate": "28"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "98.98",
+     "tax": "4.94",
+     "total": "98.98"
+    },
+    {
+     "taxable": "59.47",
+     "tax": "10.7",
+     "total": "59.47"
+    },
+    {
+     "taxable": "333.33",
+     "tax": "93.34",
+     "total": "333.33"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "54.49"
+    },
+    {
+     "label": "SGST",
+     "amount": "54.49"
+    }
+   ],
+   "subtotal": "491.78",
+   "grandTotal": "600.76"
+  }
+ },
+ {
+  "name": "exclusive inter-state",
+  "mode": "EXCLUSIVE",
+  "placeOfSupplyState": "27",
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "2",
+    "price": "99.99",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "45.45",
+    "discount": "0",
+    "rate": "12"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "199.98",
+     "tax": "36.00",
+     "total": "199.98"
+    },
+    {
+     "taxable": "45.45",
+     "tax": "5.45",
+     "total": "45.45"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "IGST",
+     "amount": "41.45"
+    }
+   ],
+   "subtotal": "245.43",
+   "grandTotal": "286.88"
+  }
+ },
+ {
+  "name": "many small lines (rounding accumulates)",
+  "mode": "INCLUSIVE",
+  "placeOfSupplyState": null,
+  "supplierState": "20",
+  "lines": [
+   {
+    "qty": "1",
+    "price": "1.18",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "1.18",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "1.18",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "1.18",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "1.18",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "1.18",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "1.18",
+    "discount": "0",
+    "rate": "18"
+   },
+   {
+    "qty": "1",
+    "price": "1.05",
+    "discount": "0",
+    "rate": "5"
+   },
+   {
+    "qty": "1",
+    "price": "1.05",
+    "discount": "0",
+    "rate": "5"
+   },
+   {
+    "qty": "1",
+    "price": "1.05",
+    "discount": "0",
+    "rate": "5"
+   },
+   {
+    "qty": "1",
+    "price": "1.05",
+    "discount": "0",
+    "rate": "5"
+   },
+   {
+    "qty": "1",
+    "price": "1.05",
+    "discount": "0",
+    "rate": "5"
+   }
+  ],
+  "server": {
+   "lines": [
+    {
+     "taxable": "1.00",
+     "tax": "0.18",
+     "total": "1.18"
+    },
+    {
+     "taxable": "1.00",
+     "tax": "0.18",
+     "total": "1.18"
+    },
+    {
+     "taxable": "1.00",
+     "tax": "0.18",
+     "total": "1.18"
+    },
+    {
+     "taxable": "1.00",
+     "tax": "0.18",
+     "total": "1.18"
+    },
+    {
+     "taxable": "1.00",
+     "tax": "0.18",
+     "total": "1.18"
+    },
+    {
+     "taxable": "1.00",
+     "tax": "0.18",
+     "total": "1.18"
+    },
+    {
+     "taxable": "1.00",
+     "tax": "0.18",
+     "total": "1.18"
+    },
+    {
+     "taxable": "0.99",
+     "tax": "0.06",
+     "total": "1.05"
+    },
+    {
+     "taxable": "0.99",
+     "tax": "0.06",
+     "total": "1.05"
+    },
+    {
+     "taxable": "0.99",
+     "tax": "0.06",
+     "total": "1.05"
+    },
+    {
+     "taxable": "0.99",
+     "tax": "0.06",
+     "total": "1.05"
+    },
+    {
+     "taxable": "0.99",
+     "tax": "0.06",
+     "total": "1.05"
+    }
+   ],
+   "taxes": [
+    {
+     "label": "CGST",
+     "amount": "0.78"
+    },
+    {
+     "label": "SGST",
+     "amount": "0.78"
+    }
+   ],
+   "subtotal": "11.95",
+   "grandTotal": "13.51"
+  }
+ }
+]

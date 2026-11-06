@@ -29,6 +29,13 @@ interface ReceiptList { receipts: { Amount: Money }[] | null }
 /** A prerequisite isn't on the server yet. Not an error: the sale simply waits for the next sync. */
 export class NotReadyError extends Error {}
 
+/** Where the supply happens: the customer's state when it is known and differs from the seller's (IGST), otherwise the seller's own
+ *  (CGST+SGST). An unknown customer state is never guessed. */
+export function placeOfSupply(sellerState: string, p: Pick<SalePayload, "customerState" | "sellerState">): string {
+  const seller = p.sellerState || sellerState || "00";
+  return p.customerState && p.customerState !== seller ? p.customerState : seller;
+}
+
 export const customerReference = (localId: string): string => `mobile:${localId}`;
 
 /** Maps ids made on the phone (items/customers created offline) to the server's ids once those have been uploaded.
@@ -59,11 +66,14 @@ export async function runSale(
       customer_party_id: customerId,
       document_type: "TAX_INVOICE",
       customer_reference: customerReference(localId),
-      ...(org.country === "IN" ? { place_of_supply_state_code: org.gstStateCode || "00" } : { customer_country: org.country }),
+      ...(org.country === "IN" ? { place_of_supply_state_code: placeOfSupply(org.gstStateCode, payload) } : { customer_country: org.country }),
       currency_code: org.currency,
       base_currency_code: org.currency,
       exchange_rate: "1",
-      pricing_mode: "EXCLUSIVE",
+      // INCLUSIVE: the unit prices below already contain GST and the server takes the tax out of them. A sale queued before this
+      // field existed carries no pricingMode and keeps the EXCLUSIVE meaning it was made under.
+      pricing_mode: payload.pricingMode ?? "EXCLUSIVE",
+      ...(payload.dueDate ? { due_date: new Date(payload.dueDate).toISOString() } : {}),
     });
     p.docId = created.ID;
     await save(p);

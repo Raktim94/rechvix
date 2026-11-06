@@ -4,6 +4,7 @@ import {
   dueSales, kvDel, kvGet, kvSet, mapGet, mapSet, markItemPushed, markPartyPushed, unpushedItems, unpushedParties, type ItemMapExtra, type Org, type Party, type Product,
 } from "../db/repo";
 import { num } from "../lib/money";
+import { dec, roundRatio, SCALE } from "../lib/decimal";
 import type { Db } from "../db/types";
 
 /** Uploads what was created on the phone: customers first, then items. Each is matched against what the server already has
@@ -156,7 +157,7 @@ async function pushOne(api: Api, db: Db, org: Org, it: Product, existing: { serv
   }
   if (Number(it.price) > 0 && !ext.priceDone) {
     const list = await api.post<{ ID: string }>("/pricing/price-lists/ensure-default", { currency_code: org.currency });
-    await api.post(`/pricing/price-lists/${list.ID}/items`, { product_variant_id: variantId, unit_id: ext.unitId, amount: it.price, currency_code: org.currency });
+    await api.post(`/pricing/price-lists/${list.ID}/items`, { product_variant_id: variantId, unit_id: ext.unitId, amount: priceListAmount(it), currency_code: org.currency });
     ext.priceDone = true; await save();
   }
   if (it.hsn && it.gst_rate && !ext.taxDone) {
@@ -167,4 +168,16 @@ async function pushOne(api: Api, db: Db, org: Org, it: Product, existing: { serv
     } catch (e) { if (!(e instanceof ApiError) || e.status >= 500) throw e; }
     ext.taxDone = true; await save();
   }
+}
+
+
+/** The server's price list holds PRE-TAX prices (the web app bills tax on top). An item priced on the phone as a GST-inclusive
+ *  "sticker price" is therefore uploaded as price / (1 + rate/100), to 6 decimal places, so the same item bills the same on the web. */
+export function priceListAmount(it: Pick<Product, "price" | "price_basis" | "gst_rate">): string {
+  const price = dec(it.price);
+  const rate = dec(it.gst_rate);
+  if (it.price_basis !== "INCL" || rate === 0n) return it.price ?? "0";
+  const exact = roundRatio(price * 100n * 1_000_000n, 100n * SCALE + rate); // price / (1 + rate/100), in millionths of a currency unit
+  const whole = exact / 1_000_000n, frac = String(exact % 1_000_000n).padStart(6, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : String(whole);
 }

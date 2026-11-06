@@ -100,6 +100,19 @@ export async function pullMaster(api: Api, db: Db, now: () => number = Date.now)
     await db.run("DELETE FROM server_docs WHERE gen < ?", [gen]);
   } catch { /* keep the previous history */ }
 
+  // Who owes money, across the whole business (invoices made on the web or other phones too). Best effort, like history.
+  try {
+    const rows = (await api.get<{ parties: { PartyID: string; PartyName: string; Phone: string; Current: { amount: string }; Days1To30: { amount: string }; Days31To60: { amount: string }; Days61To90: { amount: string }; Days90Plus: { amount: string }; Total: { amount: string }; LastReminderSentAt: string | null; ReminderCount: number }[] | null }>("/reports/accounting/receivables/detailed")).parties ?? [];
+    for (const r of rows) {
+      await db.run(
+        `INSERT INTO server_balances(party_id,name,phone,total,current_amt,d30,d60,d90,d90plus,last_reminder_at,reminder_count,gen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(party_id) DO UPDATE SET name=excluded.name,phone=excluded.phone,total=excluded.total,current_amt=excluded.current_amt,d30=excluded.d30,d60=excluded.d60,d90=excluded.d90,d90plus=excluded.d90plus,last_reminder_at=excluded.last_reminder_at,reminder_count=excluded.reminder_count,gen=excluded.gen`,
+        [r.PartyID, r.PartyName, r.Phone ?? "", r.Total.amount, r.Current.amount, r.Days1To30.amount, r.Days31To60.amount, r.Days61To90.amount, r.Days90Plus.amount, r.LastReminderSentAt ? Date.parse(r.LastReminderSentAt) : null, r.ReminderCount ?? 0, gen],
+      );
+    }
+    await db.run("DELETE FROM server_balances WHERE gen < ?", [gen]);
+  } catch { /* keep the previous balances */ }
+
   const org: Org = {
     organisationId: le.OrganisationID, legalEntityId: le.ID, legalName: le.LegalName, country: le.CountryCode, currency: le.BaseCurrencyCode,
     gstStateCode: le.GSTStateCode, branchId: branch.ID, warehouseId: wh.ID, priceListId: priceList.ID, walkInPartyId: walkIn.ID,

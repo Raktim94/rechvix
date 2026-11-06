@@ -1,9 +1,11 @@
+import * as Print from "expo-print";
 import React, { useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { Alert, ScrollView, Switch, View } from "react-native";
 import { exportBackup } from "../lib/share";
 import { ago } from "../lib/hooks";
 import { type Profile } from "../db/repo";
 import { GST_RATES } from "../lib/tax";
+import { TEMPLATES, invoiceHtml, paperFor, sampleInvoice, type InvoiceTemplate } from "../lib/invoice";
 import { version } from "../../package.json";
 import { useApp } from "../state/app";
 import { space, usePalette } from "../theme";
@@ -21,8 +23,8 @@ function Row({ icon, title, sub, onPress, tone }: { icon: IconName; title: strin
   );
 }
 
-export function More({ openCustomers, openProfile }: { openCustomers: () => void; openProfile: () => void }) {
-  const { linked, server, email, lastSyncAt, counts, syncNow, syncing, online, logout, disconnect, startLinking, db, businessName } = useApp();
+export function More({ openCustomers, openProfile, openItems, openDesign }: { openCustomers: () => void; openProfile: () => void; openItems: () => void; openDesign: () => void }) {
+  const { profile, saveProfile, linked, server, email, lastSyncAt, counts, syncNow, syncing, online, logout, disconnect, startLinking, db, businessName } = useApp();
   const c = usePalette();
   async function guard(fn: () => Promise<string | null>) { const m = await fn(); if (m) Alert.alert("Not yet", m); }
   return (
@@ -34,6 +36,22 @@ export function More({ openCustomers, openProfile }: { openCustomers: () => void
             <Row icon="business-outline" title="Business details" sub={businessName} onPress={openProfile} />
             <View style={{ height: 1, backgroundColor: c.border }} />
             <Row icon="people-outline" title="Customers" onPress={openCustomers} />
+            <View style={{ height: 1, backgroundColor: c.border }} />
+            <Row icon="cube-outline" title="Items & stock" onPress={openItems} />
+          </Card>
+
+          <Label>Billing</Label>
+          <Card style={{ padding: 0 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: space.lg }}>
+              <View style={{ flex: 1 }}>
+                <T v="strong">Prices include GST</T>
+                <T v="small" muted>{profile?.pricingMode === "EXCLUSIVE" ? "New bills start with prices before GST (tax added on top)." : "New bills start with the final price; GST is worked out inside it."}</T>
+              </View>
+              <Switch accessibilityLabel="Prices include GST by default" value={profile?.pricingMode !== "EXCLUSIVE"} trackColor={{ true: c.accent, false: c.borderStrong }} thumbColor="#fff"
+                onValueChange={(v) => { if (profile) void saveProfile({ ...profile, pricingMode: v ? "INCLUSIVE" : "EXCLUSIVE" }); }} />
+            </View>
+            <View style={{ height: 1, backgroundColor: c.border }} />
+            <Row icon="document-text-outline" title="Invoice design" sub={TEMPLATES.find((t) => t.key === (profile?.invoiceTemplate ?? "classic"))?.label} onPress={openDesign} />
           </Card>
 
           <Label>Server</Label>
@@ -70,7 +88,6 @@ function KV({ k, v }: { k: string; v: string }) {
 
 export function ProfileEditor({ onClose }: { onClose: () => void }) {
   const { profile, saveProfile, org } = useApp();
-  const c = usePalette();
   const [p, setP] = useState<Profile>(profile!);
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => setP((x) => ({ ...x, [k]: v }));
   return (
@@ -92,4 +109,53 @@ export function ProfileEditor({ onClose }: { onClose: () => void }) {
       </ScrollView>
     </Screen>
   );
+}
+
+/** Pick how invoices look. Each design is shown as a small drawing; "Preview" opens a real sample invoice in the system print preview. */
+export function InvoiceDesign({ onClose }: { onClose: () => void }) {
+  const { profile, saveProfile, currency } = useApp();
+  const c = usePalette();
+  const [busy, setBusy] = useState<string | null>(null);
+  const cur = profile?.invoiceTemplate ?? "classic";
+  async function preview(t: InvoiceTemplate) {
+    if (!profile) return;
+    setBusy(t);
+    try { await Print.printAsync({ html: invoiceHtml(sampleInvoice(profile, currency), t), ...paperFor(t) }); } catch { /* the user closed the preview */ } finally { setBusy(null); }
+  }
+  return (
+    <Screen>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <Header title="Invoice design" onBack={onClose} sub="Used for every PDF you share. Old invoices keep their figures; only the look changes." />
+        <View style={{ padding: space.lg, gap: space.lg }}>
+          {TEMPLATES.map((t) => {
+            const on = cur === t.key;
+            return (
+              <Card key={t.key} style={{ gap: 12, borderColor: on ? c.accent : c.border, borderWidth: on ? 2 : 1 }}>
+                <Mini kind={t.key} />
+                <View style={{ gap: 2 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}><T v="h3">{t.label}</T>{on ? <T v="small" color={c.accent} style={{ fontFamily: "IBMPlexSans_600SemiBold" }}>Default</T> : null}</View>
+                  <T v="small" muted>{t.blurb} · {t.paper}</T>
+                </View>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <Button style={{ flex: 1 }} kind="quiet" title="Preview" icon="eye-outline" busy={busy === t.key} onPress={() => void preview(t.key)} />
+                  <Button style={{ flex: 1 }} title={on ? "In use" : "Use this"} disabled={on} onPress={() => { if (profile) void saveProfile({ ...profile, invoiceTemplate: t.key }); }} />
+                </View>
+              </Card>
+            );
+          })}
+          <T v="small" muted>You can also pick a different design for a single invoice when you share it.</T>
+        </View>
+      </ScrollView>
+    </Screen>
+  );
+}
+
+/** A tiny drawing of each layout, so the choice is visible before opening a preview. */
+function Mini({ kind }: { kind: InvoiceTemplate }) {
+  const c = usePalette();
+  const bar = (w: string, h = 6, bg = c.borderStrong) => <View style={{ width: w as `${number}%`, height: h, borderRadius: 2, backgroundColor: bg }} />;
+  const sheet = { backgroundColor: "#fff", borderRadius: 6, borderWidth: 1, borderColor: c.border, padding: 12, gap: 6 } as const;
+  if (kind === "thermal") return <View style={[sheet, { width: 120, alignSelf: "center", alignItems: "center" }]}>{bar("60%", 8, "#222")}{bar("80%")}{bar("100%", 1, "#999")}{bar("90%")}{bar("90%")}{bar("100%", 1, "#999")}{bar("50%", 8, "#222")}</View>;
+  if (kind === "modern") return <View style={[sheet, { paddingTop: 0, overflow: "hidden" }]}><View style={{ height: 22, backgroundColor: c.accent, marginHorizontal: -12 }} />{bar("40%", 8, "#222")}{bar("100%", 5, "#e5e7eb")}{bar("100%", 5, "#f3f4f6")}{bar("100%", 5, "#e5e7eb")}<View style={{ alignSelf: "flex-end", width: "40%" }}>{bar("100%", 9, c.accent)}</View></View>;
+  return <View style={[sheet, { borderColor: "#222", borderWidth: 2 }]}><View style={{ flexDirection: "row", justifyContent: "space-between" }}>{bar("40%", 9, "#222")}{bar("20%")}</View>{bar("100%", 1, "#222")}{bar("100%", 5, "#d1d5db")}{bar("100%", 5, "#e5e7eb")}{bar("100%", 5, "#d1d5db")}<View style={{ alignSelf: "flex-end", width: "40%" }}>{bar("100%", 8, "#222")}</View></View>;
 }

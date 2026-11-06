@@ -1,6 +1,6 @@
 {
   "name": "rechvix-mobile",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
@@ -27,6 +27,8 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
@@ -37,7 +39,8 @@
     "web": "expo start --web",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "test:live": "tsx --test test/live.test.ts"
+    "test:live": "tsx --test test/live.test.ts",
+    "lint": "expo lint"
   },
   "private": true,
   "overrides": {

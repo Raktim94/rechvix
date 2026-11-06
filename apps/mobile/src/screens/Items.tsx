@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { unitPriceFor } from "../lib/sale";
 import { Alert, FlatList, Modal, ScrollView, TextInput, View, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { archiveItem, createItem, getItem, searchProducts, updateItem, type ItemInput, type Product } from "../db/repo";
@@ -11,14 +12,14 @@ import { Badge, Button, Chip, Divider, Empty, Field, Header, Icon, IconButton, L
 import { T } from "../ui/text";
 import { Scanner } from "./Scanner";
 
-export function Items({ openEditor }: { openEditor: (id: string | null) => void }) {
-  const { currency, linked } = useApp();
+export function Items({ openEditor, onBack }: { openEditor: (id: string | null) => void; onBack?: () => void }) {
+  const { currency, linked, profile } = useApp();
   const c = usePalette();
   const [q, setQ] = useState("");
   const list = useLocal((db) => searchProducts(db, q, 400), [] as Product[], [q]);
   return (
     <Screen>
-      <Header title="Items" right={<IconButton name="add" label="Add item" tone="accent" onPress={() => openEditor(null)} />} />
+      <Header title="Items" onBack={onBack} right={<IconButton name="add" label="Add item" tone="accent" onPress={() => openEditor(null)} />} />
       <View style={{ paddingHorizontal: space.lg, paddingBottom: space.md }}>
         <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: c.surface, borderRadius: radius.md + 2, borderWidth: 1, borderColor: c.borderStrong, paddingLeft: 14 }}>
           <Icon name="search" size={20} color={c.faint} />
@@ -42,7 +43,7 @@ export function Items({ openEditor }: { openEditor: (id: string | null) => void 
                 </View>
               </View>
               <View style={{ alignItems: "flex-end", gap: 2 }}>
-                <T v="money" style={{ fontFamily: fonts.monoBold }}>{item.price != null ? formatMoney(num(item.price), currency) : "—"}</T>
+                <T v="money" style={{ fontFamily: fonts.monoBold }}>{item.price != null ? formatMoney(num(unitPriceFor(item, profile?.pricingMode ?? "INCLUSIVE")), currency) : "—"}</T>
                 <T v="small" color={stock != null && stock <= 0 ? c.negative : stock != null && stock <= 5 ? c.warning : c.muted}>{stock != null ? `${item.stock} ${item.unit_label}` : "not tracked"}</T>
               </View>
             </Tap>
@@ -57,7 +58,7 @@ const EMPTY: ItemInput = { name: "", sku: "", barcode: "", hsn: "", price: "", g
 export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { db, profile, changed, linked } = useApp();
   const c = usePalette();
-  const [f, setF] = useState<ItemInput>({ ...EMPTY, gstRate: profile?.country === "IN" ? profile.defaultGst : "" });
+  const [f, setF] = useState<ItemInput>({ ...EMPTY, gstRate: profile?.country === "IN" ? profile.defaultGst : "", priceBasis: profile?.pricingMode === "EXCLUSIVE" ? "EXCL" : "INCL" });
   const [existing, setExisting] = useState<Product | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [scan, setScan] = useState(false);
@@ -68,7 +69,7 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
     void getItem(db, id).then((p) => {
       if (!p) return;
       setExisting(p);
-      setF({ name: p.name, sku: p.sku, barcode: p.barcode, hsn: p.hsn, price: p.price ?? "", gstRate: p.gst_rate ?? "", stock: p.stock ?? "", unitLabel: p.unit_label });
+      setF({ name: p.name, sku: p.sku, barcode: p.barcode, hsn: p.hsn, price: p.price ?? "", gstRate: p.gst_rate ?? "", stock: p.stock ?? "", unitLabel: p.unit_label, priceBasis: p.price_basis, qtyDecimals: p.qty_decimals });
     });
   }, [id, db]);
 
@@ -104,9 +105,15 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
               ) : null}
               <Field label="Name" value={f.name} onChangeText={(v) => { set("name", v); setErr(null); }} editable={!readOnly} placeholder="e.g. Steel bolt M8" autoCapitalize="words" error={err} />
               <View style={{ flexDirection: "row", gap: 12 }}>
-                <View style={{ flex: 1 }}><Field label={`Price${profile ? ` (${profile.currency})` : ""}`} value={f.price} onChangeText={(v) => set("price", v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" editable={!readOnly} hint="Before tax" /></View>
+                <View style={{ flex: 1 }}><Field label={`Price${profile ? ` (${profile.currency})` : ""}`} value={f.price} onChangeText={(v) => set("price", v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" editable={!readOnly} hint={f.priceBasis === "INCL" ? "Including GST" : "Before GST"} /></View>
                 <View style={{ flex: 1 }}><Field label="Stock" value={f.stock} onChangeText={(v) => set("stock", v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" editable={!readOnly} hint="Blank = not tracked" /></View>
               </View>
+              {!readOnly && profile?.country === "IN" ? (
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <Chip title="Price includes GST" active={f.priceBasis === "INCL"} onPress={() => set("priceBasis", "INCL")} />
+                  <Chip title="Price before GST" active={f.priceBasis === "EXCL"} onPress={() => set("priceBasis", "EXCL")} />
+                </View>
+              ) : null}
               {profile?.country === "IN" ? (
                 <View style={{ gap: 8 }}><Label>GST rate</Label>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{GST_RATES.map((r) => <Chip key={r} title={`${r}%`} active={f.gstRate === r} onPress={() => !readOnly && set("gstRate", r)} />)}</View></View>
@@ -115,6 +122,16 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
                 <View style={{ flex: 1 }}><Field label="Unit" value={f.unitLabel} onChangeText={(v) => set("unitLabel", v)} editable={!readOnly} autoCapitalize="none" hint="pcs, kg, box…" /></View>
                 <View style={{ flex: 1 }}><Field label="HSN / SAC" value={f.hsn} onChangeText={(v) => set("hsn", v)} keyboardType="number-pad" editable={!readOnly} hint="Optional" /></View>
               </View>
+              {!readOnly ? (
+                <View style={{ gap: 8 }}><Label>Sold in</Label>
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    <Chip title="By unit type" active={f.qtyDecimals == null} onPress={() => set("qtyDecimals", null)} />
+                    <Chip title="Whole numbers" active={f.qtyDecimals === 0} onPress={() => set("qtyDecimals", 0)} />
+                    <Chip title="Fractions (0.5, 2.25…)" active={f.qtyDecimals === 3} onPress={() => set("qtyDecimals", 3)} />
+                  </View>
+                  <T v="small" muted>“By unit type” allows fractions for kg, litre, metre… and whole numbers for pcs, box…</T>
+                </View>
+              ) : null}
               <Field label="SKU" value={f.sku} onChangeText={(v) => set("sku", v)} editable={!readOnly} autoCapitalize="characters" hint="Leave blank to generate one" />
               <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-end" }}>
                 <View style={{ flex: 1 }}><Field label="Barcode" value={f.barcode} onChangeText={(v) => set("barcode", v)} editable={!readOnly} keyboardType="number-pad" /></View>

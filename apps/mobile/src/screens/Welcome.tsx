@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Animated, Image, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { DEFAULT_PROFILE, type Profile } from "../db/repo";
@@ -11,7 +11,7 @@ import { T } from "../ui/text";
 const CURRENCIES = [["INR", "₹ Rupee"], ["USD", "$ Dollar"], ["EUR", "€ Euro"], ["GBP", "£ Pound"], ["AED", "AED Dirham"]] as const;
 
 function Fade({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
-  const v = useRef(new Animated.Value(0)).current;
+  const [v] = useState(() => new Animated.Value(0));
   useEffect(() => { Animated.timing(v, { toValue: 1, duration: 420, delay, useNativeDriver: true }).start(); }, [v, delay]);
   return <Animated.View style={{ opacity: v, transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }] }}>{children}</Animated.View>;
 }
