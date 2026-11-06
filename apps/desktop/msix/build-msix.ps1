@@ -160,10 +160,13 @@ Copy-Item -Recurse (Join-Path $pgExtractTemp "pgsql") (Join-Path $packageDir "pg
 # Strip what a bundled app never needs (headers, docs, pgAdmin, StackBuilder)
 # — keeps the .msix meaningfully smaller without touching anything
 # initdb/pg_ctl/postgres.exe/pg_isready actually load at runtime.
-foreach ($trim in @("doc", "include", "pgAdmin 4", "StackBuilder", "symbols")) {
+foreach ($trim in @("doc", "include", "pgAdmin 4", "StackBuilder", "symbols", "lib\pgxs", "bin\stackbuilder.exe", "bin\pg_regress.exe", "bin\pg_isolation_regress.exe", "bin\pg_regress_ecpg.exe")) {
   $trimPath = Join-Path $packageDir "pgsql\$trim"
   if (Test-Path $trimPath) { Remove-Item $trimPath -Recurse -Force }
 }
+# Static libraries and import libraries are only for building extensions, never loaded at runtime. (stackbuilder.exe, the
+# one executable that demands elevation, was the only thing failing the Windows App Certification Kit's run-level test.)
+Get-ChildItem (Join-Path $packageDir "pgsql\lib") -Recurse -Include *.a, *.lib -File -ErrorAction SilentlyContinue | Remove-Item -Force
 
 $packageSizeMB = [math]::Round(((Get-ChildItem $packageDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
 Write-Host "==> Package layout assembled: $packageSizeMB MB total" -ForegroundColor Cyan
