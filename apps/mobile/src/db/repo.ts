@@ -24,7 +24,7 @@ export interface SalePayload {
   /** Additional payments recorded against an unpaid invoice on this phone. */
   payments?: PaymentEntry[];
 }
-export interface Progress { docId?: string; finalized?: boolean; receipted?: boolean }
+export interface Progress { docId?: string; finalized?: boolean; receipted?: boolean; paymentCount?: number }
 export type SaleState = "pending" | "syncing" | "synced" | "failed";
 
 export interface SaleRow {
