@@ -85,13 +85,21 @@ jobs:
         working-directory: apps/desktop/msix
         run: Copy-Item Rechvix.msix Rechvix-StoreSubmission.msix
 
-      - name: Sign for local install/sideload testing
+      # Sign a COPY of the already-built package (never rebuild): signing only adds a signature, so the file that gets
+      # installed and tested below contains exactly the same executables as the file submitted to the Store.
+      - name: Sign a copy for local install/sideload testing
         working-directory: apps/desktop/msix
-        run: .\build-msix.ps1 -Sign
+        run: |
+          Copy-Item Rechvix-StoreSubmission.msix Rechvix.msix -Force
+          .\sign-msix.ps1 -Path Rechvix.msix
 
       - name: Save signed copy for sideload testing
         working-directory: apps/desktop/msix
         run: Copy-Item Rechvix.msix Rechvix-SideloadTest.msix
+
+      - name: Prove the Store package is the tested package
+        working-directory: apps/desktop/msix
+        run: .\verify-same-payload.ps1 -Store Rechvix-StoreSubmission.msix -Tested Rechvix-SideloadTest.msix
 
       - name: Install / open / minimize / maximize / single-instance / close / uninstall test
         working-directory: apps/desktop/msix
