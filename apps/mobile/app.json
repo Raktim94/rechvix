@@ -3,7 +3,7 @@
     "name": "Rechvix",
     "slug": "rechvix",
     "scheme": "rechvix",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -16,7 +16,7 @@
     "ios": {
       "bundleIdentifier": "in.nodedr.rechvix",
       "supportsTablet": true,
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "NSCameraUsageDescription": "Rechvix uses the camera to scan item barcodes while you bill.",
         "NSAppTransportSecurity": {
@@ -27,7 +27,7 @@
     },
     "android": {
       "package": "in.nodedr.rechvix",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/android-icon-foreground.png",
