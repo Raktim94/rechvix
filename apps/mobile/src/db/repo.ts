@@ -13,7 +13,7 @@ export interface Org {
   walkInPartyId: string | null;
 }
 
-export interface SaleLine { variantId: string; name: string; unitId: string; qty: string; price: string; discount: string; gstRate?: string | null }
+export interface SaleLine { variantId: string; name: string; unitId: string; qty: string; price: string; discount: string; gstRate?: string | null; /** Customer-facing entered price when the bill was tax-inclusive. */ grossPrice?: string }
 export interface SalePayload {
   customerId: string;
   customerName: string;
