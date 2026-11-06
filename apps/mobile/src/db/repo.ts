@@ -104,8 +104,9 @@ export const recentServerDocs = (db: Db, limit = 60): Promise<ServerDoc[]> => db
 export interface Profile {
   name: string; phone: string; address: string; gstin: string;
   country: string; currency: string; gstState: string; defaultGst: string; invoicePrefix: string;
+  invoiceTheme?: "classic" | "clean" | "bold";
 }
-export const DEFAULT_PROFILE: Profile = { name: "", phone: "", address: "", gstin: "", country: "IN", currency: "INR", gstState: "", defaultGst: "18", invoicePrefix: "INV-" };
+export const DEFAULT_PROFILE: Profile = { name: "", phone: "", address: "", gstin: "", country: "IN", currency: "INR", gstState: "", defaultGst: "18", invoicePrefix: "INV-", invoiceTheme: "classic" };
 export async function getProfile(db: Db): Promise<Profile | null> {
   const v = await kvGet(db, "profile");
   return v ? { ...DEFAULT_PROFILE, ...(JSON.parse(v) as Partial<Profile>) } : null;
