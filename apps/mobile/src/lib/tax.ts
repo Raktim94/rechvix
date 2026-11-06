@@ -9,8 +9,14 @@ export interface Totals {
   byRate: { rate: number; base: number; tax: number }[];
 }
 
-/** Local estimate with prices exclusive of tax (the same pricing mode the server uses). The server recomputes with its own
- *  rules when a sale syncs; for a standalone phone this is the invoice. Rounded per line to 2 places, like the server. */
+/** Convert a tax-inclusive unit price back to its taxable value. */
+export function exclusiveUnitPrice(gross: string | number, rate: string | number | null | undefined): number {
+  const amount = num(gross);
+  const percent = num(rate);
+  return percent > 0 ? round2(amount * 100 / (100 + percent)) : round2(amount);
+}
+
+/** Local estimate with prices exclusive of tax. The server recomputes using the same convention on sync. */
 export function calcTotals(lines: TaxLine[]): Totals {
   const groups = new Map<number, { base: number; tax: number }>();
   let subtotal = 0, tax = 0;
