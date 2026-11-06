@@ -1,0 +1,66 @@
+name: Mobile (iOS + Android)
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/mobile/**", ".github/workflows/mobile.yml"]
+  workflow_dispatch:
+    inputs:
+      build_ios:
+        description: "Also build the iOS simulator app on a macOS runner"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck and sync tests
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/mobile } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/mobile/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  android:
+    name: Android APK
+    needs: test
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/mobile } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/mobile/package-lock.json }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci
+      - run: npx expo prebuild --platform android
+      - run: cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+      - uses: actions/upload-artifact@v4
+        with: { name: rechvix-android-apk-unsigned, path: apps/mobile/android/app/build/outputs/apk/release/*.apk }
+
+  ios:
+    name: iOS simulator build
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.build_ios
+    runs-on: macos-15
+    defaults: { run: { working-directory: apps/mobile } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/mobile/package-lock.json }
+      - run: npm ci
+      - run: npx expo prebuild --platform ios
+      - run: |
+          cd ios
+          xcodebuild -workspace Rechvix.xcworkspace -scheme Rechvix -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO | tail -30
+      - uses: actions/upload-artifact@v4
+        with: { name: rechvix-ios-simulator-app, path: apps/mobile/ios/build/Build/Products/Release-iphonesimulator/Rechvix.app }

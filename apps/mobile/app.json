@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Rechvix",
+    "slug": "rechvix",
+    "scheme": "rechvix",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#f6f7f5",
+    "splash": { "image": "./assets/splash-icon.png", "resizeMode": "contain", "backgroundColor": "#f6f7f5" },
+    "ios": {
+      "bundleIdentifier": "in.nodedr.rechvix",
+      "supportsTablet": true,
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Rechvix uses the camera to scan item barcodes while you bill.",
+        "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true },
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "in.nodedr.rechvix",
+      "versionCode": 2,
+      "adaptiveIcon": { "backgroundColor": "#ffffff", "foregroundImage": "./assets/android-icon-foreground.png", "backgroundImage": "./assets/android-icon-background.png" },
+      "permissions": ["CAMERA", "INTERNET", "ACCESS_NETWORK_STATE"],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store",
+      ["expo-camera", { "cameraPermission": "Rechvix uses the camera to scan item barcodes while you bill.", "recordAudioAndroid": false }],
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]
+    ]
+  }
+}
