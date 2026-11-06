@@ -12,7 +12,7 @@ Run it on your own server with Docker Compose or CasaOS/ZimaOS, and use the resp
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
 
-**[Product website](https://rechvix.nodedr.com/) · [Country and currency support](https://rechvix.nodedr.com/tax-support) · [CRM workflows](https://rechvix.nodedr.com/crm-software)**
+**[Get Rechvix free from the Microsoft Store (Windows)](https://apps.microsoft.com/detail/9nmpsp7cr5rw)** · **[Product website](https://rechvix.nodedr.com/) · [Country and currency support](https://rechvix.nodedr.com/tax-support) · [CRM workflows](https://rechvix.nodedr.com/crm-software)**
 
 **[Read the complete tutorial: every page, with 48 screenshots](tutorial.md)** · [Install Rechvix](#install-rechvix) · [Explore the product website](https://rechvix.nodedr.com/) · [Tax and accountant exports](#tax-calculation-and-accountant-exports) · [Documentation](#documentation)
 
