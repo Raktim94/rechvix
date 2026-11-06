@@ -1,0 +1,51 @@
+name: MSIX upgrade test (data survives an update)
+
+# Installs an OLDER release, creates a business and data, updates in place to a NEWER package, and checks the data is still there.
+# Run from the Actions tab with the run ids of two green "Desktop MSIX" runs (older version first). Needs the older run's artifact to
+# still exist (artifacts expire after 30 days); packages built after the current one is released can be tested against it the same way.
+
+on:
+  workflow_dispatch:
+    inputs:
+      old_run_id:
+        description: "Desktop MSIX run id of the OLDER release (lower version)"
+        required: true
+        type: string
+      new_run_id:
+        description: "Desktop MSIX run id of the NEWER package (higher version)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  upgrade:
+    name: Update keeps the user's data
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with: { name: rechvix-desktop-msix, run-id: "${{ inputs.old_run_id }}", github-token: "${{ github.token }}", path: old }
+      - uses: actions/download-artifact@v4
+        with: { name: rechvix-desktop-msix, run-id: "${{ inputs.new_run_id }}", github-token: "${{ github.token }}", path: new }
+
+      - name: Install old, create data, update to new, verify
+        shell: pwsh
+        run: |
+          .\apps\desktop\msix\test-upgrade.ps1 `
+            -OldMsix old\Rechvix-SideloadTest.msix `
+            -NewMsix new\Rechvix-SideloadTest.msix `
+            -Pfx old\RechvixTestCert.pfx, new\RechvixTestCert.pfx
+
+      - name: Show app logs if it failed
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem "$env:LOCALAPPDATA\Packages" -Filter "NODEDRINFOTECH*" -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem $_.FullName -Recurse -Include server.log, postgres.log, pgctl.log, startup-error.txt -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host "----- $($_.FullName) -----"; Get-Content $_.FullName -Tail 80 }
+          }
