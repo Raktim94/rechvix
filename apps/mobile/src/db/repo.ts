@@ -77,7 +77,7 @@ export async function recordSalePayment(db: Db, localId: string, payment: Paymen
   if (!row) throw new Error("Invoice not found.");
   const payload = JSON.parse(row.payload) as SalePayload;
   payload.payments = [...(payload.payments ?? []), payment];
-  await db.run("UPDATE sales SET payload=? WHERE local_id=?", [JSON.stringify(payload), localId]);
+  await db.run("UPDATE sales SET payload=?, state=CASE WHEN state='synced' THEN 'pending' ELSE state END, error=NULL WHERE local_id=?", [JSON.stringify(payload), localId]);
 }
 export async function updateSaleLines(db: Db, localId: string, lines: SaleLine[]): Promise<void> {
   await db.tx(async () => {
