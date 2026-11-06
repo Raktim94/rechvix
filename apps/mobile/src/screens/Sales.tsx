@@ -104,7 +104,7 @@ export function SaleDetail({ id, onClose }: { id: string; onClose: () => void })
   const total = saleAmount(sale);
   const due = outstandingAmount(sale);
   const canEdit = !linked && sale.state !== "synced" && !sale.progress.docId;
-  const editInvalid = editLines.some((l) => !/^\\d+(\\.\\d{1,4})?$/.test(l.qty) || num(l.qty) <= 0 || num(l.grossPrice ?? l.price) <= 0);
+  const editInvalid = editLines.some((l) => !/^\d+(\.\d{1,4})?$/.test(l.qty) || num(l.qty) <= 0 || num(l.grossPrice ?? l.price) <= 0);
 
   async function share() {
     if (!profile || !sale) return;
