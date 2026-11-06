@@ -43,8 +43,8 @@ func TestAccounting_Receipt_ClientRef_IsIdempotent(t *testing.T) {
 	if len(entries) != 2 { // the invoice, then ONE receipt
 		t.Fatalf("ledger has %d entries after a retried receipt, want 2 (invoice + one receipt)", len(entries))
 	}
-	if got := entries[len(entries)-1].RunningBalance.StringFixed(money.RoundHalfUp); got != "3000.00" {
-		t.Fatalf("balance after one ₹2,000 receipt on a ₹5,000 invoice = %s, want 3000.00", got)
+	if got := entries[len(entries)-1].RunningBalance.StringFixed(money.RoundHalfUp); got != "3900.00" {
+		t.Fatalf("balance after one ₹2,000 receipt on a ₹5,000 + 18%% GST (₹5,900) invoice = %s, want 3900.00", got)
 	}
 
 	other := p
@@ -87,8 +87,8 @@ func TestAccounting_ReverseReceipt_RestoresBalance_KeepsHistory(t *testing.T) {
 	if len(entries) != 3 { // invoice, receipt, reversal: history kept, nothing erased
 		t.Fatalf("ledger has %d entries, want 3 (invoice, receipt, reversal)", len(entries))
 	}
-	if got := entries[len(entries)-1].RunningBalance.StringFixed(money.RoundHalfUp); got != "5000.00" {
-		t.Fatalf("balance after reversing the receipt = %s, want 5000.00 (the full invoice owed again)", got)
+	if got := entries[len(entries)-1].RunningBalance.StringFixed(money.RoundHalfUp); got != "5900.00" {
+		t.Fatalf("balance after reversing the receipt = %s, want 5900.00 (the full invoice owed again)", got)
 	}
 
 	receipts, err := accountingSvc.ListReceiptsForSalesDocument(ctx, fx.Principal, inv.ID)
