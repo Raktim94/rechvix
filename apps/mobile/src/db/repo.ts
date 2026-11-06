@@ -84,6 +84,7 @@ export async function updateSaleLines(db: Db, localId: string, lines: SaleLine[]
     const row = await db.first<{ payload: string; state: string; progress: string }>("SELECT payload,state,progress FROM sales WHERE local_id=?", [localId]);
     if (!row || row.state === "synced" || (JSON.parse(row.progress) as Progress).docId) throw new Error("Only an invoice that has not reached the server can be edited on this phone.");
     const payload = JSON.parse(row.payload) as SalePayload;
+    if (payload.paymentMethod) throw new Error("Paid invoices cannot be edited on this phone.");
     for (const old of payload.lines) {
       const next = lines.find((l) => l.variantId === old.variantId);
       const diff = Number(old.qty) - Number(next?.qty ?? 0);
