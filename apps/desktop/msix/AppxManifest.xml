@@ -36,7 +36,7 @@
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>Rechvix</DisplayName>
+    <DisplayName>Rechvix: GST Billing &amp; Inventory</DisplayName>
     <PublisherDisplayName>NODEDR INFOTECH LIMITED</PublisherDisplayName>
     <Description>Self-hosted billing, inventory, accounting, and India GST — fully self-contained: this package bundles the real rechvix server and its own local database, so it runs entirely offline with no account, no server, and no internet connection required. Open it and create your business account on the spot.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
