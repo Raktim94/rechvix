@@ -1,6 +1,6 @@
 import type { Profile, SaleLine } from "../db/repo";
 import { calcTotals } from "./tax";
-import { formatMoney, lineAmount, num } from "./money";
+import { formatMoney, lineAmount, num, round2 } from "./money";
 
 export interface InvoiceData {
   number: string;
@@ -13,6 +13,7 @@ export interface InvoiceData {
   currency: string;
   /** Server-issued figures once synced; otherwise computed here. */
   serverTotal?: string | null;
+  theme?: "classic" | "clean" | "bold";
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -28,17 +29,20 @@ export function gstSplit(business: Profile, customerGstin?: string): "CGST_SGST"
 export function invoiceHtml(d: InvoiceData): string {
   const t = calcTotals(d.lines);
   const m = (n: number) => esc(formatMoney(n, d.currency));
+  const theme = d.theme ?? d.business.invoiceTheme ?? "classic";
+  const themeColors = { classic: "#0f6e5c", clean: "#2454a6", bold: "#153f2e" } as const;
+  const lineTotal = (l: SaleLine) => l.grossPrice != null ? round2(num(l.qty) * num(l.grossPrice) - num(l.discount)) : lineAmount(l);
   const split = gstSplit(d.business, d.customerGstin);
   const taxRows = t.byRate.filter((r) => r.rate > 0).map((r) =>
     split === "IGST"
       ? `<tr><td>IGST @ ${r.rate}%</td><td class="r">${m(r.tax)}</td></tr>`
       : `<tr><td>CGST @ ${r.rate / 2}%</td><td class="r">${m(r.tax / 2)}</td></tr><tr><td>SGST @ ${r.rate / 2}%</td><td class="r">${m(r.tax / 2)}</td></tr>`).join("");
-  const rows = d.lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td class="r">${esc(l.qty)}</td><td class="r">${m(num(l.grossPrice ?? l.price))}</td><td class="r">${l.gstRate ? esc(l.gstRate) + "%" : "–"}</td><td class="r">${m(lineAmount(l))}</td></tr>`).join("");
+  const rows = d.lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td class="r">${esc(l.qty)}</td><td class="r">${m(num(l.grossPrice ?? l.price))}</td><td class="r">${l.gstRate ? esc(l.gstRate) + "%" : "–"}</td><td class="r">${m(lineTotal(l))}</td></tr>`).join("");
   const total = d.serverTotal ? num(d.serverTotal) : t.total;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
  body{font-family:-apple-system,Roboto,Helvetica,Arial,sans-serif;color:#16211c;margin:28px;font-size:13px}
- h1{font-size:22px;margin:0 0 2px;color:#0f6e5c} .muted{color:#5b6b62} .row{display:flex;justify-content:space-between;gap:24px}
+ h1{font-size:22px;margin:0 0 2px;color:${themeColors[theme]} .muted{color:#5b6b62} .row{display:flex;justify-content:space-between;gap:24px}
  table{width:100%;border-collapse:collapse;margin-top:18px} th{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#5b6b62;text-align:left;border-bottom:2px solid #16211c;padding:6px 4px}
  td{padding:8px 4px;border-bottom:1px solid #dbdfd8;vertical-align:top} .r{text-align:right;font-variant-numeric:tabular-nums} th.r{text-align:right}
  .totals{width:55%;margin-left:auto;margin-top:12px} .totals td{border:0;padding:4px} .grand td{border-top:2px solid #16211c;font-size:16px;font-weight:700}
