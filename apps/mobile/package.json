@@ -39,5 +39,9 @@
     "typecheck": "tsc --noEmit",
     "test:live": "tsx --test test/live.test.ts"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "glob": "14.0.4",
+    "minimatch": "11.0.5"
+  }
 }
