@@ -101,7 +101,7 @@ export function SaleDetail({ id, onClose }: { id: string; onClose: () => void })
     if (!profile || !sale) return;
     setSharing(true);
     try {
-      await shareInvoice({ number: sale.doc_number ?? sale.local_number ?? "Invoice", date: sale.created_at, business: profile, customerName: sale.payload.customerName, customerGstin: party?.gstin, lines: sale.payload.lines, paymentMethod: sale.payload.paymentMethod, currency, serverTotal: sale.total });
+      await shareInvoice({ number: sale.doc_number ?? sale.local_number ?? "Invoice", date: sale.created_at, business: profile, customerName: sale.payload.customerName, customerGstin: party?.gstin, lines: sale.payload.lines, paymentMethod: sale.payload.paymentMethod, currency, serverTotal: sale.total, theme: profile.invoiceTheme });
     } finally { setSharing(false); }
   }
 
