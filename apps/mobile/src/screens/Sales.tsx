@@ -59,7 +59,7 @@ export function Sales({ open }: { open: (id: string) => void }) {
       <View style={{ paddingHorizontal: space.lg, paddingBottom: space.md }}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           <Chip title="All" active={f === "all"} onPress={() => setF("all")} />
-          <Chip title="Unpaid" active={f === "unpaid"} onPress={() => setF("unpaid")} />
+          <Chip title="To collect" active={f === "unpaid"} onPress={() => setF("unpaid")} />
           {linked ? <Chip title={`Waiting${counts.pending + counts.syncing ? ` (${counts.pending + counts.syncing})` : ""}`} active={f === "waiting"} onPress={() => setF("waiting")} /> : null}
           {linked ? <Chip title={`Attention${counts.failed ? ` (${counts.failed})` : ""}`} active={f === "attention"} onPress={() => setF("attention")} /> : null}
         </ScrollView>
@@ -162,7 +162,7 @@ export function SaleDetail({ id, onClose }: { id: string; onClose: () => void })
             {(sale.payload.payments ?? []).map((p, i) => <KV key={i} k={`Payment ${i + 1} · ${p.method}`} v={formatMoney(num(p.amount), currency)} />)}
           </Card>
           {due > 0.004 ? <Button title="Record a payment" icon="wallet-outline" kind="quiet" onPress={() => { setPaymentAmount(due.toFixed(2)); setPaymentOpen(true); }} /> : null}
-          {linked && sale.state === "synced" && (sale.payload.payments?.length ?? 0) > 0 ? <T v="small" muted>Payments added on this phone are local records. Record matching receipts on your connected server.</T> : null}
+          {linked && sale.state === "synced" && (sale.payload.payments?.length ?? 0) > 0 ? <T v="small" muted>Payments are added to this invoice and synced to your Rechvix server.</T> : null}
 
           <Button title="Share invoice (PDF)" icon="share-outline" onPress={() => void share()} busy={sharing} />
           <Modal visible={paymentOpen} animationType="slide" transparent onRequestClose={() => setPaymentOpen(false)}>
