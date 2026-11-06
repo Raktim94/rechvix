@@ -246,7 +246,7 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
                       <View style={{ padding: space.lg, flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
                         <View style={{ flex: 1 }}>
                           <T v="strong" style={gone ? { textDecorationLine: "line-through", color: c.muted } : undefined}>{m(parseMinor(p.amount))} · {p.method.replace("_", " ").toLowerCase()}</T>
-                          <T v="small" muted>{new Date(p.paid_at).toLocaleString()}{gone ? ` · reversed: ${p.reversal_reason}` : p.state === "pending" ? " · waiting to sync" : ""}</T>
+                          <T v="small" muted>{new Date(p.paid_at).toLocaleString()}{gone ? ` · reversed: ${p.reversal_reason}` : p.state === "pending" && linked ? " · waiting to sync" : ""}</T>
                         </View>
                       </View>
                       {i < pays.length - 1 ? <Divider /> : null}

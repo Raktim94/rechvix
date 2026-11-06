@@ -1,5 +1,5 @@
 import {
-  getParty, getProfile, insertPayments, insertSale, kvGet, takeInvoiceNumber, updateSaleContent, DEFAULT_PROFILE,
+  getParty, getProfile, insertPayments, insertSale, kvGet, paymentsForSale, takeInvoiceNumber, updateSaleContent, DEFAULT_PROFILE,
   type SaleLine, type SalePayload,
 } from "../db/repo";
 import type { Db } from "../db/types";
@@ -57,7 +57,9 @@ export async function checkout(db: Db, cart: Cart, ids: { uid: () => string; now
 
   if (cart.editing) {
     await updateSaleContent(db, cart.editing.localId, payload, "Edited before syncing", ids.now, calc.totalMinor);
-    return { localId: cart.editing.localId, number: cart.editing.number, totalMinor: calc.totalMinor, receivedMinor: received };
+    // What was already received on this invoice (not what the cart's payment fields say, which are hidden while editing).
+    const have = (await paymentsForSale(db, cart.editing.localId)).filter((p) => p.reversed_at == null && p.state !== "void").reduce((n, p) => n + parseMinor(p.amount), 0n);
+    return { localId: cart.editing.localId, number: cart.editing.number, totalMinor: calc.totalMinor, receivedMinor: have };
   }
 
   const number = await takeInvoiceNumber(db, profile.invoicePrefix);

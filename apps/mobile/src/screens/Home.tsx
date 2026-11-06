@@ -149,6 +149,7 @@ export function Home({ go, open, addItem, addCustomer }: { go: (t: Go) => void; 
             <T v="strong">{!linked ? "Saved on this phone" : counts.failed ? `${counts.failed} need attention` : waiting ? `${waiting} waiting to sync` : "Everything is synced"}</T>
             <T v="small" muted>{!linked ? "Connect a server from More to back up and share with your team." : online ? `Last synced ${ago(lastSyncAt)}` : "Offline. You can keep selling."}</T>
           </View>
+          {linked && (counts.failed > 0 || waiting > 0) ? <Tap label="Review invoices" onPress={() => go("sales")} style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}><T v="small" color={c.accent} style={{ fontFamily: fonts.bodySemi }}>Review</T></Tap> : null}
           {linked && online ? <Tap label="Sync now" onPress={() => void syncNow()} style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}><T v="small" color={c.accent} style={{ fontFamily: fonts.bodySemi }}>Sync</T></Tap> : null}
         </Card>
         {st.unsynced > 0 && linked ? <T v="small" muted>{st.unsynced} invoice{st.unsynced === 1 ? "" : "s"} on this phone aren&apos;t on the server yet, so the web dashboard won&apos;t include them until they sync.</T> : null}

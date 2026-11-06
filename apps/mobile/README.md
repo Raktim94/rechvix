@@ -20,6 +20,24 @@ Upload order: customers -> items -> sales. Everything is merged, never duplicate
 - one record the server refuses (e.g. a bad value) is reported and retried; it does not stop the others.
 The phone's own invoice numbers are replaced by the server's when each sale syncs. "Work without the server" disconnects without deleting anything.
 
+## Billing, receivables and invoices (2.1)
+
+- **Prices.** "Price includes GST" is the default: type the final price (₹105 at 5% stays ₹105; two units are ₹210). Switch it off to type
+  prices before GST. All money is exact decimal arithmetic (BigInt minor units); each GST component is rounded half-up per line, the same
+  rule the server uses, and `test/fixtures/server-parity.json` plus `npm run test:live` check the phone against a real server to the paisa.
+  Each saved sale stores its pricing mode, quantities, tax split and totals, so invoices and PDFs are drawn from what was issued and never
+  recomputed. Sales queued before 2.1 have no pricing mode and keep their original (before-GST) meaning.
+- **Quantities** are typed directly (fractions where the item allows: kg, litre, ... or per-item setting); +/- are shortcuts.
+- **Payments** are separate rows (`payments` table), not a flag on the sale. A payment can be split across invoices (oldest first or a chosen one);
+  extra money is kept as the customer's advance. Each receipt carries `client_ref = mobile:pay:<id>`, so retries book it once on the server.
+  A payment is never erased: reversing it marks it reversed with a reason (locally, or through `POST /accounting/receipts/{id}/reverse`).
+- **Editing.** An invoice the server has never seen can be edited (old version kept in `sale_revisions`). A synced invoice is corrected through
+  Correct invoice: its payments are reversed, it is cancelled on the server (`POST /sales/documents/{id}/cancel`), and a new invoice is issued.
+- **Invoice designs:** Classic tax invoice (A4), Clean modern (A4), Compact receipt (80 mm). Presentation only; the figures are identical.
+- **Server changes** (migration `0065_receipt_reversal`): idempotent receipts via `client_ref`, receipt reversal, reversed receipts excluded from paid totals.
+- **Limits.** Dashboard and To collect figures come from this phone's own invoices; when linked, the server's organisation-wide receivable is
+  shown separately. Reminders open WhatsApp or the share sheet; delivery cannot be known. Quotations, credit notes and returns are not on the phone yet.
+
 ## How sync works
 
 - **Connect once** to your self-hosted server (address is checked against `/health/ready`), then sign in. The session

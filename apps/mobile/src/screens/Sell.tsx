@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Animated, FlatList, Modal, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-  createItem, frequentItems, productByCode, recentCustomers, searchParties, searchProducts, type Party, type Product,
+  createItem, createParty, frequentItems, productByCode, recentCustomers, searchParties, searchProducts, type Party, type Product,
 } from "../db/repo";
 import { dec, minorToString, toMinor } from "../lib/decimal";
 import { useLocal } from "../lib/hooks";
@@ -88,7 +88,9 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
   if (done) return <Done info={done} currency={currency} onView={() => { const id = done.id; setDone(null); onDone(id); }} onNew={() => setDone(null)} />;
 
   const canSave = !!cart.customerId && cart.lines.length > 0 && !errors && !saving;
-  const showing = q.trim() ? results.slice(0, 8) : frequent;
+  // With nothing typed: the items sold most often as one-tap chips; until there is any history, the first few items as a list so nothing is hidden.
+  const asList = !!q.trim() || frequent.length === 0;
+  const showing = q.trim() ? results.slice(0, 8) : frequent.length ? frequent : results.slice(0, 8);
   const owedBackText = cart.corrects && dec(cart.corrects.owedBack) > 0n ? m(toMinor(dec(cart.corrects.owedBack))) : null;
 
   return (
@@ -141,8 +143,8 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
             <Card><Empty icon="search" title="No matching item" hint="Check the spelling, or add it as a new item. This bill stays as it is." action={{ title: `Add “${q.trim()}” as a new item`, onPress: addItem }} /></Card>
           ) : showing.length > 0 ? (
             <View style={{ gap: 8 }}>
-              <Label>{q.trim() ? "Matches" : "Quick add"}</Label>
-              {q.trim() ? (
+              <Label>{q.trim() ? "Matches" : frequent.length ? "Quick add" : "Your items"}</Label>
+              {asList ? (
                 <Card style={{ padding: 0, overflow: "hidden" }}>
                   {showing.map((p, i) => (
                     <View key={p.variant_id}>
@@ -260,7 +262,7 @@ function LineEditor({ line: l, mode, lineTotal, linked }: { line: CartLine; mode
       <T v="small" muted>{mode === "INCLUSIVE" ? "Price includes GST" : "Price before GST"} · per {l.unitLabel}</T>
       {l.qtyError ? <T v="small" color={c.negative}>{l.qtyError}</T> : null}
       {noPrice ? <T v="small" color={c.negative}>Set a price before saving.</T> : null}
-      {over ? <T v="small" color={c.warning}>Only {l.stock} {l.unitLabel} in stock.{linked ? " The server may refuse this sale." : " You can still sell it; stock will show negative."}</T> : null}
+      {over ? <T v="small" color={c.warning}>{linked ? `The last synced stock is ${l.stock} ${l.unitLabel}. The server may refuse this sale if it is still short.` : `This phone counts ${l.stock} ${l.unitLabel} in stock. You can still sell it; stock will show negative.`}</T> : null}
       {disc ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <T v="small" muted style={{ flex: 1 }}>Discount (amount off this line)</T>
@@ -353,6 +355,17 @@ export function CustomerPicker({ visible, onClose, onPick, noWalkIn }: { visible
   const [q, setQ] = useState("");
   const list = useLocal(async (d) => (await searchParties(d, q)).filter((p) => !(noWalkIn && p.is_walk_in)), [] as Party[], [q, visible, noWalkIn]);
   const recent = useLocal((d) => recentCustomers(d, 5), [] as Party[], [visible]);
+  const { db, changed } = useApp();
+  async function quickAdd() {
+    if (!db) return;
+    const id = uid();
+    const text = q.trim();
+    const isPhone = /^[0-9+\s-]{7,}$/.test(text);
+    await createParty(db, id, { name: isPhone ? "New customer" : text, phone: isPhone ? text : "", gstin: "", address: "" }, Date.now());
+    const p = await db.first<Party>("SELECT * FROM parties WHERE id=?", [id]);
+    changed(); setQ("");
+    if (p) onPick(p);
+  }
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
@@ -362,7 +375,12 @@ export function CustomerPicker({ visible, onClose, onPick, noWalkIn }: { visible
             style={{ minHeight: 52, borderRadius: radius.md + 2, borderWidth: 1, borderColor: c.borderStrong, backgroundColor: c.surface, color: c.text, paddingHorizontal: 14, fontSize: 17, fontFamily: fonts.body }} />
           {!q && recent.length > 0 ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{recent.map((p) => <Chip key={p.id} title={p.name} onPress={() => onPick(p)} />)}</View> : null}
         </View>
-        <FlatList data={list} keyExtractor={(p) => p.id} keyboardShouldPersistTaps="handled" ListEmptyComponent={<Empty icon="people-outline" title="No customer found" hint="Add customers from the Home screen." />}
+        {q.trim().length > 1 && !list.some((p) => p.name.toLowerCase() === q.trim().toLowerCase()) ? (
+          <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+            <Button kind="quiet" icon="person-add-outline" title={`Add “${q.trim()}” as a new customer`} onPress={() => void quickAdd()} />
+          </View>
+        ) : null}
+        <FlatList data={list} keyExtractor={(p) => p.id} keyboardShouldPersistTaps="handled" ListEmptyComponent={<Empty icon="people-outline" title="No customer found" hint="Type a name above to add them without leaving this bill." />}
           renderItem={({ item }) => (
             <Pressable accessibilityRole="button" onPress={() => onPick(item)} style={({ pressed }) => ({ minHeight: 64, paddingHorizontal: space.lg, justifyContent: "center", backgroundColor: pressed ? c.accentSoft : "transparent" })}>
               <T v="strong">{item.name}</T>

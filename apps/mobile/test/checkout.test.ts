@@ -60,3 +60,19 @@ test("whole-unit items refuse a fraction; an empty or zero quantity is rejected"
   assert.equal(getCart().lines[0]!.qty, "12");
 });
 void emptyCart;
+
+test("editing an unsynced invoice keeps its payments and reports them", async () => {
+  const db = await setup();
+  const bolt = (await getItem(db, "i1"))!;
+  cartActions.clear("INCLUSIVE");
+  cartActions.patch({ customerId: "c1", customerName: "Gupta", payMethod: "CASH", receivedText: "40" });
+  cartActions.addProduct(bolt, "INCLUSIVE", "105");
+  const r = await checkout(db, getCart(), ids());
+  const s = (await getSale(db, r.localId))!;
+  cartActions.load(s.payload, { editing: { localId: r.localId, number: r.number } });
+  cartActions.step(getCart().lines[0]!.key, 1);
+  const e = await checkout(db, getCart(), ids());
+  assert.equal(minorToString(e.totalMinor), "210.00");
+  assert.equal(minorToString(e.receivedMinor), "40.00");
+  assert.equal((await getSale(db, r.localId))!.revision, 1);
+});
