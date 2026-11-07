@@ -184,12 +184,19 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
                 <>
                   <Label>Payment</Label>
                   <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                    {PAY.map((p) => <Chip key={p.label} title={p.label} active={cart.payMethod === p.key} onPress={() => cartActions.patch({ payMethod: p.key, receivedText: null })} />)}
+                    {PAY.map((p) => <Chip key={p.label} title={p.label} active={cart.payMethod === p.key} onPress={() => cartActions.patch(p.key && cart.payMethod ? { payMethod: p.key } : { payMethod: p.key, receivedText: null })} />)}
                   </View>
                   {cart.payMethod ? (
                     <Field label={`Amount received (${currency})`} value={cart.receivedText ?? minorToString(calc.totalMinor)} keyboardType="decimal-pad"
                       onChangeText={(t) => cartActions.patch({ receivedText: t.replace(/[^0-9.]/g, "") })}
                       hint={balance > 0n ? `${m(balance)} will stay due from ${cart.customerName || "the customer"}.` : "Paid in full."} />
+                  ) : null}
+                  {cart.payMethod ? (
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <Chip title="Full amount" active={received === calc.totalMinor} onPress={() => cartActions.patch({ receivedText: null })} />
+                      <Chip title="Half" active={received * 2n === calc.totalMinor} onPress={() => cartActions.patch({ receivedText: minorToString(calc.totalMinor / 2n) })} />
+                      <Chip title="Nothing yet" active={received === 0n} onPress={() => cartActions.patch({ receivedText: "0" })} />
+                    </View>
                   ) : null}
                 </>
               ) : <T v="small" muted>Payments already recorded stay as they are. Add or reverse them from the invoice.</T>}

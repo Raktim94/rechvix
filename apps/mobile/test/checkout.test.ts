@@ -76,3 +76,24 @@ test("editing an unsynced invoice keeps its payments and reports them", async ()
   assert.equal(minorToString(e.receivedMinor), "40.00");
   assert.equal((await getSale(db, r.localId))!.revision, 1);
 });
+
+test("bill 6000, customer pays 3000: 3000 received, 3000 due, and the invoice says so", async () => {
+  const db = await setup();
+  const rice = (await getItem(db, "i2"))!;
+  cartActions.clear("INCLUSIVE");
+  cartActions.patch({ customerId: "c1", customerName: "Gupta" });
+  cartActions.addProduct(rice, "INCLUSIVE", "6000");
+  cartActions.patch({ payMethod: "CASH", receivedText: "3000" });
+  const r = await checkout(db, getCart(), ids());
+  const s = (await getSale(db, r.localId))!;
+  const paid = salePaidMinor(s, await paymentsForSale(db, r.localId));
+  assert.equal(minorToString(r.totalMinor), "6000.00");
+  assert.equal(minorToString(paid), "3000.00");
+  const { paymentSummary } = await import("../src/lib/invoice");
+  const sum = paymentSummary(r.totalMinor, paid);
+  assert.equal(minorToString(sum.dueMinor), "3000.00"); assert.equal(sum.status, "PARTIAL");
+  // clearing the box means nothing received, never "everything"
+  cartActions.clear("INCLUSIVE"); cartActions.patch({ customerId: "c1", customerName: "Gupta" }); cartActions.addProduct(rice, "INCLUSIVE", "6000");
+  cartActions.patch({ payMethod: "CASH", receivedText: "" });
+  assert.equal((await checkout(db, getCart(), ids())).receivedMinor, 0n);
+});

@@ -19,7 +19,8 @@ export function priceCart(cart: Cart, sellerState: string | null, customerState:
 /** What the customer pays now. null text = the whole amount (when a method is chosen); "Pay later" (no method) = nothing. */
 export function receivedFor(cart: Cart, totalMinor: bigint): bigint {
   if (!cart.payMethod) return 0n;
-  if (cart.receivedText == null || cart.receivedText.trim() === "") return totalMinor;
+  if (cart.receivedText == null) return totalMinor;       // untouched = the whole amount
+  if (cart.receivedText.trim() === "") return 0n;         // the seller cleared the box: nothing received yet, never "everything"
   const d = dec(cart.receivedText);
   const m = toMinor(d);
   return m > totalMinor ? totalMinor : m;
