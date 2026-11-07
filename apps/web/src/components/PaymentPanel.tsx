@@ -12,6 +12,7 @@ interface Transaction {
   ReferenceNumber: string;
   ReceivedAt?: string;
   PaidAt?: string;
+  ReversedAt?: string | null;
 }
 
 interface BankAccount {
@@ -87,7 +88,7 @@ export function PaymentPanel({
     queryFn: () => api.getListField<Transaction>(listPath, listField),
   });
 
-  const totalPaid = (transactions.data ?? []).reduce((sum, t) => sum + Number(t.Amount.amount), 0);
+  const totalPaid = (transactions.data ?? []).filter((t) => !t.ReversedAt).reduce((sum, t) => sum + Number(t.Amount.amount), 0);
   const grandTotalNumber = grandTotal ? Number(grandTotal.amount) : 0;
   const outstanding = Math.max(0, grandTotalNumber - totalPaid);
   const currency = grandTotal?.currency ?? "INR";

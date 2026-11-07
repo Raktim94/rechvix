@@ -337,6 +337,7 @@ function Done({ info, currency, onView, onNew }: { info: { id: string; number: s
           <T v="h2">Invoice saved</T>
           <T v="moneyHero" style={{ fontSize: 34 }}>{formatMinor(info.totalMinor, currency)}</T>
           <T v="body" muted>{info.number}</T>
+          {info.receivedMinor > 0n ? <T v="body" muted>{`Received ${formatMinor(info.receivedMinor, currency)}`}</T> : null}
           {due > 0n ? <Badge tone="warn" icon="time-outline" text={`${formatMinor(due, currency)} to collect`} /> : <Badge tone="good" icon="checkmark-circle" text="Paid in full" />}
         </View>
         {err ? <T v="small" color={c.negative} style={{ textAlign: "center" }}>{err}</T> : null}

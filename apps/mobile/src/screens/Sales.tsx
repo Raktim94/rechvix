@@ -63,7 +63,7 @@ export function SaleRow({ row, last, onPress }: { row: Row; last?: boolean; onPr
           <T v="money" style={{ fontFamily: fonts.monoBold, textDecorationLine: sale.cancelled ? "line-through" : "none" }}>{formatMinor(total, currency)}</T>
         </View>
         <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-          {sale.cancelled ? <Badge text="Cancelled" tone="neutral" /> : <Badge text={row.status === "PARTIAL" ? `${pay.text} · ${formatMinor(total - row.paid, currency)} due` : pay.text} tone={pay.tone} />}
+          {sale.cancelled ? <Badge text="Cancelled" tone="neutral" /> : <Badge text={row.status === "PARTIAL" ? `${formatMinor(row.paid, currency)} paid · ${formatMinor(total - row.paid, currency)} due` : pay.text} tone={pay.tone} />}
           {linked && !sale.cancelled && sale.state !== "synced" ? <Badge text={sb.text} tone={sb.tone} icon="cloud-upload-outline" /> : null}
           {sale.revision > 0 ? <Badge text="Edited" tone="info" /> : null}
         </View>

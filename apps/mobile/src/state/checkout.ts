@@ -42,7 +42,10 @@ export async function checkout(db: Db, cart: Cart, ids: { uid: () => string; now
 
   // Replaying the same save (double tap, retry after a crash) finds the invoice already there.
   const dup = await db.first<{ local_id: string; local_number: string | null }>("SELECT local_id, local_number FROM sales WHERE local_id=?", [cart.saveId]);
-  if (dup && !cart.editing) return { localId: dup.local_id, number: dup.local_number ?? "", totalMinor: calc.totalMinor, receivedMinor: 0n };
+  if (dup && !cart.editing) {
+    const have = (await paymentsForSale(db, dup.local_id)).filter((p) => p.reversed_at == null && p.state !== "void").reduce((n, p) => n + parseMinor(p.amount), 0n);
+    return { localId: dup.local_id, number: dup.local_number ?? "", totalMinor: calc.totalMinor, receivedMinor: have };
+  }
 
   const lines: SaleLine[] = cart.lines.map((l) => ({
     variantId: l.variantId, name: l.name, unitId: l.unitId, qty: l.qty, price: l.price, discount: l.discount || "0",
