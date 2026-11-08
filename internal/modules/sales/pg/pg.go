@@ -353,3 +353,22 @@ func (r *DocumentRepo) BilledSources(ctx context.Context, ids []uuid.UUID) (map[
 	}
 	return out, rows.Err()
 }
+
+func (r *DocumentRepo) ListReceipts(ctx context.Context, orgID, documentID uuid.UUID) ([]domain.DocumentReceipt, error) {
+	rows, err := r.pool.Q(ctx).Query(ctx, `SELECT received_at, amount, payment_method, COALESCE(reference_number, '')
+		FROM receipts WHERE organisation_id = $1 AND sales_document_id = $2 AND reversed_at IS NULL
+		ORDER BY received_at, created_at, id`, orgID, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("sales: listing receipts: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.DocumentReceipt
+	for rows.Next() {
+		var rc domain.DocumentReceipt
+		if err := rows.Scan(&rc.ReceivedAt, &rc.Amount, &rc.Method, &rc.Reference); err != nil {
+			return nil, fmt.Errorf("sales: scanning receipt: %w", err)
+		}
+		out = append(out, rc)
+	}
+	return out, rows.Err()
+}

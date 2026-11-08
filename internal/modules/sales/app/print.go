@@ -259,6 +259,9 @@ func (s *Service) BuildInvoiceDataInLanguage(ctx context.Context, principal perm
 		TermsAndConditions:      terms,
 		AuthorizedSignatoryName: legalEntity.AuthorizedSignatoryName,
 	}
+	if err := s.addPaymentSummary(ctx, principal.OrganisationID, doc, taxDoc.GrandTotal, out); err != nil {
+		return nil, err
+	}
 	if s.verifactu != nil {
 		var qr *verifactuapp.QRInfo
 		if err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
@@ -520,4 +523,63 @@ func foreignTotalBase(doc *domain.Document) string {
 		return ""
 	}
 	return doc.GrandTotalBaseAmount.StringFixed(money.RoundHalfUp)
+}
+
+// addPaymentSummary fills the payment history, total paid, balance due and status of a receivable invoice. The invoice
+// total is left exactly as it is: paying never replaces it. Reversed receipts are not counted. An overpayment shows a
+// balance of zero (a refund or credit is a separate decision and is not invented here).
+func (s *Service) addPaymentSummary(ctx context.Context, orgID uuid.UUID, doc *domain.Document, grand money.Money, out *printing.InvoiceData) error {
+	switch doc.DocumentType {
+	case domain.DocTaxInvoice, domain.DocPOSInvoice, domain.DocDebitNote:
+	default:
+		return nil
+	}
+	var receipts []domain.DocumentReceipt
+	if err := s.pool.RunScoped(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		receipts, err = s.documents.ListReceipts(ctx, orgID, doc.ID)
+		return err
+	}); err != nil {
+		return fmt.Errorf("sales: loading payments for print: %w", err)
+	}
+	layout := out.DateLayout
+	if layout == "" {
+		layout = "02-Jan-2006"
+	}
+	cur := grand.Currency()
+	paid, err := money.Zero(cur)
+	if err != nil {
+		return err
+	}
+	for _, r := range receipts {
+		m, err := money.New(r.Amount, cur)
+		if err != nil {
+			return err
+		}
+		if paid, err = paid.Add(m); err != nil {
+			return err
+		}
+		out.Payments = append(out.Payments, printing.PaymentLine{
+			Date: r.ReceivedAt.Format(layout), Method: r.Method, Reference: r.Reference, Amount: m.StringFixed(money.RoundHalfUp),
+		})
+	}
+	due, err := grand.Sub(paid)
+	if err != nil {
+		return err
+	}
+	if due.IsNegative() {
+		due, _ = money.Zero(cur)
+	}
+	out.ShowPayments = true
+	out.AmountPaid = paid.StringFixed(money.RoundHalfUp)
+	out.BalanceDue = due.StringFixed(money.RoundHalfUp)
+	switch {
+	case due.IsZero():
+		out.PaymentStatus = "PAID"
+	case !paid.IsZero():
+		out.PaymentStatus = "PARTIAL"
+	default:
+		out.PaymentStatus = "UNPAID"
+	}
+	return nil
 }

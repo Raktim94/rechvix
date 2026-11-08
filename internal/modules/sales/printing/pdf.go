@@ -479,6 +479,19 @@ func drawTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Labels
 		row(grandLabel, data.GrandTotal)
 		resetTextColor(pdf)
 	}
+	if data.ShowPayments {
+		pw := payWordsFor(data.Language)
+		setFont(pdf, lo, st, "", 9)
+		for _, ln := range data.payHistory(pw) {
+			pdf.CellFormat(0, 4.6, ln, "", 1, "R", false, 0, "")
+		}
+		setFont(pdf, lo, st, "B", 10)
+		for _, r := range data.payRows(pw) {
+			// No fixed-width padding here: it would run off a 58mm roll.
+			pdf.CellFormat(0, 5, r[0]+" "+r[1], "", 1, "R", false, 0, "")
+		}
+		pdf.CellFormat(0, 6, pw.status(data.PaymentStatus), "", 1, "R", false, 0, "")
+	}
 	// A foreign-currency invoice also states the rate and the company-currency equivalent.
 	if data.BaseCurrency != "" && data.ExchangeRate != "" {
 		setFont(pdf, lo, st, "", 9)

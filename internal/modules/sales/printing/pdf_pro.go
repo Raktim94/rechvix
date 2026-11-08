@@ -404,7 +404,13 @@ func drawProTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Lab
 		grandLabel = lb.GrandTotal + " (" + data.Currency + "):"
 	}
 
+	pw := payWordsFor(data.Language)
+	payRows := data.payRows(pw)
+	hist := data.payHistory(pw)
 	need := float64(len(rows))*5.6 + 12 + 30
+	if data.ShowPayments {
+		need += float64(len(payRows)+len(hist)+2) * 5.6
+	}
 	if pdf.GetY()+need > pageH-proFootGap {
 		pdf.AddPage()
 		pdf.SetY(proMargin)
@@ -446,6 +452,25 @@ func drawProTotals(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb Lab
 		pdf.CellFormat(bw*0.55-2, 9, grandLabel, "", 0, "L", false, 0, "")
 		pdf.CellFormat(bw*0.45-2, 9, data.GrandTotal, "", 1, "R", false, 0, "")
 		resetTextColor(pdf)
+	}
+	if data.ShowPayments {
+		pdf.Ln(1.5)
+		setFont(pdf, lo, st, "", 8.5)
+		for _, ln := range hist {
+			pdf.SetX(bx)
+			textRGB(pdf, mutedText)
+			pdf.CellFormat(bw, 4.6, ln, "", 1, "R", false, 0, "")
+		}
+		resetTextColor(pdf)
+		setFont(pdf, lo, st, "", 9)
+		for _, r := range payRows {
+			pdf.SetX(bx)
+			pdf.CellFormat(bw*0.55, 5.6, r[0], "", 0, "L", false, 0, "")
+			pdf.CellFormat(bw*0.45, 5.6, r[1], "", 1, "R", false, 0, "")
+		}
+		setFont(pdf, lo, st, "B", 9.5)
+		pdf.SetX(bx)
+		pdf.CellFormat(bw, 6, pw.status(data.PaymentStatus), "", 1, "R", false, 0, "")
 	}
 	if data.BaseCurrency != "" && data.ExchangeRate != "" {
 		setFont(pdf, lo, st, "", 8.5)
@@ -547,7 +572,12 @@ func drawProPayment(pdf *fpdf.Fpdf, data InvoiceData, lo layout, st style, lb La
 // upiPayURI is the standard UPI deep link (NPCI linking spec); empty when the
 // total is not a positive amount.
 func upiPayURI(data InvoiceData) string {
-	amt, err := strconv.ParseFloat(strings.ReplaceAll(data.GrandTotal, ",", ""), 64)
+	// A part-paid invoice asks for what is still due, not the whole total again.
+	payable := data.GrandTotal
+	if data.ShowPayments && data.BalanceDue != "" {
+		payable = data.BalanceDue
+	}
+	amt, err := strconv.ParseFloat(strings.ReplaceAll(payable, ",", ""), 64)
 	if err != nil || amt <= 0 {
 		return ""
 	}

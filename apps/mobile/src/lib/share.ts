@@ -4,7 +4,8 @@ import { File, Paths } from "expo-file-system";
 import { getParty, getSale, paymentsForSale, type Profile } from "../db/repo";
 import type { Db } from "../db/types";
 import { invoiceHtml, paperFor, paymentSummary, type InvoiceData, type InvoiceTemplate } from "./invoice";
-import { payloadCalc, salePaidMinor, saleTotalMinor } from "./sale";
+import { parseMinor } from "./decimal";
+import { livePayments, payloadCalc, salePaidMinor, saleTotalMinor } from "./sale";
 
 /** Everything an invoice needs, drawn from the stored sale (never recomputed), so a shared PDF matches what was issued. */
 export async function buildInvoiceData(db: Db, localId: string, business: Profile, currency: string): Promise<InvoiceData | null> {
@@ -18,6 +19,7 @@ export async function buildInvoiceData(db: Db, localId: string, business: Profil
     customerName: s.payload.customerName, customerGstin: party?.gstin || undefined, customerPhone: party?.phone || undefined,
     placeOfSupply: s.payload.customerState ? `State code ${s.payload.customerState}` : undefined,
     lines: s.payload.lines, calc: payloadCalc(s.payload), currency, payment: paymentSummary(total, salePaidMinor(s, ps)),
+    payments: livePayments(ps).map((p) => ({ at: p.paid_at, amountMinor: parseMinor(p.amount), method: p.method, reference: p.reference || undefined })),
     cancelled: !!s.cancelled, corrects: s.payload.corrects ?? null, note: s.payload.note,
   };
 }

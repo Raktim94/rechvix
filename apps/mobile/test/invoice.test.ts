@@ -61,3 +61,18 @@ test("the sample used for design previews is realistic and balanced", () => {
   assert.equal(s.payment.paidMinor + s.payment.dueMinor, s.calc.totalMinor);
   for (const t of keys) assert.ok(invoiceHtml(s, t).length > 500);
 });
+
+for (const t of keys) {
+  test(`${t}: two installments are listed, the invoice total stays, and the escaped reference is shown`, () => {
+    const d = mk("INCLUSIVE", false, 500000n);
+    d.payments = [
+      { at: Date.UTC(2026, 10, 6), amountMinor: 300000n, method: "CASH" },
+      { at: Date.UTC(2026, 10, 8), amountMinor: 200000n, method: "BANK_TRANSFER", reference: "UTR<1>" },
+    ];
+    const h = invoiceHtml(d, t);
+    assert.ok(h.includes(formatMinor(d.calc.totalMinor, "INR")), "full invoice total still printed");
+    assert.ok(h.includes(formatMinor(300000n, "INR")) && h.includes(formatMinor(200000n, "INR")), "each installment printed");
+    assert.match(h, /Total paid/); assert.match(h, /Balance due/);
+    assert.match(h, /BANK TRANSFER/); assert.match(h, /UTR&lt;1&gt;/); assert.doesNotMatch(h, /UTR<1>/);
+  });
+}

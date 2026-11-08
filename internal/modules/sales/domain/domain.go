@@ -206,6 +206,17 @@ type DocumentRepository interface {
 	UnlinkSources(ctx context.Context, id uuid.UUID) error
 	// BilledSources returns which of the given documents are already billed by some invoice.
 	BilledSources(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]bool, error)
+	// ListReceipts returns the money received against one document, oldest first. Reversed receipts are left out: they
+	// no longer count as paid.
+	ListReceipts(ctx context.Context, orgID, documentID uuid.UUID) ([]DocumentReceipt, error)
+}
+
+// DocumentReceipt is one payment received against a document, as printed in its payment history.
+type DocumentReceipt struct {
+	ReceivedAt time.Time
+	Amount     decimal.Decimal
+	Method     string
+	Reference  string
 }
 
 type DocumentLineRepository interface {

@@ -88,9 +88,9 @@ export function PaymentPanel({
     queryFn: () => api.getListField<Transaction>(listPath, listField),
   });
 
-  const totalPaid = (transactions.data ?? []).filter((t) => !t.ReversedAt).reduce((sum, t) => sum + Number(t.Amount.amount), 0);
+  const totalPaid = (transactions.data ?? []).filter((t) => !t.ReversedAt).reduce((sum, t) => sum + Math.round(Number(t.Amount.amount) * 100), 0) / 100; // whole paise/cents, so 0.1 + 0.2 cannot drift
   const grandTotalNumber = grandTotal ? Number(grandTotal.amount) : 0;
-  const outstanding = Math.max(0, grandTotalNumber - totalPaid);
+  const outstanding = Math.max(0, Math.round((grandTotalNumber - totalPaid) * 100) / 100);
   const currency = grandTotal?.currency ?? "INR";
 
   // Sets `amount` from a fraction of what's still outstanding — always a
@@ -118,6 +118,8 @@ export function PaymentPanel({
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey });
+      // The invoice on screen (and its print) must show the new installment straight away.
+      void queryClient.invalidateQueries({ queryKey: ["sales-document-preview", documentId] });
       void queryClient.invalidateQueries({ queryKey: ["party-ledger", partyId] });
       void queryClient.invalidateQueries({ queryKey: ["party-ageing", partyId] });
       setAmount("");

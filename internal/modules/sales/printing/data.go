@@ -150,7 +150,15 @@ type InvoiceData struct {
 	TotalCess       string
 	RoundOff        string
 	GrandTotal      string
-	AmountInWords   string
+	// ShowPayments is set for a finalized receivable invoice. Payments lists each live receipt (reversed ones are
+	// left out), AmountPaid the sum of them, BalanceDue what is still owed (never negative) and PaymentStatus is
+	// PAID, PARTIAL or UNPAID. GrandTotal is never reduced: it stays the full invoice amount.
+	ShowPayments  bool
+	Payments      []PaymentLine
+	AmountPaid    string
+	BalanceDue    string
+	PaymentStatus string
+	AmountInWords string
 	// PreviousBalance is a print-layer stub — no customer ledger exists
 	// until Stage 6 (accounting). nil renders the "Previous Balance" row
 	// as blank/omitted rather than a fabricated ₹0.00, so the printed

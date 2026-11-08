@@ -971,3 +971,58 @@ func TestAccounting_SalesList_CarriesPaidAmount(t *testing.T) {
 		t.Fatalf("PaidAmount of the untouched invoice = %s, want 0", got[untouched.ID])
 	}
 }
+
+// TestAccounting_PrintedInvoice_ShowsInstallmentsAndKeepsTheTotal guards the invoice that goes to the customer: after two
+// installments it must still carry the full invoice total, list both payments, and show what is paid and what is left. A
+// reversed receipt must drop out of both lists.
+func TestAccounting_PrintedInvoice_ShowsInstallmentsAndKeepsTheTotal(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+	inv := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "1", "10000")
+
+	data, err := salesSvc.BuildInvoiceData(ctx, fx.Principal, inv.ID)
+	if err != nil {
+		t.Fatalf("BuildInvoiceData: %v", err)
+	}
+	if !data.ShowPayments || data.PaymentStatus != "UNPAID" || data.AmountPaid != "0.00" || data.BalanceDue != data.GrandTotal {
+		t.Fatalf("unpaid invoice summary = %+v", data)
+	}
+	total := data.GrandTotal
+
+	var second *accountingdomain.Receipt
+	for i, amt := range []string{"3000", "2000"} {
+		r, err := accountingSvc.RecordReceipt(ctx, fx.Principal, accountingapp.RecordReceiptParams{
+			PartyID: fx.CustomerID, SalesDocumentID: &inv.ID, Amount: mustDecimal(t, amt),
+			Method: accountingdomain.MethodCash, ReceivedAt: time.Now().Add(time.Duration(i) * time.Minute),
+		})
+		if err != nil {
+			t.Fatalf("RecordReceipt %s: %v", amt, err)
+		}
+		second = r
+	}
+	data, err = salesSvc.BuildInvoiceData(ctx, fx.Principal, inv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.GrandTotal != total {
+		t.Fatalf("invoice total changed from %s to %s after payments", total, data.GrandTotal)
+	}
+	if len(data.Payments) != 2 || data.Payments[0].Amount != "3000.00" || data.Payments[1].Amount != "2000.00" {
+		t.Fatalf("payment history = %+v, want 3000.00 then 2000.00", data.Payments)
+	}
+	if data.AmountPaid != "5000.00" || data.PaymentStatus != "PARTIAL" {
+		t.Fatalf("paid/status = %s/%s, want 5000.00/PARTIAL", data.AmountPaid, data.PaymentStatus)
+	}
+
+	if _, err := accountingSvc.ReverseReceipt(ctx, fx.Principal, second.ID, "entered by mistake"); err != nil {
+		t.Fatalf("ReverseReceipt: %v", err)
+	}
+	data, err = salesSvc.BuildInvoiceData(ctx, fx.Principal, inv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Payments) != 1 || data.AmountPaid != "3000.00" {
+		t.Fatalf("after reversal: payments=%+v paid=%s, want one payment of 3000.00", data.Payments, data.AmountPaid)
+	}
+}

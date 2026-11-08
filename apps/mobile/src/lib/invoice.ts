@@ -13,6 +13,9 @@ export const TEMPLATES: { key: InvoiceTemplate; label: string; blurb: string; pa
 export const DEFAULT_TEMPLATE: InvoiceTemplate = "classic";
 export const isTemplate = (v: unknown): v is InvoiceTemplate => v === "classic" || v === "modern" || v === "thermal";
 
+/** One live (not reversed) payment against the invoice, oldest first. */
+export interface PaymentEntry { at: number; amountMinor: bigint; method: string; reference?: string }
+
 export interface PaymentSummary { paidMinor: bigint; dueMinor: bigint; status: "PAID" | "PARTIAL" | "UNPAID" }
 
 export interface InvoiceData {
@@ -28,6 +31,8 @@ export interface InvoiceData {
   calc: InvoiceCalc;
   currency: string;
   payment: PaymentSummary;
+  /** Each installment received. The invoice total is never replaced by what is left: it is printed with these. */
+  payments?: PaymentEntry[];
   cancelled?: boolean;
   /** Number of the invoice this one corrects, when it is a re-issue. */
   corrects?: string | null;
@@ -49,8 +54,11 @@ function body(d: InvoiceData) {
 const taxSummaryRows = (d: InvoiceData, m: (x: bigint) => string) =>
   d.calc.components.map((c) => `<tr><td>${c.label}</td><td class="r">${m(c.minor)}</td></tr>`).join("");
 
+const payLine = (p: PaymentEntry) => `${esc(new Date(p.at).toLocaleDateString())} · ${esc(p.method.replace(/_/g, " "))}${p.reference ? ` (${esc(p.reference)})` : ""}`;
+const historyRows = (d: InvoiceData, m: (x: bigint) => string) =>
+  (d.payments ?? []).map((p) => `<tr class="hist"><td>${payLine(p)}</td><td class="r">${m(p.amountMinor)}</td></tr>`).join("");
 const paymentRows = (d: InvoiceData, m: (x: bigint) => string) =>
-  `<tr><td>Paid</td><td class="r">${m(d.payment.paidMinor)}</td></tr><tr class="due"><td>Balance due</td><td class="r">${m(d.payment.dueMinor)}</td></tr>`;
+  `${historyRows(d, m)}<tr><td>Total paid</td><td class="r">${m(d.payment.paidMinor)}</td></tr><tr class="due"><td>Balance due</td><td class="r">${m(d.payment.dueMinor)}</td></tr>`;
 
 const headerInfo = (d: InvoiceData) => `${nl2br(d.business.address)}${d.business.phone ? `<br>Phone ${esc(d.business.phone)}` : ""}${d.business.gstin ? `<br>GSTIN ${esc(d.business.gstin)}` : ""}`;
 const customerBlock = (d: InvoiceData) => `<div class="k">Billed to</div><div class="big">${esc(d.customerName)}</div>${d.customerGstin ? `<div>GSTIN ${esc(d.customerGstin)}</div>` : ""}${d.customerPhone ? `<div>${esc(d.customerPhone)}</div>` : ""}<div class="muted">Place of supply: ${d.placeOfSupply ? esc(d.placeOfSupply) : "same state as seller (customer state not recorded)"}</div>`;
@@ -67,7 +75,7 @@ function classic(d: InvoiceData): string {
  .head{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #16211c;padding-bottom:10px} .meta{text-align:right}
  table{width:100%;border-collapse:collapse;margin-top:14px} th{font-size:10px;text-transform:uppercase;border:1px solid #16211c;background:#eef0ec;padding:5px;text-align:left} th.r{text-align:right}
  td{border:1px solid #c3cac0;padding:5px;vertical-align:top} .two{display:flex;gap:18px;margin-top:6px} .two>div{flex:1}
- .tot td{border:0;border-bottom:1px solid #dbdfd8;padding:4px} .grand td{font-size:15px;font-weight:700;border-top:2px solid #16211c} .due td{font-weight:700;color:#9c3a26}
+ .tot tr.hist td{color:#6a756f;font-size:11px;padding-top:1px;padding-bottom:1px} .tot td{border:0;border-bottom:1px solid #dbdfd8;padding:4px} .grand td{font-size:15px;font-weight:700;border-top:2px solid #16211c} .due td{font-weight:700;color:#9c3a26}
  .status{display:inline-block;border:2px solid #0f6e5c;color:#0f6e5c;padding:2px 8px;font-weight:700;letter-spacing:1px} .stamp{color:#9c3a26;border:3px solid #9c3a26;font-weight:800;font-size:22px;padding:2px 10px;display:inline-block;transform:rotate(-6deg);margin:6px 0}
 </style>
 <div class="head"><div><h1>${esc(d.business.name || "Tax invoice")}</h1><div class="muted">${headerInfo(d)}</div></div>
@@ -100,7 +108,7 @@ function modern(d: InvoiceData): string {
 <div class="k">Items</div>${lines}
 <div style="margin-top:14px"><div class="row"><span>Taxable value</span><span>${m(d.calc.taxableMinor)}</span></div>${comps}</div>
 <div class="total"><span>Total</span><b>${m(d.calc.totalMinor)}</b></div>
-<div class="row"><span>Paid</span><span>${m(d.payment.paidMinor)}</span></div><div class="row" style="color:#16211c;font-weight:700"><span>Balance due</span><span>${m(d.payment.dueMinor)}</span></div>
+${(d.payments ?? []).map((p) => `<div class="row muted"><span>${payLine(p)}</span><span>${m(p.amountMinor)}</span></div>`).join("")}<div class="row"><span>Total paid</span><span>${m(d.payment.paidMinor)}</span></div><div class="row" style="color:#16211c;font-weight:700"><span>Balance due</span><span>${m(d.payment.dueMinor)}</span></div>
 ${d.note ? `<div style="margin-top:14px" class="muted">${nl2br(d.note)}</div>` : ""}<div class="muted" style="margin-top:30px;text-align:center">Thank you for your business.</div>`;
 }
 
@@ -118,7 +126,7 @@ function thermal(d: InvoiceData): string {
 ${lines}<hr>
 <div class="ln"><span>Taxable value</span><span>${m(d.calc.taxableMinor)}</span></div>${comps}
 <div class="ln tot"><span>TOTAL</span><span>${m(d.calc.totalMinor)}</span></div>${incl ? `<div class="c">(prices include GST)</div>` : ""}<hr>
-<div class="ln"><span>Paid</span><span>${m(d.payment.paidMinor)}</span></div><div class="ln b"><span>Balance due</span><span>${m(d.payment.dueMinor)}</span></div><div class="c b" style="margin-top:4px">${STATUS_TEXT[d.payment.status]}</div><hr>
+${(d.payments ?? []).map((p) => `<div class="ln"><span>${payLine(p)}</span><span>${m(p.amountMinor)}</span></div>`).join("")}<div class="ln"><span>Total paid</span><span>${m(d.payment.paidMinor)}</span></div><div class="ln b"><span>Balance due</span><span>${m(d.payment.dueMinor)}</span></div><div class="c b" style="margin-top:4px">${STATUS_TEXT[d.payment.status]}</div><hr>
 <div class="c">Thank you!</div>`;
 }
 

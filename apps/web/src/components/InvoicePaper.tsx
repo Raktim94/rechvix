@@ -42,7 +42,12 @@ interface Preview {
   signatory: string;
   tax_notes: string[];
   signed_note?: string;
+  /** Receivable invoices only. grand_total stays the full invoice amount; this is what has been received against it. */
+  payment?: { payments: { date: string; method: string; reference: string; amount: string }[]; paid: string; balance_due: string; status: "PAID" | "PARTIAL" | "UNPAID" };
 }
+
+const PAY_STATUS: Record<"PAID" | "PARTIAL" | "UNPAID", string> = { PAID: "Paid", PARTIAL: "Partially paid", UNPAID: "Unpaid" };
+const PAY_METHOD: Record<string, string> = { CASH: "Cash", UPI: "UPI", CARD: "Card", BANK_TRANSFER: "Bank transfer", CHEQUE: "Cheque", OTHER: "Other" };
 
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 
@@ -223,6 +228,31 @@ export function InvoicePaper({ documentId, company, stamp }: { documentId: strin
             <dt>{t("invoice.total", { defaultValue: "Total" })}</dt>
             <dd>{money(p.grand_total)}</dd>
           </div>
+          {p.payment ? (
+            <>
+              {p.payment.payments.map((x, i) => (
+                <div key={i} className={styles.muted}>
+                  <dt>
+                    {x.date} · {PAY_METHOD[x.method] ?? x.method}
+                    {x.reference ? ` (${x.reference})` : ""}
+                  </dt>
+                  <dd>{money(x.amount)}</dd>
+                </div>
+              ))}
+              <div>
+                <dt>{t("invoice.paid", { defaultValue: "Total paid" })}</dt>
+                <dd>{money(p.payment.paid)}</dd>
+              </div>
+              <div className={styles.grand}>
+                <dt>{t("invoice.balanceDue", { defaultValue: "Balance due" })}</dt>
+                <dd>{money(p.payment.balance_due)}</dd>
+              </div>
+              <div>
+                <dt>{t("invoice.paymentStatus", { defaultValue: "Status" })}</dt>
+                <dd>{PAY_STATUS[p.payment.status]}</dd>
+              </div>
+            </>
+          ) : null}
           {p.grand_total_base && p.base_currency ? (
             <div>
               <dt>

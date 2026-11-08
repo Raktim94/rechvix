@@ -98,6 +98,23 @@ type preview struct {
 	Signatory    string        `json:"signatory"`
 	TaxNotes     []string      `json:"tax_notes"`
 	SignedNote   string        `json:"signed_note,omitempty"`
+	// Payment is present for a receivable invoice: what was received (each installment), the total paid, what is
+	// still due and the status. grand_total is never reduced by it.
+	Payment *previewPayment `json:"payment,omitempty"`
+}
+
+type previewPaymentLine struct {
+	Date      string `json:"date"`
+	Method    string `json:"method"`
+	Reference string `json:"reference"`
+	Amount    string `json:"amount"`
+}
+
+type previewPayment struct {
+	Payments   []previewPaymentLine `json:"payments"`
+	Paid       string               `json:"paid"`
+	BalanceDue string               `json:"balance_due"`
+	Status     string               `json:"status"`
 }
 
 func partyOf(name, label, id string, address []string) previewParty {
@@ -125,6 +142,13 @@ func newPreview(d *printing.InvoiceData) preview {
 		Bank:  previewBank{Name: d.Seller.BankName, Account: d.Seller.BankAccount, Code: d.Seller.BankIFSC, UPI: d.Seller.UPIID},
 		Notes: d.Notes, Terms: d.TermsAndConditions, Signatory: d.AuthorizedSignatoryName,
 		TaxNotes: append([]string{}, d.TaxNotes...), SignedNote: d.SignedNote,
+	}
+	if d.ShowPayments {
+		pay := &previewPayment{Payments: []previewPaymentLine{}, Paid: d.AmountPaid, BalanceDue: d.BalanceDue, Status: d.PaymentStatus}
+		for _, x := range d.Payments {
+			pay.Payments = append(pay.Payments, previewPaymentLine{Date: x.Date, Method: x.Method, Reference: x.Reference, Amount: x.Amount})
+		}
+		p.Payment = pay
 	}
 	for _, l := range d.Lines {
 		line := previewLine{No: l.SNo, Description: l.Description, Code: l.HSNSAC, Quantity: l.Quantity, Unit: l.UnitOfMeasure, Rate: l.Rate, Taxable: l.TaxableValue, Total: l.LineTotal}
