@@ -2,9 +2,10 @@ import React, { useEffect, useState } from "react";
 import { unitPriceFor } from "../lib/sale";
 import { Alert, FlatList, Modal, ScrollView, TextInput, View, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { archiveItem, createItem, getItem, searchProducts, updateItem, type ItemInput, type Product } from "../db/repo";
+import { archiveItem, createItem, getItem, searchProducts, setLowAt, updateItem, type ItemInput, type Product } from "../db/repo";
 import { useLocal } from "../lib/hooks";
 import { formatMoney, num } from "../lib/money";
+import { stockState, DEFAULT_LOW_AT } from "../lib/stock";
 import { GST_RATES } from "../lib/tax";
 import { uid, useApp } from "../state/app";
 import { fonts, radius, space, usePalette } from "../theme";
@@ -16,7 +17,11 @@ export function Items({ openEditor, onBack }: { openEditor: (id: string | null) 
   const { currency, linked, profile } = useApp();
   const c = usePalette();
   const [q, setQ] = useState("");
-  const list = useLocal((db) => searchProducts(db, q, 400), [] as Product[], [q]);
+  const all = useLocal((db) => searchProducts(db, q, 400), [] as Product[], [q]);
+  const [f, setF] = useState<"all" | "low" | "out">("all");
+  const nLow = all.filter((p) => stockState(p.stock, p.low_at) === "low").length;
+  const nOut = all.filter((p) => stockState(p.stock, p.low_at) === "out").length;
+  const list = all.filter((p) => f === "all" || (f === "out" ? stockState(p.stock, p.low_at) === "out" : stockState(p.stock, p.low_at) === "low" || stockState(p.stock, p.low_at) === "out"));
   return (
     <Screen>
       <Header title="Items" onBack={onBack} right={<IconButton name="add" label="Add item" tone="accent" onPress={() => openEditor(null)} />} />
@@ -27,10 +32,14 @@ export function Items({ openEditor, onBack }: { openEditor: (id: string | null) 
             style={{ flex: 1, minHeight: 50, paddingHorizontal: 10, fontSize: 16, color: c.text, fontFamily: fonts.body }} />
         </View>
       </View>
+      <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+        <Chip title="All" active={f === "all"} onPress={() => setF("all")} />
+        <Chip title={`Low stock (${nLow + nOut})`} active={f === "low"} onPress={() => setF("low")} />
+        <Chip title={`Out of stock (${nOut})`} active={f === "out"} onPress={() => setF("out")} />
+      </View>
       <FlatList data={list} keyExtractor={(p) => p.variant_id} contentContainerStyle={{ paddingBottom: 40 }} ItemSeparatorComponent={Divider}
         ListEmptyComponent={<Empty icon="pricetag-outline" title={q ? "No matching item" : "No items yet"} hint={q ? "Check the spelling." : "Add what you sell once: name, price, GST and stock."} action={q ? undefined : { title: "Add your first item", onPress: () => openEditor(null) }} />}
         renderItem={({ item }) => {
-          const stock = item.stock != null ? num(item.stock) : null;
           return (
             <Tap label={item.name} onPress={() => openEditor(item.variant_id)} style={{ minHeight: 70, backgroundColor: c.surface, paddingHorizontal: space.lg, paddingVertical: 14, flexDirection: "row", alignItems: "center", gap: 12 }}>
               <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: c.accentSoft, alignItems: "center", justifyContent: "center" }}><T v="h3" color={c.accent}>{item.name.slice(0, 1).toUpperCase()}</T></View>
@@ -44,7 +53,7 @@ export function Items({ openEditor, onBack }: { openEditor: (id: string | null) 
               </View>
               <View style={{ alignItems: "flex-end", gap: 2 }}>
                 <T v="money" style={{ fontFamily: fonts.monoBold }}>{item.price != null ? formatMoney(num(unitPriceFor(item, profile?.pricingMode ?? "INCLUSIVE")), currency) : "—"}</T>
-                <T v="small" color={stock != null && stock <= 0 ? c.negative : stock != null && stock <= 5 ? c.warning : c.muted}>{stock != null ? `${item.stock} ${item.unit_label}` : "not tracked"}</T>
+                {(() => { const st = stockState(item.stock, item.low_at); return <T v="small" color={st === "out" ? c.negative : st === "low" ? c.warning : c.muted}>{st === "out" ? `Out of stock` : st === "untracked" ? "not tracked" : `${item.stock} ${item.unit_label}${st === "low" ? " · low" : ""}`}</T>; })()}
               </View>
             </Tap>
           );
@@ -53,6 +62,7 @@ export function Items({ openEditor, onBack }: { openEditor: (id: string | null) 
   );
 }
 
+const slugSku = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
 const EMPTY: ItemInput = { name: "", sku: "", barcode: "", hsn: "", price: "", gstRate: "", stock: "", unitLabel: "pcs" };
 
 export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => void }) {
@@ -62,6 +72,7 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
   const [existing, setExisting] = useState<Product | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [scan, setScan] = useState(false);
+  const [lowAt, setLowAtText] = useState("");
   const set = <K extends keyof ItemInput>(k: K, v: ItemInput[K]) => setF((x) => ({ ...x, [k]: v }));
 
   useEffect(() => {
@@ -69,6 +80,7 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
     void getItem(db, id).then((p) => {
       if (!p) return;
       setExisting(p);
+      setLowAtText(p.low_at ?? "");
       setF({ name: p.name, sku: p.sku, barcode: p.barcode, hsn: p.hsn, price: p.price ?? "", gstRate: p.gst_rate ?? "", stock: p.stock ?? "", unitLabel: p.unit_label, priceBasis: p.price_basis, qtyDecimals: p.qty_decimals });
     });
   }, [id, db]);
@@ -83,8 +95,14 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
     const dupe = await db.first("SELECT 1 FROM products WHERE archived=0 AND sku=? COLLATE NOCASE AND variant_id != ?", [f.sku.trim(), id ?? ""]);
     if (f.sku.trim() && dupe) { setErr("Another item already uses that SKU."); return; }
     if (existing) await updateItem(db, existing.variant_id, f); else await createItem(db, uid(), f, Date.now());
+    await setLowAt(db, existing?.sku ?? (f.sku.trim() || slugSku(f.name)), lowAt);
     changed();
     onClose();
+  }
+  async function saveLowOnly() {
+    if (!db || !existing) return;
+    await setLowAt(db, existing.sku, lowAt);
+    changed(); onClose();
   }
   function remove() {
     if (!db || !existing) return;
@@ -137,7 +155,11 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
                 <View style={{ flex: 1 }}><Field label="Barcode" value={f.barcode} onChangeText={(v) => set("barcode", v)} editable={!readOnly} keyboardType="number-pad" /></View>
                 {!readOnly ? <IconButton name="barcode-outline" label="Scan barcode" onPress={() => setScan(true)} /> : null}
               </View>
+              {(f.stock.trim() !== "" || existing?.stock != null) ? (
+                <Field label="Warn me when stock is at or below" value={lowAt} onChangeText={(v) => setLowAtText(v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" hint={`Blank = ${DEFAULT_LOW_AT}. Shows on Home, the item list and while billing.`} />
+              ) : null}
               {!readOnly ? <Button title={existing ? "Save changes" : "Add item"} onPress={() => void save()} icon="checkmark" /> : null}
+              {existing && readOnly ? <Button title="Save low-stock level" onPress={() => void saveLowOnly()} icon="checkmark" kind="quiet" /> : null}
               {existing && !readOnly ? <Button title="Remove item" kind="danger" onPress={remove} /> : null}
               {!existing && !linked ? <T v="small" muted>Stock you enter here is your opening stock. It goes down as you sell.</T> : null}
             </View>

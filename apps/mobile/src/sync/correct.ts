@@ -1,6 +1,6 @@
 import { ApiError, type Api } from "../api/client";
 import {
-  adjustStock, getSale, markSaleCancelled, paymentsForSale, reversePayment,
+  adjustStockEverywhere, getSale, markSaleCancelled, paymentsForSale, reversePayment,
 } from "../db/repo";
 import type { Db } from "../db/types";
 import { parseMinor } from "../lib/decimal";
@@ -44,7 +44,7 @@ export async function cancelSyncedInvoice(api: Api, db: Db, localId: string, rea
       // Already cancelled (an earlier attempt got through but the answer was lost): that is the state we want.
       if (!(e instanceof ApiError && e.status === 409 && e.code === "DOCUMENT_NOT_FINALIZED")) throw e;
     }
-    for (const l of sale.payload.lines) await adjustStock(db, l.variantId, Number(l.qty));
+    for (const l of sale.payload.lines) await adjustStockEverywhere(db, l.variantId, Number(l.qty));
     await markSaleCancelled(db, localId);
   }
   return { number, receivedMinor: received, method };

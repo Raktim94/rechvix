@@ -57,7 +57,9 @@ export const parseSale = (r: SaleRow): Sale => ({ ...r, payload: JSON.parse(r.pa
 
 export interface Product { variant_id: string; product_id: string; name: string; sku: string; hsn: string; unit_id: string; price: string | null; stock: string | null; origin: string; pushed: number; gst_rate: string | null; barcode: string; unit_label: string; archived: number; created_at: number;
   /** INCL: the stored price is GST-inclusive (made on this phone while billing GST-inclusive). EXCL: pre-tax (server items, and anything made before this existed). */
-  price_basis: "INCL" | "EXCL"; is_custom: number; qty_decimals: number | null }
+  price_basis: "INCL" | "EXCL"; is_custom: number; qty_decimals: number | null;
+  /** This item's own low-stock level (phone-local); absent = the default. */
+  low_at?: string | null }
 export interface Party { id: string; name: string; phone: string; type: string; is_walk_in: number; origin: string; pushed: number; gstin: string; address: string; created_at: number }
 export interface ServerDoc { id: string; number: string; doc_type: string; status: string; issue_date: string; customer_id: string; total: string | null }
 
@@ -74,12 +76,12 @@ export const setOrg = (db: Db, org: Org): Promise<void> => kvSet(db, "org", JSON
 export async function searchProducts(db: Db, q: string, limit = 60): Promise<Product[]> {
   const like = `%${q.trim().replace(/[%_]/g, (c) => `\\${c}`)}%`;
   return db.all<Product>(
-    "SELECT * FROM products WHERE archived=0 AND is_custom=0 AND (name LIKE ? ESCAPE '\\' OR sku LIKE ? ESCAPE '\\' OR hsn LIKE ? ESCAPE '\\' OR barcode LIKE ? ESCAPE '\\') ORDER BY name COLLATE NOCASE LIMIT ?",
+    "SELECT products.*, (SELECT low_at FROM item_low WHERE sku = products.sku) AS low_at FROM products WHERE archived=0 AND is_custom=0 AND (name LIKE ? ESCAPE '\\' OR sku LIKE ? ESCAPE '\\' OR hsn LIKE ? ESCAPE '\\' OR barcode LIKE ? ESCAPE '\\') ORDER BY name COLLATE NOCASE LIMIT ?",
     [like, like, like, like, limit],
   );
 }
 export const productByCode = (db: Db, code: string): Promise<Product | null> =>
-  db.first<Product>("SELECT * FROM products WHERE archived=0 AND (barcode = ? OR sku = ? COLLATE NOCASE) LIMIT 1", [code.trim(), code.trim()]);
+  db.first<Product>("SELECT products.*, (SELECT low_at FROM item_low WHERE sku = products.sku) AS low_at FROM products WHERE archived=0 AND (barcode = ? OR sku = ? COLLATE NOCASE) LIMIT 1", [code.trim(), code.trim()]);
 
 export async function searchParties(db: Db, q: string, limit = 40): Promise<Party[]> {
   const like = `%${q.trim().replace(/[%_]/g, (c) => `\\${c}`)}%`;
@@ -184,7 +186,7 @@ export const updateItem = (db: Db, id: string, i: ItemInput): Promise<void> =>
     [i.name.trim(), i.sku.trim(), i.barcode.trim(), i.hsn.trim(), i.price.trim() || null, i.gstRate === "" ? null : i.gstRate, i.stock.trim() === "" ? null : i.stock.trim(), i.unitLabel.trim() || "pcs", i.priceBasis ?? null, i.qtyDecimals ?? null, id],
   );
 export const archiveItem = (db: Db, id: string): Promise<void> => db.run("UPDATE products SET archived=1 WHERE variant_id=? AND origin='local' AND pushed=0", [id]);
-export const getItem = (db: Db, id: string): Promise<Product | null> => db.first<Product>("SELECT * FROM products WHERE variant_id=?", [id]);
+export const getItem = (db: Db, id: string): Promise<Product | null> => db.first<Product>("SELECT products.*, (SELECT low_at FROM item_low WHERE sku = products.sku) AS low_at FROM products WHERE variant_id=?", [id]);
 
 export interface PartyInput { name: string; phone: string; gstin: string; address: string }
 export const createParty = (db: Db, id: string, p: PartyInput, now: number, walkIn = false): Promise<void> =>
@@ -202,6 +204,14 @@ export const mapSet = (db: Db, kind: "item" | "party", localId: string, serverId
 export async function mapGet(db: Db, kind: "item" | "party", localId: string): Promise<{ serverId: string; extra: ItemMapExtra } | null> {
   const r = await db.first<{ server_id: string; extra: string }>("SELECT server_id, extra FROM id_map WHERE kind=? AND local_id=?", [kind, localId]);
   return r ? { serverId: r.server_id, extra: JSON.parse(r.extra) as ItemMapExtra } : null;
+}
+/** Puts quantity back (or takes it off) on every copy of an item the phone holds: its own id, and the server's id once it has synced
+ *  (after that the phone's copy is replaced by the server's, which carries the new id). The next pull sets stock from the server, so
+ *  this only keeps the screen right until then; it can never count twice. */
+export async function adjustStockEverywhere(db: Db, variantId: string, delta: number): Promise<void> {
+  await adjustStock(db, variantId, delta);
+  const m = await mapGet(db, "item", variantId);
+  if (m && m.serverId !== variantId) await adjustStock(db, m.serverId, delta);
 }
 export const unpushedParties = (db: Db): Promise<Party[]> => db.all<Party>("SELECT * FROM parties WHERE origin='local' AND pushed=0 ORDER BY created_at");
 export const unpushedItems = (db: Db): Promise<Product[]> => db.all<Product>("SELECT * FROM products WHERE origin='local' AND pushed=0 AND archived=0 ORDER BY created_at");
@@ -335,7 +345,7 @@ export const serverBalances = (db: Db): Promise<ServerBalance[]> => db.all<Serve
 // ---------------------------------------------------------------- recent / frequent items (for fast billing)
 export async function frequentItems(db: Db, limit = 8): Promise<Product[]> {
   return db.all<Product>(
-    `SELECT p.* FROM products p JOIN (
+    `SELECT p.*, (SELECT low_at FROM item_low WHERE sku = p.sku) AS low_at FROM products p JOIN (
        SELECT json_extract(l.value,'$.variantId') AS v, COUNT(*) AS c
        FROM sales s, json_each(s.payload,'$.lines') l WHERE s.cancelled=0 GROUP BY v
      ) f ON f.v = p.variant_id WHERE p.archived=0 AND p.is_custom=0 ORDER BY f.c DESC LIMIT ?`, [limit]);
@@ -396,3 +406,20 @@ export const creditNotesForSale = async (db: Db, saleLocalId: string): Promise<C
   (await db.all<CreditNoteRow>("SELECT * FROM credit_notes WHERE sale_local_id=? ORDER BY created_at", [saleLocalId])).map(parseCredit);
 export const allCreditNotes = async (db: Db): Promise<CreditNote[]> => (await db.all<CreditNoteRow>("SELECT * FROM credit_notes WHERE state='issued'")).map(parseCredit);
 export const getCreditNote = async (db: Db, id: string): Promise<CreditNote | null> => { const r = await db.first<CreditNoteRow>("SELECT * FROM credit_notes WHERE local_id=?", [id]); return r ? parseCredit(r) : null; };
+
+
+/** Sets (or, when blank, clears) an item's low-stock level. Allowed for every item, including ones that live on the server: it is a
+ *  preference of this phone and changes nothing about the item itself. */
+export async function setLowAt(db: Db, sku: string, value: string): Promise<void> {
+  const v = value.trim();
+  if (!sku) return;
+  if (v === "") await db.run("DELETE FROM item_low WHERE sku=?", [sku]);
+  else await db.run("INSERT INTO item_low(sku,low_at) VALUES(?,?) ON CONFLICT(sku) DO UPDATE SET low_at=excluded.low_at", [sku, v]);
+}
+/** Items whose stock is at or below their own low level (default 5), emptiest first. */
+export const lowStockItems = (db: Db, limit = 500): Promise<Product[]> =>
+  db.all<Product>(
+    `SELECT products.*, (SELECT low_at FROM item_low WHERE sku = products.sku) AS low_at FROM products
+     WHERE archived=0 AND is_custom=0 AND stock IS NOT NULL
+       AND CAST(stock AS REAL) <= COALESCE((SELECT CAST(low_at AS REAL) FROM item_low WHERE sku = products.sku), 5)
+     ORDER BY CAST(stock AS REAL) LIMIT ?`, [limit]);

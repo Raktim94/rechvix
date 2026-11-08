@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { allPayments, listSales, serverBalances, type Payment, type Product } from "../db/repo";
+import { allPayments, listSales, lowStockItems, serverBalances, type Payment, type Product } from "../db/repo";
+import { stockState } from "../lib/stock";
 import { parseMinor } from "../lib/decimal";
 import { ago, useLocal, useNow } from "../lib/hooks";
 import { formatMinor } from "../lib/money";
@@ -54,8 +55,10 @@ export function Home({ go, open, addItem, addCustomer }: { go: (t: Go) => void; 
   const sales = useLocal((db) => listSales(db, 5000), []);
   const pays = useLocal((db) => allPayments(db), [] as Payment[]);
   const server = useLocal((db) => serverBalances(db), []);
-  const low = useLocal((db) => db.all<Product>("SELECT * FROM products WHERE archived=0 AND is_custom=0 AND stock IS NOT NULL AND CAST(stock AS REAL) <= 5 ORDER BY CAST(stock AS REAL) LIMIT 5"), [] as Product[]);
-  const lowCount = useLocal((db) => db.first<{ n: number }>("SELECT COUNT(*) AS n FROM products WHERE archived=0 AND is_custom=0 AND stock IS NOT NULL AND CAST(stock AS REAL) <= 5").then((r) => r?.n ?? 0), 0);
+  const lowAll = useLocal((db) => lowStockItems(db), [] as Product[]);
+  const low = lowAll.slice(0, 5);
+  const lowCount = lowAll.length;
+  const outCount = lowAll.filter((p) => stockState(p.stock, p.low_at) === "out").length;
 
   const loose = pays.filter((p) => !p.sale_local_id && !p.server_doc_id);
   const st = dashboardStats(sales, groupPaymentsBySale(pays), loose, range, now);
@@ -112,12 +115,12 @@ export function Home({ go, open, addItem, addCustomer }: { go: (t: Go) => void; 
           </View>
         ) : null}
 
-        <Stat icon="cube-outline" label="Low stock" value={String(lowCount)} sub={lowCount ? "5 or fewer left" : "All stocked"} tone={lowCount ? c.negative : c.positive} onPress={() => go("items")} />
+        <Stat icon="cube-outline" label="Low stock" value={String(lowCount)} sub={lowCount ? (outCount ? `${outCount} out of stock` : "At or below their low level") : "All stocked"} tone={lowCount ? c.negative : c.positive} onPress={() => go("items")} />
         {low.length > 0 ? (
           <Card style={{ padding: 0 }}>
             {low.map((p, i) => (
               <View key={p.variant_id} style={{ flexDirection: "row", justifyContent: "space-between", padding: 14, borderTopWidth: i ? 1 : 0, borderTopColor: c.border }}>
-                <T v="strong" numberOfLines={1} style={{ flex: 1 }}>{p.name}</T><T v="money" color={Number(p.stock) <= 0 ? c.negative : c.warning}>{p.stock} {p.unit_label}</T>
+                <T v="strong" numberOfLines={1} style={{ flex: 1 }}>{p.name}</T><T v="money" color={stockState(p.stock, p.low_at) === "out" ? c.negative : c.warning}>{stockState(p.stock, p.low_at) === "out" ? "Out of stock" : `${p.stock} ${p.unit_label}`}</T>
               </View>
             ))}
           </Card>

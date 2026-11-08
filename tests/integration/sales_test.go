@@ -973,3 +973,52 @@ func TestSales_CompanyScopedAccess(t *testing.T) {
 		t.Fatal("FinalizeDocument on company B's document succeeded for a member restricted to company A — should have failed closed")
 	}
 }
+
+// A part-return of a discounted line must be credited at its share of the discount, not the whole line's discount.
+func TestSales_PartReturnOfDiscountedLine_CreditsOnlyItsShareOfTheDiscount(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, _, _ := newTestSalesServices(t)
+	fx := setupSalesFixture(t, ctx)
+
+	doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocTaxInvoice, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument: %v", err)
+	}
+	// 4 x 100 = 400, less a 40 discount on the line: the customer paid 360 for four, i.e. 90 each.
+	if _, err := salesSvc.AddLine(ctx, fx.Principal, salesapp.AddLineParams{
+		DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS,
+		Quantity: mustDecimal(t, "4"), UnitPrice: mustDecimal(t, "100"), LineDiscountAmount: mustDecimal(t, "40"),
+	}); err != nil {
+		t.Fatalf("AddLine: %v", err)
+	}
+	inv, err := salesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID)
+	if err != nil {
+		t.Fatalf("FinalizeDocument: %v", err)
+	}
+	_, lines, err := salesSvc.GetDocument(ctx, fx.Principal, inv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ret, err := salesSvc.ConvertDocument(ctx, fx.Principal, inv.ID, salesdomain.DocCreditNote, map[uuid.UUID]decimal.Decimal{lines[0].ID: mustDecimal(t, "1")})
+	if err != nil {
+		t.Fatalf("ConvertDocument: %v", err)
+	}
+	_, retLines, err := salesSvc.GetDocument(ctx, fx.Principal, ret.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := retLines[0].LineDiscountAmount.Decimal(); !got.Equal(mustDecimal(t, "10")) {
+		t.Fatalf("discount on the returned 1-of-4 = %s, want 10 (a quarter of 40), not the whole 40", got)
+	}
+	full, err := salesSvc.ConvertDocument(ctx, fx.Principal, inv.ID, salesdomain.DocCreditNote, map[uuid.UUID]decimal.Decimal{lines[0].ID: mustDecimal(t, "4")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, fullLines, _ := salesSvc.GetDocument(ctx, fx.Principal, full.ID)
+	if got := fullLines[0].LineDiscountAmount.Decimal(); !got.Equal(mustDecimal(t, "40")) {
+		t.Fatalf("a whole-line return keeps the whole discount, got %s", got)
+	}
+}

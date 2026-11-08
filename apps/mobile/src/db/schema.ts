@@ -126,6 +126,11 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX credit_notes_sale ON credit_notes(sale_local_id);
   `,
+  // v5: a low-stock level per item. Keyed by SKU so it survives an item being replaced by the server's copy when it syncs. NULL / absent
+  // means the default (5). A phone-local preference: it is not uploaded.
+  `
+  CREATE TABLE item_low (sku TEXT PRIMARY KEY, low_at TEXT NOT NULL);
+  `,
 ];
 
 export async function migrate(db: Db): Promise<void> {

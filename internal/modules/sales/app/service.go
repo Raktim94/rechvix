@@ -892,16 +892,22 @@ func (s *Service) ConvertDocument(ctx context.Context, principal permissions.Pri
 	}
 	for _, sl := range sourceLines {
 		qty := sl.Quantity
+		discount := sl.LineDiscountAmount.Decimal()
 		if len(lineQuantities) > 0 {
 			override, ok := lineQuantities[sl.ID]
 			if !ok || !override.IsPositive() {
 				continue
 			}
 			qty = override
+			// A line's discount is an amount off the whole line, so a part-return credits only its share of it
+			// (copying it whole would credit a 1-of-4 return with the discount of all four).
+			if qty.LessThan(sl.Quantity) && discount.IsPositive() {
+				discount = discount.Mul(qty).DivRound(sl.Quantity, 6)
+			}
 		}
 		if _, err := s.AddLine(ctx, principal, AddLineParams{
 			DocumentID: target.ID, ProductVariantID: sl.ProductVariantID, UnitID: sl.UnitID,
-			Quantity: qty, UnitPrice: sl.UnitPrice.Decimal(), LineDiscountAmount: sl.LineDiscountAmount.Decimal(),
+			Quantity: qty, UnitPrice: sl.UnitPrice.Decimal(), LineDiscountAmount: discount,
 			BatchCode: sl.BatchCode, SerialCode: sl.SerialCode,
 		}); err != nil {
 			return nil, fmt.Errorf("sales: copying line %d during conversion: %w", sl.LineNumber, err)

@@ -23,7 +23,7 @@ test("the v3 migration really upgrades a v2 database in place (data kept, party_
 
   await migrate(db);   // applies v3 only
 
-  assert.equal((await db.first<{ user_version: number }>("PRAGMA user_version"))!.user_version, 4);
+  assert.equal((await db.first<{ user_version: number }>("PRAGMA user_version"))!.user_version, 5);
   assert.equal((await db.first<{ n: number }>("SELECT COUNT(*) AS n FROM sales"))!.n, 2, "no sale lost");
   const s1 = (await db.first<{ progress: string; state: string; pricing_mode: string; party_id: string; payload: string }>("SELECT * FROM sales WHERE local_id='s1'"))!;
   assert.equal(s1.state, "pending"); assert.equal(s1.progress, '{"docId":"d9"}', "sync progress (retry safety) untouched");
@@ -35,5 +35,5 @@ test("the v3 migration really upgrades a v2 database in place (data kept, party_
   assert.equal(it.price, "25"); assert.equal(it.stock, "200"); assert.equal(it.price_basis, "EXCL", "items typed before tax stay pre-tax"); assert.equal(it.is_custom, 0);
   for (const t of ["payments", "sale_revisions", "reminders", "server_balances"]) assert.ok(await db.first(`SELECT 1 FROM ${t} LIMIT 1`).then(() => true), `${t} exists`);
   await migrate(db);   // idempotent
-  assert.equal((await db.first<{ user_version: number }>("PRAGMA user_version"))!.user_version, 4);
+  assert.equal((await db.first<{ user_version: number }>("PRAGMA user_version"))!.user_version, 5);
 });

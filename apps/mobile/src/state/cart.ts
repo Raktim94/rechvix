@@ -12,6 +12,8 @@ export interface CartLine {
   /** What the seller typed for the quantity (may be mid-edit, e.g. "2."). `qty` is only updated when the text is valid. */
   qtyText: string; qty: string; qtyError: string | null; qtyDecimals: number;
   price: string; discount: string; gstRate: string | null; stock: string | null;
+  /** This item's own low-stock level when the line was added (absent = default). */
+  lowAt?: string | null;
 }
 export interface Cart {
   customerId: string | null; customerName: string;
@@ -73,7 +75,7 @@ export const cartActions = {
     const decimals = unitDecimals(p.unit_label, p.qty_decimals);
     const line: CartLine = {
       key: uid(), variantId: p.variant_id, name: p.name, unitId: p.unit_id, unitLabel: p.unit_label, hsn: p.hsn, custom: !!p.is_custom,
-      qtyText: "1", qty: "1", qtyError: null, qtyDecimals: decimals, price: unitPrice, discount: "0", gstRate: p.gst_rate, stock: p.stock,
+      qtyText: "1", qty: "1", qtyError: null, qtyDecimals: decimals, price: unitPrice, discount: "0", gstRate: p.gst_rate, stock: p.stock, lowAt: p.low_at ?? null,
     };
     set({ ...cart, mode, lines: [...cart.lines, line] });
   },

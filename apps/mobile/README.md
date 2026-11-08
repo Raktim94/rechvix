@@ -50,6 +50,7 @@ The phone's own invoice numbers are replaced by the server's when each sale sync
   second credit note. Limits: a part-return of a *discounted* line is refused (the server copies a line's discount whole), and a credit above
   what was sold is refused. Credit notes lower the invoice's net bill everywhere (invoice, To collect, PDF); money already received beyond
   the net bill is shown as *owed back to the customer*, never converted into a payment or a refund (that is your decision).
+- **Low stock.** Each item can have its own low-stock level (item editor, even for server items; blank = 5; kept on the phone by SKU, not uploaded). Home counts items at or below their level and says how many are out; Items has All / Low stock / Out of stock filters with a "low" mark on each row; while billing, a line warns when the sale would leave the item at or below its level, or use up all of it, besides the existing "more than in stock" warning.
 - **Keyboard.** The total / Save bar on New sale lifts above the on-screen keyboard (measured, so it works with or without Android resizing the window).
 
 

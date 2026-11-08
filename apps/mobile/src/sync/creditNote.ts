@@ -1,6 +1,6 @@
 import { ApiError, type Api } from "../api/client";
 import {
-  adjustStock, creditNotesForSale, getCreditNote, getSale, insertCreditNote, setCreditDraft, setCreditIssued,
+  adjustStockEverywhere, creditNotesForSale, getCreditNote, getSale, insertCreditNote, setCreditDraft, setCreditIssued,
   type CreditNote, type SaleLine, type SalePayload,
 } from "../db/repo";
 import type { Db } from "../db/types";
@@ -85,6 +85,6 @@ export async function issueCreditNote(api: Api, db: Db, saleLocalId: string, pic
   if (doc.Status !== "FINALIZED" || !doc.DocumentNumber) throw new CreditNoteError("The server has not issued the credit note yet. Try again; nothing was lost.");
   const total = doc.GrandTotalAmount ? minorToString(toMinor(dec(doc.GrandTotalAmount.amount))) : "0";
   await setCreditIssued(db, localId, doc.DocumentNumber, total);
-  if (note.payload.goodsReturned) for (const l of note.payload.lines) await adjustStock(db, l.variantId, Number(l.qty));
+  if (note.payload.goodsReturned) for (const l of note.payload.lines) await adjustStockEverywhere(db, l.variantId, Number(l.qty));
   return { number: doc.DocumentNumber, totalMinor: parseMinor(total) };
 }

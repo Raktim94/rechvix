@@ -5,11 +5,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   createItem, createParty, frequentItems, productByCode, recentCustomers, searchParties, searchProducts, type Party, type Product,
 } from "../db/repo";
-import { dec, minorToString, toMinor } from "../lib/decimal";
+import { dec, decToString, minorToString, toMinor } from "../lib/decimal";
 import { useLocal } from "../lib/hooks";
 import { useKeyboardLift } from "../lib/keyboard";
 import { formatMinor } from "../lib/money";
 import { unitPriceFor } from "../lib/sale";
+import { afterSale } from "../lib/stock";
 import { shareSale } from "../lib/share";
 import { GST_RATES, stateFromGstin } from "../lib/tax";
 import { cartActions, cartHasErrors, useCart, type CartLine } from "../state/cart";
@@ -113,7 +114,7 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 290 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ paddingBottom: 230 }} keyboardShouldPersistTaps="handled">
         <Header title={cart.editing ? "Edit invoice" : "New sale"} sub={cart.editing ? cart.editing.number : cart.corrects ? `Re-issuing ${cart.corrects.number}` : undefined}
           right={cart.lines.length > 0 || cart.editing ? <Tap label="Clear bill" onPress={() => { cartActions.clear(profile?.pricingMode ?? "INCLUSIVE"); setProblem(null); }} style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}><T v="strong" color={c.negative}>{cart.editing ? "Cancel edit" : "Clear"}</T></Tap> : undefined} />
         <View style={{ padding: space.lg, gap: space.lg, paddingTop: space.xs }}>
@@ -233,6 +234,7 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
                   {customer?.is_walk_in ? <T v="small" color={c.warning}>This is the walk-in customer. To track what they owe, choose a named customer.</T> : null}
                 </View>
               ) : null}
+              {!cart.editing && !cart.corrects ? <Button title="Save as quotation instead" kind="quiet" icon="document-text-outline" onPress={() => void saveAsQuote()} disabled={!canSave} /> : null}
               <Field label="Note on invoice (optional)" value={cart.note} onChangeText={(t) => cartActions.patch({ note: t })} multiline />
             </View>
           ) : null}
@@ -251,7 +253,6 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
           </View>
         </View>
         <Button title={cart.editing ? "Save changes" : balance > 0n && received > 0n ? "Save · part paid" : balance > 0n ? "Save · to collect" : "Save invoice"} onPress={() => void save()} disabled={!canSave} busy={saving} icon="checkmark-circle-outline" />
-        {!cart.editing && !cart.corrects ? <Button title="Save as quotation" kind="quiet" icon="document-text-outline" onPress={() => void saveAsQuote()} disabled={!cart.customerId || cart.lines.length === 0 || errors || saving} /> : null}
       </View>
 
       <CustomerPicker visible={pickCustomer} onClose={() => setPickCustomer(false)} onPick={(p) => { cartActions.patch({ customerId: p.id, customerName: p.name }); setPickCustomer(false); }} />
@@ -268,6 +269,7 @@ function LineEditor({ line: l, mode, lineTotal, linked }: { line: CartLine; mode
   const c = usePalette();
   const [disc, setDisc] = useState(dec(l.discount) > 0n);
   const over = l.stock != null && !l.qtyError && dec(l.qty) > dec(l.stock);
+  const after = !l.qtyError && !over ? afterSale(l.stock, l.qty, l.lowAt) : null;
   const noPrice = dec(l.price) === 0n;
   return (
     <View style={{ padding: space.lg, gap: 10 }}>
@@ -295,6 +297,7 @@ function LineEditor({ line: l, mode, lineTotal, linked }: { line: CartLine; mode
       <T v="small" muted>{mode === "INCLUSIVE" ? "Price includes GST" : "Price before GST"} · per {l.unitLabel}</T>
       {l.qtyError ? <T v="small" color={c.negative}>{l.qtyError}</T> : null}
       {noPrice ? <T v="small" color={c.negative}>Set a price before saving.</T> : null}
+      {after && after.state !== "ok" ? <T v="small" color={c.warning}>{after.state === "out" ? `This uses all ${l.stock} ${l.unitLabel} in stock.` : `Only ${decToString(after.left)} ${l.unitLabel} will be left after this sale (low-stock level ${l.lowAt || "5"}).`}</T> : null}
       {over ? <T v="small" color={c.warning}>{linked ? `The last synced stock is ${l.stock} ${l.unitLabel}. The server may refuse this sale if it is still short.` : `This phone counts ${l.stock} ${l.unitLabel} in stock. You can still sell it; stock will show negative.`}</T> : null}
       {disc ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
