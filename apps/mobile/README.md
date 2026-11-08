@@ -36,7 +36,22 @@ The phone's own invoice numbers are replaced by the server's when each sale sync
 - **Invoice designs:** Classic tax invoice (A4), Clean modern (A4), Compact receipt (80 mm). Presentation only; the figures are identical.
 - **Server changes** (migration `0065_receipt_reversal`): idempotent receipts via `client_ref`, receipt reversal, reversed receipts excluded from paid totals.
 - **Limits.** Dashboard and To collect figures come from this phone's own invoices; when linked, the server's organisation-wide receivable is
-  shown separately. Reminders open WhatsApp or the share sheet; delivery cannot be known. Quotations, credit notes and returns are not on the phone yet.
+  shown separately. Reminders open WhatsApp or the share sheet; delivery cannot be known.
+
+## Quotations, credit notes and returns (2.2)
+
+- **Quotations** (More -> Quotations; on New sale choose *Save as quotation*). A priced offer kept on this phone (`quotes` table, numbers `QT-0001`).
+  It never touches stock, invoices or what anyone owes, and is not sent to the server. Share it as a PDF in any invoice design (titled
+  QUOTATION, with its validity, no payment block). *Make an invoice from this* loads it into the bill; saving the invoice marks the quotation converted.
+- **Credit notes and returns** (invoice -> *Credit / return items*; needs a connection and an invoice the server already holds). Pick the
+  quantity per line. *Goods came back* issues a server **sales return** (stock goes up again and the balance falls); *Money only* issues a
+  **credit note** (balance falls, stock unchanged). The server numbers it; the phone records it only after the server has issued it. It is
+  resumable: the intent is saved first, the server draft id is remembered, and finalizing twice is harmless, so a dropped connection never makes a
+  second credit note. Limits: a part-return of a *discounted* line is refused (the server copies a line's discount whole), and a credit above
+  what was sold is refused. Credit notes lower the invoice's net bill everywhere (invoice, To collect, PDF); money already received beyond
+  the net bill is shown as *owed back to the customer*, never converted into a payment or a refund (that is your decision).
+- **Keyboard.** The total / Save bar on New sale lifts above the on-screen keyboard (measured, so it works with or without Android resizing the window).
+
 
 ## How sync works
 
@@ -61,7 +76,7 @@ only exist for sales, and those never conflict: every invoice is new and numbere
 
 ```bash
 npm install
-npm test            # 35 tests: sync saga under crashes, engine, API client (real SQLite via node:sqlite)
+npm test            # 120 tests: sync saga under crashes, engine, API client (real SQLite via node:sqlite)
 npm run typecheck
 RECHVIX_URL=http://localhost:8099 RECHVIX_EMAIL=... RECHVIX_PASSWORD=... npm run test:live   # same code vs a real server
 npx expo start      # needs a dev build (expo-sqlite, camera); Expo Go is not enough

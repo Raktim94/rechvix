@@ -14,6 +14,7 @@ export class FakeServer implements SagaApi {
   cancelCount = 0;
   nextNo = 1;
   calls: string[] = [];
+  converts: { source: string; target: string; type: string; quantities: Record<string, string> }[] = [];
   crashAt: string | null = null;
   parties: { ID: string; LegalName: string; PartyType: string }[] = [];
   products: { ID: string; Name: string; hsn: string }[] = [];
@@ -32,7 +33,7 @@ export class FakeServer implements SagaApi {
     let m = /^\/sales\/documents\/([^/]+)$/.exec(path);
     if (m) {
       const d = this.docs.get(m[1]!)!;
-      return { document: { ID: d.ID, Status: d.Status, DocumentNumber: d.Status === "FINALIZED" ? d.DocumentNumber : "", GrandTotalAmount: d.Status === "FINALIZED" ? { amount: d.total, currency: "INR" } : null }, lines: d.lines } as T;
+      return { document: { ID: d.ID, Status: d.Status, DocumentNumber: d.Status === "FINALIZED" ? d.DocumentNumber : "", GrandTotalAmount: d.Status === "FINALIZED" ? { amount: d.total, currency: "INR" } : null }, lines: d.lines.map((l, i) => ({ ...l, LineNumber: i + 1, Quantity: l.qty })) } as T;
     }
     m = /^\/accounting\/sales-documents\/([^/]+)\/receipts$/.exec(path);
     if (m) return { receipts: this.receipts.filter((r) => r.doc === m![1] && !r.reversed).map((r) => ({ Amount: { amount: r.amount, currency: "INR" } })) } as T;
@@ -80,6 +81,19 @@ export class FakeServer implements SagaApi {
       this.finalizeCount++;
       this.maybeCrash("after-finalize");
       return {} as T;
+    }
+    m = /^\/sales\/documents\/([^/]+)\/convert$/.exec(path);
+    if (m) {
+      const src = this.docs.get(m[1]!)!;
+      if (src.Status !== "FINALIZED") throw new ApiError(409, "DOCUMENT_NOT_FINALIZED", "Only a FINALIZED document can be converted or cancelled.");
+      const q = (body as { line_quantities?: Record<string, string>; target_type: string }).line_quantities ?? {};
+      for (const l of src.lines) if (q[l.ID] != null && Number(q[l.ID]) > Number(l.qty)) throw new ApiError(409, "RETURN_QUANTITY_EXCEEDS_SOURCE", "too many");
+      const id = `doc-${this.docs.size + 1}`;
+      const lines = src.lines.filter((l) => q[l.ID] != null).map((l, i) => ({ ID: `l${i + 1}`, qty: q[l.ID]!, price: l.price, variant: l.variant }));
+      this.docs.set(id, { ID: id, Status: "DRAFT", DocumentNumber: "", ref: "", lines, total: "0" });
+      this.converts.push({ source: src.ID, target: id, type: (body as { target_type: string }).target_type, quantities: q });
+      this.maybeCrash("after-convert");
+      return { ID: id } as T;
     }
     m = /^\/sales\/documents\/([^/]+)\/cancel$/.exec(path);
     if (m) {

@@ -27,6 +27,8 @@ export interface Cart {
   editing: { localId: string; number: string } | null;
   /** When set, this bill re-issues a cancelled invoice. */
   corrects: { number: string; owedBack: string } | null;
+  /** When set, this bill was started from a quotation; saving it closes that quotation. */
+  fromQuote?: { id: string; number: string } | null;
 }
 
 const uid = (): string => {
@@ -96,12 +98,12 @@ export const cartActions = {
   setDiscount(key: string, discount: string) { set({ ...cart, lines: cart.lines.map((l) => (l.key === key ? { ...l, discount } : l)) }); },
 
   /** Load an existing invoice back into the cart for editing / re-issuing. */
-  load(payload: SalePayload, opts: { editing?: Cart["editing"]; corrects?: Cart["corrects"]; stockOf?: (variantId: string) => string | null }) {
+  load(payload: SalePayload, opts: { editing?: Cart["editing"]; corrects?: Cart["corrects"]; fromQuote?: Cart["fromQuote"]; stockOf?: (variantId: string) => string | null }) {
     const lines: CartLine[] = payload.lines.map((l: SaleLine) => {
       const decimals = unitDecimals(l.unitLabel);
       return { key: uid(), variantId: l.variantId, name: l.name, unitId: l.unitId, unitLabel: l.unitLabel ?? "pcs", hsn: l.hsn ?? "", custom: !!l.custom, qtyText: l.qty, qty: l.qty, qtyError: null, qtyDecimals: decimals, price: l.price, discount: l.discount, gstRate: l.gstRate ?? null, stock: opts.stockOf?.(l.variantId) ?? null };
     });
-    set({ ...emptyCart(payload.pricingMode ?? "EXCLUSIVE"), customerId: payload.customerId, customerName: payload.customerName, lines, mode: payload.pricingMode ?? "EXCLUSIVE", payMethod: null, note: payload.note ?? "", editing: opts.editing ?? null, corrects: opts.corrects ?? null });
+    set({ ...emptyCart(payload.pricingMode ?? "EXCLUSIVE"), customerId: payload.customerId, customerName: payload.customerName, lines, mode: payload.pricingMode ?? "EXCLUSIVE", payMethod: null, note: payload.note ?? "", editing: opts.editing ?? null, corrects: opts.corrects ?? null, fromQuote: opts.fromQuote ?? null });
   },
 };
 

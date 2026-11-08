@@ -362,7 +362,7 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
         exchange_rate: foreignCurrency ? exchangeRate : "1",
         invoice_language: invoiceLanguage || org.legalEntity.InvoiceLanguage || "",
 
-        pricing_mode: !isIndia && taxDetails.pricesIncludeTax ? "INCLUSIVE" : "EXCLUSIVE",
+        pricing_mode: taxDetails.pricesIncludeTax ? "INCLUSIVE" : "EXCLUSIVE",
       });
     },
     onSuccess: (d) => {
@@ -691,6 +691,14 @@ export function BillingPage({ resumeDocumentId, initialCustomerId, initialDocume
               <p className={ui.muted} style={{ marginTop: 4 }}>
                 {t("billing.posHelp")}
               </p>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={taxDetails.pricesIncludeTax}
+                  onChange={(e) => setTaxDetails({ ...taxDetails, pricesIncludeTax: e.target.checked })}
+                />
+                Prices include GST
+              </label>
               {!placeOfSupply ? (
                 <p className={ui.muted} style={{ marginTop: 4 }} role="status">
                   {t("billing.chooseState")}{" "}

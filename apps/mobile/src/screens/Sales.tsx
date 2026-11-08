@@ -2,18 +2,19 @@ import React, { useState } from "react";
 import { Alert, FlatList, Modal, ScrollView, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-  allPayments, cancelLocalSale, canEditSale, discardSale, getSale, listSales, paymentsForSale, recentServerDocs, retrySale, saleRevisions,
-  type Payment, type Sale, type SaleRevision, type ServerDoc,
+  allPayments, cancelLocalSale, canEditSale, creditNotesForSale, discardSale, getSale, listSales, paymentsForSale, recentServerDocs, retrySale, saleRevisions,
+  type CreditNote, type Payment, type Sale, type SaleRevision, type ServerDoc,
 } from "../db/repo";
-import { minorToString, parseMinor } from "../lib/decimal";
+import { dec, decToString, minorToString, parseMinor } from "../lib/decimal";
 import { useLocal } from "../lib/hooks";
 import { TEMPLATES, type InvoiceTemplate } from "../lib/invoice";
 import { formatMinor } from "../lib/money";
-import { payloadCalc, payStatus, saleTotalMinor, salePaidMinor, totalMismatch, livePayments } from "../lib/sale";
-import { shareSale } from "../lib/share";
+import { creditsBySale, payloadCalc, payStatus, saleTotalMinor, salePaidMinor, totalMismatch, livePayments } from "../lib/sale";
+import { shareCredit, shareSale } from "../lib/share";
 import { cartActions, getCart, cartIsEmpty } from "../state/cart";
-import { useApp } from "../state/app";
+import { uid, useApp } from "../state/app";
 import { CorrectionError } from "../sync/correct";
+import { CreditNoteError, creditedQty, type ReturnPick } from "../sync/creditNote";
 import { fonts, radius, space, usePalette } from "../theme";
 import { Badge, Body, Button, Card, Chip, Divider, Empty, Field, Header, Icon, Label, Screen, Tap } from "../ui/kit";
 import { T } from "../ui/text";
@@ -148,11 +149,13 @@ export function Sales({ open }: { open: (id: string) => void }) {
 }
 
 export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; onClose: () => void; goSell: () => void; openCustomer: (partyId: string) => void }) {
-  const { db, syncNow, syncing, online, linked, currency, profile, changed, correctInvoice } = useApp();
+  const { db, syncNow, syncing, online, linked, currency, profile, changed, correctInvoice, creditInvoice } = useApp();
   const c = usePalette();
   const sale = useLocal((d) => getSale(d, id), null as Sale | null, [id]);
   const pays = useLocal((d) => paymentsForSale(d, id), [] as Payment[], [id]);
   const revisions = useLocal((d) => saleRevisions(d, id), [] as SaleRevision[], [id]);
+  const notes = useLocal((d) => creditNotesForSale(d, id), [] as CreditNote[], [id]);
+  const [crediting, setCrediting] = useState(false);
   const ledger = useLedgers().find((l) => l.partyId === sale?.payload.customerId);
   const [template, setTemplate] = useState<InvoiceTemplate | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -164,8 +167,11 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
   const calc = payloadCalc(sale.payload);
   const total = saleTotalMinor(sale);
   const paid = salePaidMinor(sale, pays);
-  const due = total > paid ? total - paid : 0n;
-  const status = payStatus(total, paid);
+  const credited = creditsBySale(notes).get(id) ?? 0n;
+  const net = total > credited ? total - credited : 0n;
+  const due = net > paid ? net - paid : 0n;
+  const refund = paid > net ? paid - net : 0n;
+  const status = payStatus(net, paid);
   const m = (x: bigint) => formatMinor(x, currency);
   const sb = syncBadge(sale);
   const tpl = template ?? profile?.invoiceTemplate ?? "classic";
@@ -228,8 +234,10 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
             <KV k="Taxable value" v={m(calc.taxableMinor)} />
             {calc.components.map((x) => <KV key={x.label} k={x.label} v={m(x.minor)} />)}
             <KV k="Total" v={m(total)} strong />
+            {credited > 0n ? <KV k="Credit notes" v={`-${m(credited)}`} /> : null}
             <KV k="Received" v={m(paid)} />
             <KV k="Balance due" v={m(due)} />
+            {refund > 0n ? <KV k="Owed back to customer" v={m(refund)} /> : null}
             <KV k="Made" v={new Date(sale.created_at).toLocaleString()} />
             {sale.due_date ? <KV k="Due by" v={new Date(sale.due_date).toLocaleDateString()} /> : null}
             {sale.payload.note ? <KV k="Note" v={sale.payload.note} /> : null}
@@ -258,6 +266,27 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
             </View>
           ) : null}
 
+          {notes.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Label>Credit notes on this invoice</Label>
+              <Card style={{ padding: 0 }}>
+                {notes.map((n, i) => (
+                  <View key={n.local_id}>
+                    <View style={{ padding: space.lg, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <T v="strong">{n.state === "issued" ? `${n.number} · -${m(parseMinor(n.total))}` : "Not issued yet"}</T>
+                        <T v="small" muted>{new Date(n.created_at).toLocaleDateString()} · {n.payload.goodsReturned ? "goods returned" : "money only"} · {n.reason}</T>
+                        {n.state !== "issued" ? <T v="small" color={c.warning}>The server has not issued it. Open Credit / return and tap Issue again.</T> : null}
+                      </View>
+                      {n.state === "issued" ? <Tap label={`Share credit note ${n.number}`} onPress={() => { if (db && profile) void shareCredit(db, n.local_id, profile, currency).catch(() => setMsg("Couldn't create the PDF. Try again.")); }} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}><Icon name="share-outline" size={22} color={c.accent} /></Tap> : null}
+                    </View>
+                    {i < notes.length - 1 ? <Divider /> : null}
+                  </View>
+                ))}
+              </Card>
+            </View>
+          ) : null}
+
           <View style={{ gap: 8 }}>
             <Label>Invoice design</Label>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
@@ -270,6 +299,7 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
           {!sale.cancelled && due > 0n && ledger ? <Button title="Record payment" icon="cash-outline" kind="quiet" onPress={() => setPaying(true)} /> : null}
           {editable ? <Button title="Edit invoice" icon="create-outline" kind="quiet" onPress={startEdit} /> : null}
           {correctable ? <Button title="Correct invoice" icon="swap-horizontal-outline" kind="quiet" disabled={!linked || !online} onPress={() => setAsk("correct")} /> : null}
+          {correctable ? <Button title="Credit / return items" icon="return-down-back-outline" kind="quiet" disabled={!linked || !online} onPress={() => setCrediting(true)} /> : null}
           {correctable && (!linked || !online) ? <T v="small" muted>Correcting an invoice the server holds needs a connection, so the cancellation is recorded there too.</T> : null}
           {!sale.cancelled && !sale.progress.docId && sale.state !== "syncing" ? <Button title="Cancel invoice" icon="close-circle-outline" kind="danger" onPress={() => setAsk("cancel")} /> : null}
 
@@ -292,6 +322,10 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
         </View>
       </ScrollView>
       {paying && ledger ? <PaymentSheet ledger={ledger} invoiceId={sale.local_id} onClose={() => setPaying(false)} onSaved={() => { setPaying(false); changed(); }} /> : null}
+      {crediting ? (
+        <CreditSheet sale={sale} notes={notes} currency={currency} onClose={() => setCrediting(false)}
+          onIssue={async (picks, goods, reason, retryId) => { await creditInvoice(sale.local_id, picks, goods, reason, retryId); changed(); }} />
+      ) : null}
       {ask ? (
         <ReasonSheet
           title={ask === "correct" ? "Correct this invoice?" : "Cancel this invoice?"}
@@ -314,6 +348,68 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
         />
       ) : null}
     </Screen>
+  );
+}
+
+/** Pick what is being credited. Quantities start at 0; nothing is sent until "Issue credit note". */
+function CreditSheet({ sale, notes, currency, onClose, onIssue }: { sale: Sale; notes: CreditNote[]; currency: string; onClose: () => void; onIssue: (picks: ReturnPick[], goods: boolean, reason: string, retryId: string) => Promise<void> }) {
+  const c = usePalette();
+  // A credit note the server has not issued yet is resumed (same id, same lines), never duplicated.
+  const pending = notes.find((n) => n.state === "pending");
+  const [retryId] = useState(() => pending?.local_id ?? uid());
+  const done = creditedQty(notes);
+  const [qty, setQty] = useState<Record<number, string>>(() => Object.fromEntries((pending?.payload.lines ?? []).map((l) => [l.lineIndex ?? 0, l.qty])));
+  const [goods, setGoods] = useState(pending?.payload.goodsReturned ?? true);
+  const [why, setWhy] = useState(pending?.reason ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const picks: ReturnPick[] = Object.entries(qty).filter(([, v]) => v && dec(v) > 0n).map(([i, v]) => ({ index: Number(i), qty: v }));
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+        <Header title="Credit / return" onBack={onClose} sub={`${sale.doc_number ?? sale.local_number} · ${sale.payload.customerName}`} />
+        <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+          <T v="small" muted>The server issues a numbered credit note that lowers what this customer owes. The original invoice is not changed.</T>
+          <Card style={{ padding: 0 }}>
+            {sale.payload.lines.map((l, i) => {
+              const left = dec(l.qty) - (done.get(i) ?? 0n);
+              return (
+                <View key={`${l.variantId}-${i}`}>
+                  <View style={{ padding: space.lg, flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <T v="strong">{l.name}</T>
+                      <T v="small" muted>{left > 0n ? `${decToString(left)} of ${l.qty} ${l.unitLabel ?? ""} can still be credited` : "Fully credited"} · {l.price} each</T>
+                    </View>
+                    <TextInput accessibilityLabel={`Quantity of ${l.name} to credit`} editable={left > 0n} value={qty[i] ?? ""} placeholder="0" placeholderTextColor={c.faint} keyboardType="decimal-pad"
+                      onChangeText={(t) => setQty({ ...qty, [i]: t.replace(",", ".").replace(/[^0-9.]/g, "") })}
+                      style={{ width: 80, minHeight: 44, borderRadius: radius.sm + 2, borderWidth: 1, borderColor: c.border, color: c.text, textAlign: "center", fontSize: 17, fontFamily: fonts.mono }} />
+                  </View>
+                  {i < sale.payload.lines.length - 1 ? <Divider /> : null}
+                </View>
+              );
+            })}
+          </Card>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Chip title="Goods came back" active={goods} onPress={() => setGoods(true)} />
+            <Chip title="Money only" active={!goods} onPress={() => setGoods(false)} />
+          </View>
+          <T v="small" muted>{goods ? "Stock goes back up by the quantities above." : "Stock is not changed (for example a price adjustment or a damaged item you did not take back)."}</T>
+          <Field label="Reason (required)" value={why} onChangeText={setWhy} />
+          {err ? <T v="small" color={c.negative}>{err}</T> : null}
+          {ok ? <Card style={{ backgroundColor: c.positiveSoft, borderColor: c.positive }}><T v="strong" color={c.positive}>{ok}</T></Card> : null}
+          {ok ? <Button title="Done" onPress={onClose} /> : (
+            <Button title={picks.length ? `Issue credit note (${picks.length} item${picks.length === 1 ? "" : "s"})` : "Issue credit note"} busy={busy} disabled={picks.length === 0 || !why.trim()}
+              onPress={() => {
+                setBusy(true); setErr(null);
+                onIssue(picks, goods, why, retryId).then(() => setOk("Credit note issued by the server. The balance has been updated.")).catch((e: unknown) =>
+                  setErr(e instanceof CreditNoteError || e instanceof Error ? e.message : "Couldn't issue it. Nothing was lost; try again.")).finally(() => setBusy(false));
+              }} />
+          )}
+          <T v="small" muted>If the connection drops, tap again: the same request is resumed and cannot issue a second credit note.</T>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 

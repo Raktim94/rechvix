@@ -1,6 +1,6 @@
 {
   "name": "rechvix-mobile",
-  "version": "2.1.3",
+  "version": "2.2.0",
   "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/ibm-plex-mono": "^0.4.1",

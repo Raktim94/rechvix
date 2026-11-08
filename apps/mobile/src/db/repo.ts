@@ -18,6 +18,8 @@ export interface SaleLine {
   /** The unit price exactly as entered. In INCLUSIVE mode it already contains GST. */
   price: string; discount: string; gstRate?: string | null;
   unitLabel?: string; hsn?: string;
+  /** Credit notes: index of this line on the original invoice, so a later return knows how much is already credited. */
+  lineIndex?: number;
   /** A one-time item made while billing (still a real catalogue item underneath, so it posts to the server like any other). */
   custom?: boolean;
 }
@@ -39,6 +41,8 @@ export interface SalePayload {
   note?: string;
   /** Number of the cancelled invoice this one re-issues (an audited correction). */
   corrects?: string;
+  /** Credit notes: true when the goods came back (stock goes up again), false for a money-only credit. */
+  goodsReturned?: boolean;
 }
 export interface Progress { docId?: string; finalized?: boolean; receipted?: boolean }
 export type SaleState = "pending" | "syncing" | "synced" | "failed";
@@ -356,3 +360,39 @@ export async function cancelLocalSale(db: Db, localId: string, reason: string, n
     await db.run("UPDATE sales SET cancelled=1, error=NULL WHERE local_id=?", [localId]);
   });
 }
+
+
+// ---------------------------------------------------------------- quotations (kept on the phone; no stock or balance effect)
+
+export type QuoteStatus = "open" | "converted" | "declined";
+export interface QuoteRow { local_id: string; number: string; party_id: string; payload: string; total: string; created_at: number; valid_until: number | null; status: QuoteStatus; sale_local_id: string | null }
+export interface Quote extends Omit<QuoteRow, "payload"> { payload: SalePayload }
+const parseQuote = (r: QuoteRow): Quote => ({ ...r, payload: JSON.parse(r.payload) as SalePayload });
+export async function takeQuoteNumber(db: Db): Promise<string> {
+  let n = 0;
+  await db.tx(async () => { n = Number((await kvGet(db, "quote_counter")) ?? "0") + 1; await kvSet(db, "quote_counter", String(n)); });
+  return `QT-${String(n).padStart(4, "0")}`;
+}
+export async function insertQuote(db: Db, localId: string, number: string, payload: SalePayload, totalMinor: string, now: number, validUntil: number | null): Promise<void> {
+  await db.run("INSERT OR IGNORE INTO quotes(local_id,number,party_id,payload,total,created_at,valid_until) VALUES(?,?,?,?,?,?,?)",
+    [localId, number, payload.customerId, JSON.stringify(payload), totalMinor, now, validUntil]);
+}
+export const listQuotes = async (db: Db): Promise<Quote[]> => (await db.all<QuoteRow>("SELECT * FROM quotes ORDER BY created_at DESC LIMIT 300")).map(parseQuote);
+export const getQuote = async (db: Db, id: string): Promise<Quote | null> => { const r = await db.first<QuoteRow>("SELECT * FROM quotes WHERE local_id=?", [id]); return r ? parseQuote(r) : null; };
+export const setQuoteStatus = (db: Db, id: string, status: QuoteStatus, saleLocalId: string | null = null): Promise<void> =>
+  db.run("UPDATE quotes SET status=?, sale_local_id=COALESCE(?,sale_local_id) WHERE local_id=?", [status, saleLocalId, id]);
+
+// ---------------------------------------------------------------- credit notes (returns against a synced invoice)
+
+export interface CreditNoteRow { local_id: string; sale_local_id: string; server_doc_id: string | null; number: string | null; payload: string; total: string | null; reason: string; created_at: number; state: "pending" | "issued" }
+export interface CreditNote extends Omit<CreditNoteRow, "payload"> { payload: SalePayload }
+const parseCredit = (r: CreditNoteRow): CreditNote => ({ ...r, payload: JSON.parse(r.payload) as SalePayload });
+export async function insertCreditNote(db: Db, localId: string, saleLocalId: string, payload: SalePayload, reason: string, now: number): Promise<void> {
+  await db.run("INSERT OR IGNORE INTO credit_notes(local_id,sale_local_id,payload,reason,created_at) VALUES(?,?,?,?,?)", [localId, saleLocalId, JSON.stringify(payload), reason, now]);
+}
+export const setCreditDraft = (db: Db, id: string, serverDocId: string): Promise<void> => db.run("UPDATE credit_notes SET server_doc_id=? WHERE local_id=?", [serverDocId, id]);
+export const setCreditIssued = (db: Db, id: string, number: string, total: string): Promise<void> => db.run("UPDATE credit_notes SET state='issued', number=?, total=? WHERE local_id=?", [number, total, id]);
+export const creditNotesForSale = async (db: Db, saleLocalId: string): Promise<CreditNote[]> =>
+  (await db.all<CreditNoteRow>("SELECT * FROM credit_notes WHERE sale_local_id=? ORDER BY created_at", [saleLocalId])).map(parseCredit);
+export const allCreditNotes = async (db: Db): Promise<CreditNote[]> => (await db.all<CreditNoteRow>("SELECT * FROM credit_notes WHERE state='issued'")).map(parseCredit);
+export const getCreditNote = async (db: Db, id: string): Promise<CreditNote | null> => { const r = await db.first<CreditNoteRow>("SELECT * FROM credit_notes WHERE local_id=?", [id]); return r ? parseCredit(r) : null; };

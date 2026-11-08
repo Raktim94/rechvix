@@ -16,7 +16,16 @@ export const isTemplate = (v: unknown): v is InvoiceTemplate => v === "classic" 
 /** One live (not reversed) payment against the invoice, oldest first. */
 export interface PaymentEntry { at: number; amountMinor: bigint; method: string; reference?: string }
 
-export interface PaymentSummary { paidMinor: bigint; dueMinor: bigint; status: "PAID" | "PARTIAL" | "UNPAID" }
+/** What the document is. A quotation is an offer (no payment block, no tax-invoice wording); a credit note is a return against an invoice. */
+export type DocKind = "invoice" | "quotation" | "credit";
+
+export interface PaymentSummary {
+  paidMinor: bigint; dueMinor: bigint; status: "PAID" | "PARTIAL" | "UNPAID";
+  /** Credit notes issued against the invoice (reduce what is owed). */
+  creditMinor?: bigint;
+  /** Money received beyond what is owed after credit notes: owed back to the customer. Never invented: it is paid - (total - credits). */
+  refundMinor?: bigint;
+}
 
 export interface InvoiceData {
   number: string;
@@ -31,6 +40,13 @@ export interface InvoiceData {
   calc: InvoiceCalc;
   currency: string;
   payment: PaymentSummary;
+  kind?: DocKind;
+  /** Quotations: the last day the offer stands. */
+  validUntil?: number | null;
+  /** Credit notes: the invoice being credited. */
+  against?: string;
+  /** Credit notes already issued against this invoice. */
+  credits?: { number: string; totalMinor: bigint }[];
   /** Each installment received. The invoice total is never replaced by what is left: it is printed with these. */
   payments?: PaymentEntry[];
   cancelled?: boolean;
@@ -55,10 +71,26 @@ const taxSummaryRows = (d: InvoiceData, m: (x: bigint) => string) =>
   d.calc.components.map((c) => `<tr><td>${c.label}</td><td class="r">${m(c.minor)}</td></tr>`).join("");
 
 const payLine = (p: PaymentEntry) => `${esc(new Date(p.at).toLocaleDateString())} · ${esc(p.method.replace(/_/g, " "))}${p.reference ? ` (${esc(p.reference)})` : ""}`;
-const historyRows = (d: InvoiceData, m: (x: bigint) => string) =>
-  (d.payments ?? []).map((p) => `<tr class="hist"><td>${payLine(p)}</td><td class="r">${m(p.amountMinor)}</td></tr>`).join("");
+
+interface SettleLine { k: string; v: string; tone: "hist" | "plain" | "due" }
+/** The lines under the invoice total: credit notes, each payment, total paid, balance due. Quotations and credit notes have none. */
+function settleLines(d: InvoiceData, m: (x: bigint) => string): SettleLine[] {
+  if (d.kind && d.kind !== "invoice") return [];
+  const out: SettleLine[] = [];
+  for (const c of d.credits ?? []) out.push({ k: `Credit note ${esc(c.number)}`, v: `-${m(c.totalMinor)}`, tone: "plain" });
+  for (const p of d.payments ?? []) out.push({ k: payLine(p), v: m(p.amountMinor), tone: "hist" });
+  out.push({ k: "Total paid", v: m(d.payment.paidMinor), tone: "plain" });
+  out.push({ k: "Balance due", v: m(d.payment.dueMinor), tone: "due" });
+  if ((d.payment.refundMinor ?? 0n) > 0n) out.push({ k: "Refund due to customer", v: m(d.payment.refundMinor!), tone: "plain" });
+  return out;
+}
+const titleOf = (d: InvoiceData) => (d.kind === "quotation" ? "QUOTATION" : d.kind === "credit" ? "CREDIT NOTE" : "TAX INVOICE");
+const wordOf = (d: InvoiceData) => (d.kind === "quotation" ? "Quotation" : d.kind === "credit" ? "Credit note" : "Invoice");
+/** Pay status for an invoice; for a quotation, how long the offer stands; nothing for a credit note. */
+const statusText = (d: InvoiceData) => (!d.kind || d.kind === "invoice" ? STATUS_TEXT[d.payment.status] : d.kind === "quotation" && d.validUntil ? `Valid until ${new Date(d.validUntil).toLocaleDateString()}` : d.kind === "credit" && d.against ? `Against ${d.against}` : "");
+
 const paymentRows = (d: InvoiceData, m: (x: bigint) => string) =>
-  `${historyRows(d, m)}<tr><td>Total paid</td><td class="r">${m(d.payment.paidMinor)}</td></tr><tr class="due"><td>Balance due</td><td class="r">${m(d.payment.dueMinor)}</td></tr>`;
+  settleLines(d, m).map((l) => `<tr class="${l.tone === "hist" ? "hist" : l.tone === "due" ? "due" : ""}"><td>${l.k}</td><td class="r">${l.v}</td></tr>`).join("");
 
 const headerInfo = (d: InvoiceData) => `${nl2br(d.business.address)}${d.business.phone ? `<br>Phone ${esc(d.business.phone)}` : ""}${d.business.gstin ? `<br>GSTIN ${esc(d.business.gstin)}` : ""}`;
 const customerBlock = (d: InvoiceData) => `<div class="k">Billed to</div><div class="big">${esc(d.customerName)}</div>${d.customerGstin ? `<div>GSTIN ${esc(d.customerGstin)}</div>` : ""}${d.customerPhone ? `<div>${esc(d.customerPhone)}</div>` : ""}<div class="muted">Place of supply: ${d.placeOfSupply ? esc(d.placeOfSupply) : "same state as seller (customer state not recorded)"}</div>`;
@@ -79,7 +111,7 @@ function classic(d: InvoiceData): string {
  .status{display:inline-block;border:2px solid #0f6e5c;color:#0f6e5c;padding:2px 8px;font-weight:700;letter-spacing:1px} .stamp{color:#9c3a26;border:3px solid #9c3a26;font-weight:800;font-size:22px;padding:2px 10px;display:inline-block;transform:rotate(-6deg);margin:6px 0}
 </style>
 <div class="head"><div><h1>${esc(d.business.name || "Tax invoice")}</h1><div class="muted">${headerInfo(d)}</div></div>
- <div class="meta"><div class="big">TAX INVOICE</div><div>${esc(d.number)}</div><div class="muted">${esc(new Date(d.date).toLocaleDateString())}</div><div class="status">${STATUS_TEXT[d.payment.status]}</div>${flags(d)}</div></div>
+ <div class="meta"><div class="big">${titleOf(d)}</div><div>${esc(d.number)}</div><div class="muted">${esc(new Date(d.date).toLocaleDateString())}</div><div class="status">${esc(statusText(d))}</div>${flags(d)}</div></div>
 <div style="margin-top:12px">${customerBlock(d)}</div>
 <table><thead><tr><th>#</th><th>Item</th><th>HSN</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Disc.</th><th class="r">Taxable</th><th class="r">GST</th><th class="r">Amount</th></tr></thead><tbody>${lines}</tbody></table>
 ${incl ? `<div class="muted" style="margin-top:4px">* Rates include GST. Tax is shown separately below.</div>` : ""}
@@ -103,12 +135,12 @@ function modern(d: InvoiceData): string {
  .total b{font-size:26px} .stamp{color:#9c3a26;font-weight:800;letter-spacing:2px;margin-top:8px}
 </style>
 <div class="top"><div><h1>${esc(d.business.name || "Invoice")}</h1><div class="muted">${headerInfo(d)}</div></div>
- <div style="text-align:right"><div class="muted">Invoice</div><div class="big">${esc(d.number)}</div><div class="muted">${esc(new Date(d.date).toLocaleDateString())}</div><div class="pill ${d.payment.status === "PAID" ? "" : d.payment.status === "PARTIAL" ? "part" : "due"}">${STATUS_TEXT[d.payment.status]}</div>${flags(d)}</div></div>
+ <div style="text-align:right"><div class="muted">${wordOf(d)}</div><div class="big">${esc(d.number)}</div><div class="muted">${esc(new Date(d.date).toLocaleDateString())}</div>${statusText(d) ? `<div class="pill ${d.kind && d.kind !== "invoice" ? "part" : d.payment.status === "PAID" ? "" : d.payment.status === "PARTIAL" ? "part" : "due"}">${esc(statusText(d))}</div>` : ""}${flags(d)}</div></div>
 <div class="k">Billed to</div><div class="big">${esc(d.customerName)}</div><div class="muted">${d.customerGstin ? `GSTIN ${esc(d.customerGstin)} · ` : ""}${d.customerPhone ? esc(d.customerPhone) + " · " : ""}Place of supply: ${d.placeOfSupply ? esc(d.placeOfSupply) : "customer state not recorded (seller's state)"}</div>
 <div class="k">Items</div>${lines}
 <div style="margin-top:14px"><div class="row"><span>Taxable value</span><span>${m(d.calc.taxableMinor)}</span></div>${comps}</div>
 <div class="total"><span>Total</span><b>${m(d.calc.totalMinor)}</b></div>
-${(d.payments ?? []).map((p) => `<div class="row muted"><span>${payLine(p)}</span><span>${m(p.amountMinor)}</span></div>`).join("")}<div class="row"><span>Total paid</span><span>${m(d.payment.paidMinor)}</span></div><div class="row" style="color:#16211c;font-weight:700"><span>Balance due</span><span>${m(d.payment.dueMinor)}</span></div>
+${settleLines(d, m).map((l) => `<div class="row${l.tone === "hist" ? " muted" : ""}"${l.tone === "due" ? ' style="color:#16211c;font-weight:700"' : ""}><span>${l.k}</span><span>${l.v}</span></div>`).join("")}
 ${d.note ? `<div style="margin-top:14px" class="muted">${nl2br(d.note)}</div>` : ""}<div class="muted" style="margin-top:30px;text-align:center">Thank you for your business.</div>`;
 }
 
@@ -122,11 +154,12 @@ function thermal(d: InvoiceData): string {
  .ln{display:flex;justify-content:space-between;gap:6px} .it{margin-top:4px} .tot{font-size:14px;font-weight:700}
 </style>
 <div class="c b" style="font-size:14px">${esc(d.business.name || "Invoice")}</div><div class="c">${headerInfo(d)}</div><hr>
+<div class="c b">${titleOf(d)}</div>
 <div class="ln"><span>${esc(d.number)}</span><span>${esc(new Date(d.date).toLocaleDateString())}</span></div><div>To: ${esc(d.customerName)}${d.customerGstin ? ` (GSTIN ${esc(d.customerGstin)})` : ""}</div><div>Supply: ${d.placeOfSupply ? esc(d.placeOfSupply) : "customer state not recorded"}</div>${d.cancelled ? `<div class="c b">** CANCELLED **</div>` : ""}${d.corrects ? `<div>Corrects ${esc(d.corrects)}</div>` : ""}<hr>
 ${lines}<hr>
 <div class="ln"><span>Taxable value</span><span>${m(d.calc.taxableMinor)}</span></div>${comps}
 <div class="ln tot"><span>TOTAL</span><span>${m(d.calc.totalMinor)}</span></div>${incl ? `<div class="c">(prices include GST)</div>` : ""}<hr>
-${(d.payments ?? []).map((p) => `<div class="ln"><span>${payLine(p)}</span><span>${m(p.amountMinor)}</span></div>`).join("")}<div class="ln"><span>Total paid</span><span>${m(d.payment.paidMinor)}</span></div><div class="ln b"><span>Balance due</span><span>${m(d.payment.dueMinor)}</span></div><div class="c b" style="margin-top:4px">${STATUS_TEXT[d.payment.status]}</div><hr>
+${settleLines(d, m).map((l) => `<div class="ln${l.tone === "due" ? " b" : ""}"><span>${l.k}</span><span>${l.v}</span></div>`).join("")}${statusText(d) ? `<div class="c b" style="margin-top:4px">${esc(statusText(d))}</div>` : ""}<hr>
 <div class="c">Thank you!</div>`;
 }
 
@@ -145,11 +178,14 @@ export function paperFor(t: InvoiceTemplate): { width?: number; height?: number 
   return t === "thermal" ? { width: 227, height: 842 } : { width: 595, height: 842 }; // A4 (India), not the US Letter default
 }
 
-/** Pay status from money amounts. A zero-total invoice counts as paid. */
-export function paymentSummary(totalMinor: bigint, paidMinor: bigint): PaymentSummary {
-  const due = totalMinor - paidMinor;
+/** Pay status from money amounts. A zero-total invoice counts as paid. Credit notes lower what is owed; money received beyond that is
+ *  reported as owed back to the customer (never silently dropped, never turned into a payment). */
+export function paymentSummary(totalMinor: bigint, paidMinor: bigint, creditMinor = 0n): PaymentSummary {
+  const owed = totalMinor - creditMinor > 0n ? totalMinor - creditMinor : 0n;
+  const due = owed - paidMinor;
   const dueMinor = due > 0n ? due : 0n;
-  return { paidMinor, dueMinor, status: dueMinor === 0n ? "PAID" : paidMinor > 0n ? "PARTIAL" : "UNPAID" };
+  const refundMinor = paidMinor > owed ? paidMinor - owed : 0n;
+  return { paidMinor, dueMinor, status: dueMinor === 0n ? "PAID" : paidMinor > 0n ? "PARTIAL" : "UNPAID", ...(creditMinor > 0n ? { creditMinor, refundMinor } : {}) };
 }
 
 /** Realistic sample data, for the design previews in Settings. */

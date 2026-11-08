@@ -16,6 +16,7 @@ import { Login } from "./src/screens/Login";
 import { InvoiceDesign, More, ProfileEditor } from "./src/screens/More";
 import { SaleDetail, Sales } from "./src/screens/Sales";
 import { Sell } from "./src/screens/Sell";
+import { QuoteDetail, Quotes } from "./src/screens/Quotes";
 import { Welcome } from "./src/screens/Welcome";
 import { AppProvider, useApp } from "./src/state/app";
 import { usePalette } from "./src/theme";
@@ -51,6 +52,8 @@ function Shell() {
   const [customers, setCustomers] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [designOpen, setDesignOpen] = useState(false);
+  const [quotesOpen, setQuotesOpen] = useState(false);
+  const [quote, setQuote] = useState<string | null>(null);
   const [ledger, setLedger] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [itemEditor, setItemEditor] = useState<string | null | undefined>(undefined);
@@ -61,6 +64,8 @@ function Shell() {
       if (itemEditor !== undefined) { setItemEditor(undefined); return true; }
       if (custEditor !== undefined) { setCustEditor(undefined); return true; }
       if (profileOpen) { setProfileOpen(false); return true; }
+      if (quote) { setQuote(null); return true; }
+      if (quotesOpen) { setQuotesOpen(false); return true; }
       if (designOpen) { setDesignOpen(false); return true; }
       if (itemsOpen) { setItemsOpen(false); return true; }
       if (sale) { setSale(null); return true; }
@@ -70,17 +75,19 @@ function Shell() {
       return false;
     });
     return () => sub.remove();
-  }, [sale, customers, tab, profileOpen, itemEditor, custEditor, designOpen, itemsOpen, ledger]);
+  }, [sale, customers, tab, profileOpen, itemEditor, custEditor, designOpen, itemsOpen, ledger, quotesOpen, quote]);
 
   if (phase === "boot") return <Splash />;
   if (phase === "welcome") return <Welcome />;
   if (linking === "connect") return <Connect />;
   if (linking === "login" || (linked && sessionExpired)) return <Login />;
 
-  const go = (t: Tab | "items") => { setSale(null); setCustomers(false); setProfileOpen(false); setDesignOpen(false); setLedger(null); if (t === "items") { setItemsOpen(true); return; } setItemsOpen(false); setTab(t); };
+  const go = (t: Tab | "items") => { setQuote(null); setQuotesOpen(false); setSale(null); setCustomers(false); setProfileOpen(false); setDesignOpen(false); setLedger(null); if (t === "items") { setItemsOpen(true); return; } setItemsOpen(false); setTab(t); };
   const openLedger = (id: string) => { setSale(null); setLedger(id); };
 
-  const body = profileOpen ? <ProfileEditor onClose={() => setProfileOpen(false)} />
+  const body = quote ? <QuoteDetail id={quote} onClose={() => setQuote(null)} goSell={() => { setQuote(null); setQuotesOpen(false); setTab("sell"); }} />
+    : quotesOpen ? <Quotes onBack={() => setQuotesOpen(false)} open={setQuote} />
+    : profileOpen ? <ProfileEditor onClose={() => setProfileOpen(false)} />
     : designOpen ? <InvoiceDesign onClose={() => setDesignOpen(false)} />
     : itemsOpen ? <Items openEditor={setItemEditor} onBack={() => setItemsOpen(false)} />
     : sale ? <SaleDetail id={sale} onClose={() => setSale(null)} goSell={() => { setSale(null); setTab("sell"); }} openCustomer={openLedger} />
@@ -90,7 +97,7 @@ function Shell() {
     : tab === "sell" ? <Sell onDone={(id) => { setTab("sales"); setSale(id); }} addItem={() => setItemEditor(null)} />
     : tab === "sales" ? <Sales open={setSale} />
     : tab === "dues" ? <Dues open={setLedger} />
-    : <More openCustomers={() => setCustomers(true)} openProfile={() => setProfileOpen(true)} openItems={() => setItemsOpen(true)} openDesign={() => setDesignOpen(true)} />;
+    : <More openCustomers={() => setCustomers(true)} openProfile={() => setProfileOpen(true)} openItems={() => setItemsOpen(true)} openDesign={() => setDesignOpen(true)} openQuotes={() => setQuotesOpen(true)} />;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
@@ -102,7 +109,7 @@ function Shell() {
 
       <View style={{ flexDirection: "row", backgroundColor: c.bar, paddingBottom: insets.bottom, alignItems: "flex-end" }} accessibilityRole="tablist">
         {TABS.map((t) => {
-          const on = tab === t.key && !sale && !customers && !profileOpen && !itemsOpen && !designOpen && !ledger;
+          const on = tab === t.key && !sale && !customers && !profileOpen && !itemsOpen && !designOpen && !ledger && !quotesOpen && !quote;
           if (t.key === "sell") {
             return (
               <View key={t.key} style={{ flex: 1, alignItems: "center" }}>

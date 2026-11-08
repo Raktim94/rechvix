@@ -48,3 +48,10 @@ export function unitPriceFor(p: Pick<Product, "price" | "price_basis" | "gst_rat
   if (mode === "INCLUSIVE") return decToString(to(roundRatio(price * (100n * SCALE + R), 100n * SCALE), 2), 2);
   return decToString(to(roundRatio(price * 100n * SCALE, 100n * SCALE + R), 4), 4);
 }
+
+/** Credit notes issued against each invoice, in minor units (only notes the server has issued count). */
+export function creditsBySale(notes: { sale_local_id: string; total: string | null; state: string }[]): Map<string, bigint> {
+  const m = new Map<string, bigint>();
+  for (const n of notes) if (n.state === "issued" && n.total) m.set(n.sale_local_id, (m.get(n.sale_local_id) ?? 0n) + parseMinor(n.total));
+  return m;
+}

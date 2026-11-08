@@ -1,5 +1,5 @@
 import {
-  getParty, getProfile, insertPayments, insertSale, kvGet, paymentsForSale, takeInvoiceNumber, updateSaleContent, DEFAULT_PROFILE,
+  getParty, getProfile, insertPayments, insertQuote, insertSale, kvGet, setQuoteStatus, takeQuoteNumber, paymentsForSale, takeInvoiceNumber, updateSaleContent, DEFAULT_PROFILE,
   type SaleLine, type SalePayload,
 } from "../db/repo";
 import type { Db } from "../db/types";
@@ -68,6 +68,8 @@ export async function checkout(db: Db, cart: Cart, ids: { uid: () => string; now
 
   const number = await takeInvoiceNumber(db, profile.invoicePrefix);
   await insertSale(db, cart.saveId, payload, ids.now, number);
+  // An invoice made from a quotation closes that quotation, pointing at the invoice.
+  if (cart.fromQuote) await setQuoteStatus(db, cart.fromQuote.id, "converted", cart.saveId);
   if (received > 0n) {
     await insertPayments(db, {
       groupId: ids.uid(), partyId: cart.customerId, method: cart.payMethod!, reference: "", note: "Received at billing", paidAt: ids.now,
@@ -77,3 +79,33 @@ export async function checkout(db: Db, cart: Cart, ids: { uid: () => string; now
   return { localId: cart.saveId, number, totalMinor: calc.totalMinor, receivedMinor: received };
 }
 export { parseMinor, kvGet };
+
+
+export interface QuoteResult { localId: string; number: string; totalMinor: bigint }
+/** Saves the bill as a quotation: a priced offer. It does not touch stock, payments or what anyone owes. Saving twice with the same
+ *  cart makes one quotation (the cart's own `saveId`). */
+export async function saveQuote(db: Db, cart: Cart, ids: { now: number }, validDays: number | null): Promise<QuoteResult> {
+  if (cart.lines.length === 0) throw new CheckoutError("Add at least one item.");
+  if (cart.lines.some((l) => l.qtyError)) throw new CheckoutError("Fix the quantity first.");
+  if (cart.lines.some((l) => dec(l.price) === 0n)) throw new CheckoutError("An item has no price.");
+  if (!cart.customerId) throw new CheckoutError("Choose a customer.");
+  const profile = (await getProfile(db)) ?? DEFAULT_PROFILE;
+  const party = await getParty(db, cart.customerId);
+  const sellerState = profile.gstState || null;
+  const customerState = stateFromGstin(party?.gstin) ?? null;
+  const calc = priceCart(cart, sellerState, customerState);
+  if (calc.lines.some((l) => l.invalid)) throw new CheckoutError("Check the amounts: a discount can't be more than the item's price.");
+  const dup = await db.first<{ local_id: string; number: string; total: string }>("SELECT local_id, number, total FROM quotes WHERE local_id=?", [cart.saveId]);
+  if (dup) return { localId: dup.local_id, number: dup.number, totalMinor: parseMinor(dup.total) };
+  const lines: SaleLine[] = cart.lines.map((l) => ({
+    variantId: l.variantId, name: l.name, unitId: l.unitId, qty: l.qty, price: l.price, discount: l.discount || "0",
+    gstRate: l.gstRate, unitLabel: l.unitLabel, hsn: l.hsn, ...(l.custom ? { custom: true } : {}),
+  }));
+  const payload: SalePayload = {
+    customerId: cart.customerId, customerName: cart.customerName, lines, paymentMethod: null, pricingMode: cart.mode,
+    sellerState, customerState, calc: snapshot(calc), note: cart.note || undefined,
+  };
+  const number = await takeQuoteNumber(db);
+  await insertQuote(db, cart.saveId, number, payload, minorToString(calc.totalMinor), ids.now, validDays != null ? ids.now + validDays * 86_400_000 : null);
+  return { localId: cart.saveId, number, totalMinor: calc.totalMinor };
+}

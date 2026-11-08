@@ -2,15 +2,15 @@ import React, { useState } from "react";
 import { Linking, Modal, ScrollView, Share, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-  addReminder, allPayments, getParty, insertPayments, listSales, remindersFor, reversePayment, serverBalances,
-  type Party, type Payment,
+  addReminder, allCreditNotes, allPayments, getParty, insertPayments, listSales, remindersFor, reversePayment, serverBalances,
+  type CreditNote, type Party, type Payment,
 } from "../db/repo";
 import { minorToString, parseMinor, toMinor, dec } from "../lib/decimal";
 import { nowMs, useLocal, useNow } from "../lib/hooks";
 import { allocatePayment, ageBucket, daysOverdue, dueOf, dueState, reminderText } from "../lib/ledger";
 import { formatMinor } from "../lib/money";
 import { buildLedgers, owing, type CustomerLedger } from "../lib/receivables";
-import { livePayments } from "../lib/sale";
+import { creditsBySale, livePayments } from "../lib/sale";
 import { uid, useApp } from "../state/app";
 import { fonts, radius, space, usePalette } from "../theme";
 import { Badge, Button, Card, Chip, Divider, Empty, Field, Header, Icon, Label, Screen, Tap } from "../ui/kit";
@@ -21,8 +21,9 @@ const METHODS = [{ k: "CASH", t: "Cash" }, { k: "UPI", t: "UPI" }, { k: "CARD", 
 export function useLedgers(): CustomerLedger[] {
   const sales = useLocal((db) => listSales(db, 5000), []);
   const pays = useLocal((db) => allPayments(db), [] as Payment[]);
+  const credits = useLocal((db) => allCreditNotes(db), [] as CreditNote[]);
   const now = useNow();
-  return buildLedgers(sales.filter((s) => !s.cancelled), pays, now);
+  return buildLedgers(sales.filter((s) => !s.cancelled), pays, now, creditsBySale(credits));
 }
 
 type DueFilter = "due" | "overdue" | "settled" | "all";

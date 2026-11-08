@@ -7,6 +7,7 @@ import {
 } from "../db/repo";
 import { dec, minorToString, toMinor } from "../lib/decimal";
 import { useLocal } from "../lib/hooks";
+import { useKeyboardLift } from "../lib/keyboard";
 import { formatMinor } from "../lib/money";
 import { unitPriceFor } from "../lib/sale";
 import { shareSale } from "../lib/share";
@@ -17,12 +18,13 @@ import { uid, useApp } from "../state/app";
 import { fonts, radius, space, usePalette } from "../theme";
 import { Badge, Button, Card, Chip, Divider, Empty, Field, Header, Icon, IconButton, Label, Screen, Tap } from "../ui/kit";
 import { T } from "../ui/text";
+import { QuoteDone } from "./Quotes";
 import { Scanner } from "./Scanner";
 
 const PAY: { key: string | null; label: string }[] = [{ key: "CASH", label: "Cash" }, { key: "UPI", label: "UPI" }, { key: "CARD", label: "Card" }, { key: null, label: "Pay later" }];
 
 export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; addItem: () => void }) {
-  const { profile, saveCart, linked, currency, db, changed } = useApp();
+  const { profile, saveCart, saveQuoteCart, linked, currency, db, changed } = useApp();
   const c = usePalette();
   const cart = useCart();
   const [q, setQ] = useState("");
@@ -33,6 +35,8 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [done, setDone] = useState<{ id: string; number: string; totalMinor: bigint; receivedMinor: bigint } | null>(null);
+  const [quoted, setQuoted] = useState<{ id: string; number: string; totalMinor: bigint } | null>(null);
+  const { anchor, lift } = useKeyboardLift();
 
   const walkIn = useLocal((d) => d.first<Party>("SELECT * FROM parties WHERE is_walk_in=1 ORDER BY origin DESC LIMIT 1"), null);
   const results = useLocal((d) => searchProducts(d, q, 30), [] as Product[], [q]);
@@ -85,6 +89,20 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
     } finally { setSaving(false); }
   }
 
+  async function saveAsQuote() {
+    if (saving) return;
+    setSaving(true); setProblem(null);
+    try {
+      const r = await saveQuoteCart(30);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setQuoted({ id: r.localId, number: r.number, totalMinor: r.totalMinor });
+      setQ("");
+    } catch (e) {
+      setProblem(e instanceof CheckoutError || e instanceof Error ? e.message : "Couldn't save the quotation. Nothing was lost; try again.");
+    } finally { setSaving(false); }
+  }
+
+  if (quoted) return <QuoteDone info={quoted} currency={currency} onNew={() => setQuoted(null)} />;
   if (done) return <Done info={done} currency={currency} onView={() => { const id = done.id; setDone(null); onDone(id); }} onNew={() => setDone(null)} />;
 
   const canSave = !!cart.customerId && cart.lines.length > 0 && !errors && !saving;
@@ -95,10 +113,16 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ paddingBottom: 230 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ paddingBottom: 290 }} keyboardShouldPersistTaps="handled">
         <Header title={cart.editing ? "Edit invoice" : "New sale"} sub={cart.editing ? cart.editing.number : cart.corrects ? `Re-issuing ${cart.corrects.number}` : undefined}
           right={cart.lines.length > 0 || cart.editing ? <Tap label="Clear bill" onPress={() => { cartActions.clear(profile?.pricingMode ?? "INCLUSIVE"); setProblem(null); }} style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}><T v="strong" color={c.negative}>{cart.editing ? "Cancel edit" : "Clear"}</T></Tap> : undefined} />
         <View style={{ padding: space.lg, gap: space.lg, paddingTop: space.xs }}>
+          {cart.fromQuote ? (
+            <Card style={{ backgroundColor: c.accentSoft, borderColor: c.accent }}>
+              <T v="strong" color={c.accent}>From quotation {cart.fromQuote.number}</T>
+              <T v="small" color={c.accent}>Check the items and prices, then save. The quotation is marked as converted.</T>
+            </Card>
+          ) : null}
           {cart.corrects ? (
             <Card style={{ backgroundColor: c.warningSoft, borderColor: c.warning }}>
               <T v="strong" color={c.warning}>Correcting {cart.corrects.number}</T>
@@ -216,7 +240,8 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
         </View>
       </ScrollView>
 
-      <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: space.lg, backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.border, gap: 10 }}>
+      <View ref={anchor} pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 0 }} />
+      <View style={{ position: "absolute", left: 0, right: 0, bottom: lift, padding: space.lg, backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.border, gap: 10 }}>
         <View style={{ gap: 3 }}>
           <Row k={`${cart.lines.length} item${cart.lines.length === 1 ? "" : "s"} · taxable value`} v={m(calc.taxableMinor)} />
           {calc.components.map((x) => <Row key={x.label} k={x.label} v={m(x.minor)} />)}
@@ -226,6 +251,7 @@ export function Sell({ onDone, addItem }: { onDone: (localId: string) => void; a
           </View>
         </View>
         <Button title={cart.editing ? "Save changes" : balance > 0n && received > 0n ? "Save · part paid" : balance > 0n ? "Save · to collect" : "Save invoice"} onPress={() => void save()} disabled={!canSave} busy={saving} icon="checkmark-circle-outline" />
+        {!cart.editing && !cart.corrects ? <Button title="Save as quotation" kind="quiet" icon="document-text-outline" onPress={() => void saveAsQuote()} disabled={!cart.customerId || cart.lines.length === 0 || errors || saving} /> : null}
       </View>
 
       <CustomerPicker visible={pickCustomer} onClose={() => setPickCustomer(false)} onPick={(p) => { cartActions.patch({ customerId: p.id, customerName: p.name }); setPickCustomer(false); }} />

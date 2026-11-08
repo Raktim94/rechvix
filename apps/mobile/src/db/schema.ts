@@ -108,6 +108,24 @@ const MIGRATIONS: string[] = [
     last_reminder_at INTEGER, reminder_count INTEGER NOT NULL DEFAULT 0, gen INTEGER NOT NULL DEFAULT 0
   );
   `,
+  // v4: quotations and credit notes. Purely additive. A quotation is a priced offer kept on the phone: it never touches stock or what a
+  // customer owes. A credit note is a return against an invoice the server already holds; it is only recorded here after the server
+  // has issued it (state 'pending' = the server has a draft that still needs finalizing).
+  `
+  CREATE TABLE quotes (
+    local_id TEXT PRIMARY KEY, number TEXT NOT NULL, party_id TEXT NOT NULL, payload TEXT NOT NULL, total TEXT NOT NULL,
+    created_at INTEGER NOT NULL, valid_until INTEGER,
+    status TEXT NOT NULL DEFAULT 'open',      -- open | converted | declined
+    sale_local_id TEXT
+  );
+  CREATE INDEX quotes_party ON quotes(party_id, created_at);
+  CREATE TABLE credit_notes (
+    local_id TEXT PRIMARY KEY, sale_local_id TEXT NOT NULL, server_doc_id TEXT, number TEXT,
+    payload TEXT NOT NULL, total TEXT, reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending'     -- pending | issued
+  );
+  CREATE INDEX credit_notes_sale ON credit_notes(sale_local_id);
+  `,
 ];
 
 export async function migrate(db: Db): Promise<void> {

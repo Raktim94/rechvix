@@ -23,7 +23,7 @@ function Row({ icon, title, sub, onPress, tone }: { icon: IconName; title: strin
   );
 }
 
-export function More({ openCustomers, openProfile, openItems, openDesign }: { openCustomers: () => void; openProfile: () => void; openItems: () => void; openDesign: () => void }) {
+export function More({ openCustomers, openProfile, openItems, openDesign, openQuotes }: { openCustomers: () => void; openProfile: () => void; openItems: () => void; openDesign: () => void; openQuotes: () => void }) {
   const { profile, saveProfile, linked, server, email, lastSyncAt, counts, syncNow, syncing, online, logout, disconnect, startLinking, db, businessName } = useApp();
   const c = usePalette();
   async function guard(fn: () => Promise<string | null>) { const m = await fn(); if (m) Alert.alert("Not yet", m); }
@@ -38,6 +38,8 @@ export function More({ openCustomers, openProfile, openItems, openDesign }: { op
             <Row icon="people-outline" title="Customers" onPress={openCustomers} />
             <View style={{ height: 1, backgroundColor: c.border }} />
             <Row icon="cube-outline" title="Items & stock" onPress={openItems} />
+            <View style={{ height: 1, backgroundColor: c.border }} />
+            <Row icon="document-text-outline" title="Quotations" sub="Offers you have sent; not counted as sales" onPress={openQuotes} />
           </Card>
 
           <Label>Billing</Label>

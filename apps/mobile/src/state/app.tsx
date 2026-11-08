@@ -9,8 +9,9 @@ import {
   type Org, type Profile, type SaleState,
 } from "../db/repo";
 import { cartActions, getCart, initCart } from "./cart";
-import { checkout, type CheckoutResult } from "./checkout";
+import { checkout, saveQuote, type CheckoutResult, type QuoteResult } from "./checkout";
 import { cancelSyncedInvoice, type Cancelled } from "../sync/correct";
+import { issueCreditNote, type Credited, type ReturnPick } from "../sync/creditNote";
 import { migrate } from "../db/schema";
 import type { Db } from "../db/types";
 import { normalizeServer, probeServer } from "../lib/server";
@@ -59,6 +60,10 @@ export interface AppCtx {
   saveCart(): Promise<CheckoutResult>;
   /** Cancels an invoice the server holds (reversing its payments first). Throws CorrectionError with a plain-language reason on failure. */
   correctInvoice(localId: string, reason: string): Promise<Cancelled>;
+  /** Saves the bill in the cart as a quotation (no stock or balance effect) and starts a fresh cart. */
+  saveQuoteCart(validDays: number | null): Promise<QuoteResult>;
+  /** Credits part or all of a synced invoice through the server. Throws CreditNoteError with a plain-language reason. */
+  creditInvoice(saleLocalId: string, picks: ReturnPick[], goodsReturned: boolean, reason: string, retryId?: string): Promise<Credited>;
 }
 
 const Ctx = createContext<AppCtx | null>(null);
@@ -271,6 +276,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try { return await cancelSyncedInvoice(api, dbRef.current!, localId, reason, Date.now()); } finally { await refresh(); }
   }, [api, refresh]);
 
+  const saveQuoteCart = useCallback(async (validDays: number | null): Promise<QuoteResult> => {
+    const d = dbRef.current!;
+    const r = await saveQuote(d, getCart(), { now: Date.now() }, validDays);
+    cartActions.clear((await getProfile(d))?.pricingMode ?? "INCLUSIVE");
+    await refresh();
+    return r;
+  }, [refresh]);
+
+  const creditInvoice = useCallback(async (saleLocalId: string, picks: ReturnPick[], goodsReturned: boolean, reason: string, retryId?: string): Promise<Credited> => {
+    try { return await issueCreditNote(api, dbRef.current!, saleLocalId, picks, goodsReturned, reason, retryId ?? uid(), Date.now()); } finally { await refresh(); }
+  }, [api, refresh]);
+
   const changed = useCallback(() => { void refresh().then(() => syncNow()); }, [refresh, syncNow]);
 
   const value: AppCtx = {
@@ -278,7 +295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     currency: org?.currency ?? profile?.currency ?? "INR",
     businessName: profile?.name || org?.legalName || "Rechvix",
     linked, server, email, linking, online, syncing, counts, lastSyncAt, sessionExpired, lastSync, version,
-    startLinking, cancelLinking, connect, login, logout, disconnect, syncNow, changed, completeSetup, saveProfile, saveCart, correctInvoice,
+    startLinking, cancelLinking, connect, login, logout, disconnect, syncNow, changed, completeSetup, saveProfile, saveCart, correctInvoice, saveQuoteCart, creditInvoice,
   };
   return <Ctx value={value}>{children}</Ctx>;
 }

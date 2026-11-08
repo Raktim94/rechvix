@@ -106,6 +106,21 @@ export function PaymentPanel({
     setQuickPick(pick);
   }
 
+  // Receipts are never deleted: a mistake is reversed with a reason, and the row stays in the history.
+  const [reversingId, setReversingId] = useState<string | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const reverse = useMutation({
+    mutationFn: (id: string) => api.post(`/accounting/receipts/${id}/reverse`, { reason: reverseReason.trim() }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: ["sales-document-preview", documentId] });
+      void queryClient.invalidateQueries({ queryKey: ["party-ledger", partyId] });
+      void queryClient.invalidateQueries({ queryKey: ["party-ageing", partyId] });
+      setReversingId(null);
+      setReverseReason("");
+    },
+  });
+
   const record = useMutation({
     mutationFn: () =>
       api.post(isReceive ? "/accounting/receipts" : "/accounting/payments", {
@@ -293,15 +308,49 @@ export function PaymentPanel({
                 <th scope="col">Method</th>
                 <th scope="col">Reference</th>
                 <th scope="col">Amount</th>
+                {isReceive ? <th scope="col">Action</th> : null}
               </tr>
             </thead>
             <tbody>
               {(transactions.data ?? []).map((t) => (
-                <tr key={t.ID}>
+                <tr key={t.ID} style={t.ReversedAt ? { textDecoration: "line-through", opacity: 0.6 } : undefined}>
                   <td>{new Date((t.ReceivedAt ?? t.PaidAt) as string).toLocaleDateString()}</td>
                   <td>{METHOD_LABELS[t.Method] ?? t.Method}</td>
                   <td>{t.ReferenceNumber || "—"}</td>
                   <td className="num">{formatMoney(t.Amount)}</td>
+                  {isReceive ? (
+                    <td style={{ textDecoration: "none" }}>
+                      {t.ReversedAt ? (
+                        <span className={ui.badge} data-tone="negative">
+                          Reversed
+                        </span>
+                      ) : reversingId === t.ID ? (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <input
+                            aria-label="Reason for reversing this payment"
+                            placeholder="Why is it being reversed?"
+                            value={reverseReason}
+                            onChange={(e) => setReverseReason(e.target.value)}
+                          />
+                          <button type="button" className={ui.btnPrimary} disabled={!reverseReason.trim() || reverse.isPending} onClick={() => reverse.mutate(t.ID)}>
+                            {reverse.isPending ? "Reversing…" : "Confirm"}
+                          </button>
+                          <button type="button" className={ui.btnSecondary} onClick={() => { setReversingId(null); setReverseReason(""); }}>
+                            Cancel
+                          </button>
+                          {reverse.isError ? (
+                            <span role="alert" style={{ color: "var(--color-negative)" }}>
+                              {reverse.error instanceof ApiError ? reverse.error.message : "Could not reverse this payment."}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <button type="button" className={ui.btnGhost} onClick={() => { reverse.reset(); setReversingId(t.ID); }}>
+                          Reverse
+                        </button>
+                      )}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

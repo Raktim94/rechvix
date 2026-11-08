@@ -264,9 +264,9 @@ func (h *Handlers) payables(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeAgeingTable(w http.ResponseWriter, r *http.Request, title string, rows []domain.PartyOutstandingRow) {
-	t := export.Table{Title: title, Headers: []string{"Party ID", "Current", "1-30", "31-60", "61-90", "90+", "Total"}}
+	t := export.Table{Title: title, Headers: []string{"Party", "Party ID", "Current", "1-30", "31-60", "61-90", "90+", "Total"}}
 	for _, a := range rows {
-		t.Rows = append(t.Rows, []string{a.PartyID.String(), a.Current.StringFixed(fixed), a.Days1To30.StringFixed(fixed),
+		t.Rows = append(t.Rows, []string{a.PartyName, a.PartyID.String(), a.Current.StringFixed(fixed), a.Days1To30.StringFixed(fixed),
 			a.Days31To60.StringFixed(fixed), a.Days61To90.StringFixed(fixed), a.Days90Plus.StringFixed(fixed), a.Total.StringFixed(fixed)})
 	}
 	writeTable(w, r, t)
