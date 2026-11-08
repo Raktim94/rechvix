@@ -7,10 +7,10 @@ import {
 } from "../db/repo";
 import { dec, decToString, minorToString, parseMinor } from "../lib/decimal";
 import { useLocal } from "../lib/hooks";
-import { TEMPLATES, type InvoiceTemplate } from "../lib/invoice";
+import { TEMPLATES, invoiceTitle, type InvoiceTemplate } from "../lib/invoice";
 import { formatMinor } from "../lib/money";
 import { creditsBySale, payloadCalc, payStatus, saleTotalMinor, salePaidMinor, totalMismatch, livePayments } from "../lib/sale";
-import { shareCredit, shareSale } from "../lib/share";
+import { shareCredit, shareDeliveryNote, shareSale } from "../lib/share";
 import { cartActions, getCart, cartIsEmpty } from "../state/cart";
 import { uid, useApp } from "../state/app";
 import { CorrectionError } from "../sync/correct";
@@ -149,7 +149,7 @@ export function Sales({ open }: { open: (id: string) => void }) {
 }
 
 export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; onClose: () => void; goSell: () => void; openCustomer: (partyId: string) => void }) {
-  const { db, syncNow, syncing, online, linked, currency, profile, changed, correctInvoice, creditInvoice } = useApp();
+  const { db, org, syncNow, syncing, online, linked, currency, profile, changed, correctInvoice, creditInvoice } = useApp();
   const c = usePalette();
   const sale = useLocal((d) => getSale(d, id), null as Sale | null, [id]);
   const pays = useLocal((d) => paymentsForSale(d, id), [] as Payment[], [id]);
@@ -293,7 +293,8 @@ export function SaleDetail({ id, onClose, goSell, openCustomer }: { id: string; 
               {TEMPLATES.map((t) => <Chip key={t.key} title={t.label} active={tpl === t.key} onPress={() => setTemplate(t.key)} />)}
             </ScrollView>
           </View>
-          <Button title="Share invoice (PDF)" icon="share-outline" onPress={() => void share()} busy={sharing} />
+          <Button title={`Share ${invoiceTitle({ ...(profile ?? {}), gstRegistered: !!org?.gstStateCode }) === "BILL OF SUPPLY" ? "bill of supply" : "invoice"} (PDF)`} icon="share-outline" onPress={() => void share()} busy={sharing} />
+          {!sale.cancelled ? <Button title="Share delivery note (PDF, no prices)" icon="cube-outline" kind="quiet" onPress={() => { if (db && profile) void shareDeliveryNote(db, sale.local_id, profile, currency).catch(() => setMsg("Couldn't create the PDF. Try again.")); }} /> : null}
           {msg ? <T v="small" color={c.negative}>{msg}</T> : null}
 
           {!sale.cancelled && due > 0n && ledger ? <Button title="Record payment" icon="cash-outline" kind="quiet" onPress={() => setPaying(true)} /> : null}

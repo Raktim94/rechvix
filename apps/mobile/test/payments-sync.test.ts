@@ -154,3 +154,16 @@ test("an invoice that never left the phone is cancelled locally and never sent",
   assert.equal(srv.docs.size, 0);
   assert.equal((await db.first<{ state: string }>("SELECT state FROM payments WHERE id='p9'"))!.state, "void");
 });
+
+test("a GST item with no HSN/SAC code is held back (still editable) instead of uploaded and made unsellable; adding the code lets it through", async () => {
+  const { db, srv, eng } = await setup();
+  await createItem(db, "nohsn", { name: "Loose Nut", sku: "NUT", barcode: "", hsn: "", price: "10", gstRate: "18", stock: "20", unitLabel: "pcs", priceBasis: "EXCL" }, 1);
+  const r1 = await eng.syncNow();
+  assert.match(r1.message ?? "", /Loose Nut.*HSN\/SAC/);
+  assert.equal(srv.products.some((p) => p.Name === "Loose Nut"), false, "nothing about it reached the server");
+  const row = await db.first<{ pushed: number }>("SELECT pushed FROM products WHERE variant_id='nohsn'");
+  assert.equal(row!.pushed, 0, "still the phone's own, so the seller can still edit it");
+  await db.run("UPDATE products SET hsn='7318' WHERE variant_id='nohsn'");
+  await eng.syncNow();
+  assert.equal(srv.products.some((p) => p.Name === "Loose Nut"), true);
+});

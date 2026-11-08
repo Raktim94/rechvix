@@ -17,7 +17,7 @@ export const isTemplate = (v: unknown): v is InvoiceTemplate => v === "classic" 
 export interface PaymentEntry { at: number; amountMinor: bigint; method: string; reference?: string }
 
 /** What the document is. A quotation is an offer (no payment block, no tax-invoice wording); a credit note is a return against an invoice. */
-export type DocKind = "invoice" | "quotation" | "credit";
+export type DocKind = "invoice" | "quotation" | "credit" | "delivery";
 
 export interface PaymentSummary {
   paidMinor: bigint; dueMinor: bigint; status: "PAID" | "PARTIAL" | "UNPAID";
@@ -41,6 +41,8 @@ export interface InvoiceData {
   currency: string;
   payment: PaymentSummary;
   kind?: DocKind;
+  /** The linked server's company is GST-registered (it issues tax invoices) even if this phone's own business details have no GSTIN typed in. */
+  gstRegistered?: boolean;
   /** Quotations: the last day the offer stands. */
   validUntil?: number | null;
   /** Credit notes: the invoice being credited. */
@@ -84,8 +86,11 @@ function settleLines(d: InvoiceData, m: (x: bigint) => string): SettleLine[] {
   if ((d.payment.refundMinor ?? 0n) > 0n) out.push({ k: "Refund due to customer", v: m(d.payment.refundMinor!), tone: "plain" });
   return out;
 }
-const titleOf = (d: InvoiceData) => (d.kind === "quotation" ? "QUOTATION" : d.kind === "credit" ? "CREDIT NOTE" : "TAX INVOICE");
-const wordOf = (d: InvoiceData) => (d.kind === "quotation" ? "Quotation" : d.kind === "credit" ? "Credit note" : "Invoice");
+/** A GST-registered Indian business issues a TAX INVOICE; an unregistered one may only issue a BILL OF SUPPLY (no tax invoice); a
+ *  business outside India gets a plain INVOICE. The label follows what the business has configured, never a claim it has not made. */
+export const invoiceTitle = (b: { country?: string; gstin?: string; gstRegistered?: boolean }): string => ((b.country ?? "IN") !== "IN" ? "INVOICE" : b.gstin?.trim() || b.gstRegistered ? "TAX INVOICE" : "BILL OF SUPPLY");
+const titleOf = (d: InvoiceData) => (d.kind === "quotation" ? "QUOTATION" : d.kind === "credit" ? "CREDIT NOTE" : d.kind === "delivery" ? "DELIVERY NOTE" : invoiceTitle({ ...d.business, gstRegistered: d.gstRegistered }));
+const wordOf = (d: InvoiceData) => (d.kind === "quotation" ? "Quotation" : d.kind === "credit" ? "Credit note" : d.kind === "delivery" ? "Delivery note" : invoiceTitle({ ...d.business, gstRegistered: d.gstRegistered }) === "BILL OF SUPPLY" ? "Bill of supply" : "Invoice");
 /** Pay status for an invoice; for a quotation, how long the offer stands; nothing for a credit note. */
 const statusText = (d: InvoiceData) => (!d.kind || d.kind === "invoice" ? STATUS_TEXT[d.payment.status] : d.kind === "quotation" && d.validUntil ? `Valid until ${new Date(d.validUntil).toLocaleDateString()}` : d.kind === "credit" && d.against ? `Against ${d.against}` : "");
 
@@ -168,8 +173,24 @@ const parse = (s: string): bigint => {
   return BigInt(w || "0") * 100n + BigInt((f + "00").slice(0, 2));
 };
 
+/** Delivery note: what was handed over, with no prices, tax or totals, and a line for the receiver to sign. Always on A4. */
+function delivery(d: InvoiceData): string {
+  const rows = d.lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}${l.hsn ? `<div class="muted">HSN ${esc(l.hsn)}</div>` : ""}</td><td class="r">${esc(l.qty)} ${esc(l.unitLabel ?? "")}</td></tr>`).join("");
+  return `<style>
+ body{font-family:Helvetica,Arial,sans-serif;color:#16211c;font-size:13px;margin:0;padding:28px} h1{margin:0;font-size:20px} .muted{color:#6a756f;font-size:11px}
+ table{width:100%;border-collapse:collapse;margin-top:16px} th,td{border:1px solid #cfd6d1;padding:7px 9px;text-align:left} th{background:#eef2ee} .r{text-align:right}
+ .top{display:flex;justify-content:space-between;gap:16px} .big{font-size:18px;font-weight:700} .sign{display:flex;justify-content:space-between;margin-top:70px} .sign div{border-top:1px solid #16211c;padding-top:6px;width:42%;text-align:center}
+</style>
+<div class="top"><div><h1>${esc(d.business.name || "Delivery note")}</h1><div class="muted">${headerInfo(d)}</div></div>
+ <div style="text-align:right"><div class="big">DELIVERY NOTE</div><div>${esc(d.number)}</div><div class="muted">${esc(new Date(d.date).toLocaleDateString())}</div></div></div>
+<div style="margin-top:14px">${customerBlock(d)}</div>
+<table><thead><tr><th style="width:36px">#</th><th>Item</th><th class="r" style="width:120px">Quantity</th></tr></thead><tbody>${rows}</tbody></table>
+${d.note ? `<div style="margin-top:12px" class="muted">${nl2br(d.note)}</div>` : ""}
+<div class="sign"><div>Delivered by</div><div>Received by (name and signature)</div></div>`;
+}
+
 export function invoiceHtml(d: InvoiceData, template: InvoiceTemplate = DEFAULT_TEMPLATE): string {
-  const inner = template === "modern" ? modern(d) : template === "thermal" ? thermal(d) : classic(d);
+  const inner = d.kind === "delivery" ? delivery(d) : template === "modern" ? modern(d) : template === "thermal" ? thermal(d) : classic(d);
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${inner}</body></html>`;
 }
 

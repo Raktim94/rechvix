@@ -84,6 +84,12 @@ export async function pushItems(api: Api, db: Db, org: Org): Promise<{ done: num
   let n = 0;
   const problems: string[] = [];
   for (const raw of todo) {
+   // In India the server taxes by HSN/SAC. An item with a GST rate but no code would upload fine and then make every sale of it fail, and
+   // once uploaded it can no longer be edited here. So it is held back, still editable, until the code is added.
+   if (org.country === "IN" && Number(raw.gst_rate ?? "0") > 0 && !raw.hsn.trim() && !(await mapGet(db, "item", raw.variant_id))) {
+     problems.push(`Item "${raw.name}": add its HSN/SAC code (Items, then ${raw.name}). The server needs it to apply GST, so the item was not uploaded yet`);
+     continue;
+   }
    try {
     const it: Product = { ...raw, stock: raw.stock == null ? null : fmtQty(num(raw.stock) + (pending.get(raw.variant_id) ?? 0)) };
     const have = await mapGet(db, "item", it.variant_id);

@@ -31,6 +31,7 @@ func (h *Handlers) Mount(r chi.Router) {
 	r.Get("/inventory/cost-lots", h.listCostLots)
 	r.Get("/inventory/movements", h.listMovements)
 	r.Get("/inventory/low-stock", h.listLowStock)
+	r.Get("/inventory/policies", h.getStockPolicy)
 	r.Put("/inventory/policies", h.setStockPolicy)
 }
 
@@ -312,6 +313,25 @@ type setStockPolicyRequest struct {
 	ReorderLevel       string    `json:"reorder_level"`
 	SafetyStock        string    `json:"safety_stock"`
 	AllowNegativeStock bool      `json:"allow_negative_stock"`
+}
+
+// getStockPolicy: GET /inventory/policies?warehouse_id=&product_variant_id= returns the policy, or the default when none is set.
+func (h *Handlers) getStockPolicy(w http.ResponseWriter, r *http.Request) {
+	wid, err1 := uuid.Parse(r.URL.Query().Get("warehouse_id"))
+	vid, err2 := uuid.Parse(r.URL.Query().Get("product_variant_id"))
+	if err1 != nil || err2 != nil {
+		httpx.WriteError(w, r, httpx.NewBadRequest("INVALID_ID", "warehouse_id and product_variant_id must be UUIDs."))
+		return
+	}
+	p, err := h.svc.GetStockPolicy(r.Context(), principal(r), wid, vid)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"warehouse_id": p.WarehouseID, "product_variant_id": p.ProductVariantID,
+		"reorder_level": p.ReorderLevel.String(), "safety_stock": p.SafetyStock.String(), "allow_negative_stock": p.AllowNegativeStock,
+	})
 }
 
 func (h *Handlers) setStockPolicy(w http.ResponseWriter, r *http.Request) {

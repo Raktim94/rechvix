@@ -138,7 +138,7 @@ export function ItemEditor({ id, onClose }: { id: string | null; onClose: () => 
               ) : null}
               <View style={{ flexDirection: "row", gap: 12 }}>
                 <View style={{ flex: 1 }}><Field label="Unit" value={f.unitLabel} onChangeText={(v) => set("unitLabel", v)} editable={!readOnly} autoCapitalize="none" hint="pcs, kg, box…" /></View>
-                <View style={{ flex: 1 }}><Field label="HSN / SAC" value={f.hsn} onChangeText={(v) => set("hsn", v)} keyboardType="number-pad" editable={!readOnly} hint="Optional" /></View>
+                <View style={{ flex: 1 }}><Field label="HSN / SAC" value={f.hsn} onChangeText={(v) => set("hsn", v)} keyboardType="number-pad" editable={!readOnly} hint={profile?.country === "IN" && Number(f.gstRate || "0") > 0 && !f.hsn.trim() ? "Needed before this item can be sent to a server" : "Optional"} /></View>
               </View>
               {!readOnly ? (
                 <View style={{ gap: 8 }}><Label>Sold in</Label>

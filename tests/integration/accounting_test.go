@@ -1026,3 +1026,25 @@ func TestAccounting_PrintedInvoice_ShowsInstallmentsAndKeepsTheTotal(t *testing.
 		t.Fatalf("after reversal: payments=%+v paid=%s, want one payment of 3000.00", data.Payments, data.AmountPaid)
 	}
 }
+
+// A receipt dated before its invoice (entered first, or backdated) must still reduce what the customer owes.
+func TestAccounting_Ageing_BackdatedReceiptStillReducesTheBalance(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+	inv := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "1", "1000")
+	if _, err := accountingSvc.RecordReceipt(ctx, fx.Principal, accountingapp.RecordReceiptParams{
+		PartyID: fx.CustomerID, SalesDocumentID: &inv.ID, Amount: mustDecimal(t, "300"),
+		Method: accountingdomain.MethodCash, ReceivedAt: time.Now().AddDate(0, 0, -40),
+	}); err != nil {
+		t.Fatalf("RecordReceipt: %v", err)
+	}
+	b, err := accountingSvc.GetAgeing(ctx, fx.Principal, fx.CustomerID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := inv.GrandTotalAmount.Decimal().Sub(mustDecimal(t, "300"))
+	if !b.Total.Decimal().Equal(want) {
+		t.Fatalf("ageing total = %s, want %s (invoice total less the 300 received, whatever its date)", b.Total.Decimal(), want)
+	}
+}

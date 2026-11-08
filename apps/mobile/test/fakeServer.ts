@@ -1,7 +1,7 @@
 import { ApiError, NetworkError } from "../src/api/client";
 import type { SagaApi } from "../src/sync/saga";
 
-interface Doc { ID: string; Status: string; DocumentNumber: string; ref: string; lines: { ID: string; qty: string; price: string; variant: string }[]; total: string }
+interface Doc { ID: string; Status: string; DocumentNumber: string; ref: string; lines: { ID: string; qty: string; price: string; variant: string; discount?: string }[]; total: string }
 
 /** A stand-in for the Rechvix sales API that behaves like the real one where it matters: lines only on drafts,
  *  finalise assigns the next number and posts exactly once, receipts accumulate. `crashAt` simulates the connection
@@ -14,6 +14,8 @@ export class FakeServer implements SagaApi {
   cancelCount = 0;
   nextNo = 1;
   calls: string[] = [];
+  /** true = behave like servers before the fix: a part-return copies the line's whole discount. */
+  oldDiscountBehaviour = false;
   converts: { source: string; target: string; type: string; quantities: Record<string, string> }[] = [];
   crashAt: string | null = null;
   parties: { ID: string; LegalName: string; PartyType: string }[] = [];
@@ -33,7 +35,7 @@ export class FakeServer implements SagaApi {
     let m = /^\/sales\/documents\/([^/]+)$/.exec(path);
     if (m) {
       const d = this.docs.get(m[1]!)!;
-      return { document: { ID: d.ID, Status: d.Status, DocumentNumber: d.Status === "FINALIZED" ? d.DocumentNumber : "", GrandTotalAmount: d.Status === "FINALIZED" ? { amount: d.total, currency: "INR" } : null }, lines: d.lines.map((l, i) => ({ ...l, LineNumber: i + 1, Quantity: l.qty })) } as T;
+      return { document: { ID: d.ID, Status: d.Status, DocumentNumber: d.Status === "FINALIZED" ? d.DocumentNumber : "", GrandTotalAmount: d.Status === "FINALIZED" ? { amount: d.total, currency: "INR" } : null }, lines: d.lines.map((l, i) => ({ ...l, LineNumber: i + 1, Quantity: l.qty, LineDiscountAmount: { amount: l.discount ?? "0", currency: "INR" } })) } as T;
     }
     m = /^\/accounting\/sales-documents\/([^/]+)\/receipts$/.exec(path);
     if (m) return { receipts: this.receipts.filter((r) => r.doc === m![1] && !r.reversed).map((r) => ({ Amount: { amount: r.amount, currency: "INR" } })) } as T;
@@ -66,7 +68,7 @@ export class FakeServer implements SagaApi {
       const d = this.docs.get(m[1]!)!;
       if (d.Status !== "DRAFT") throw new ApiError(409, "NOT_DRAFT", "Document is not a draft.");
       if (String(b.product_variant_id).endsWith("-local")) throw new ApiError(400, "BAD_REQUEST", "Request body is malformed.");
-      d.lines.push({ ID: `l${d.lines.length + 1}`, qty: b.quantity!, price: b.unit_price!, variant: b.product_variant_id! });
+      d.lines.push({ ID: `l${d.lines.length + 1}`, qty: b.quantity!, price: b.unit_price!, variant: b.product_variant_id!, discount: b.line_discount_amount ?? "0" });
       if (this.crashAt === `after-line-${d.lines.length}`) { this.crashAt = null; throw new NetworkError(); }
       return {} as T;
     }
@@ -89,7 +91,8 @@ export class FakeServer implements SagaApi {
       const q = (body as { line_quantities?: Record<string, string>; target_type: string }).line_quantities ?? {};
       for (const l of src.lines) if (q[l.ID] != null && Number(q[l.ID]) > Number(l.qty)) throw new ApiError(409, "RETURN_QUANTITY_EXCEEDS_SOURCE", "too many");
       const id = `doc-${this.docs.size + 1}`;
-      const lines = src.lines.filter((l) => q[l.ID] != null).map((l, i) => ({ ID: `l${i + 1}`, qty: q[l.ID]!, price: l.price, variant: l.variant }));
+      const lines = src.lines.filter((l) => q[l.ID] != null).map((l, i) => ({ ID: `l${i + 1}`, qty: q[l.ID]!, price: l.price, variant: l.variant,
+        discount: this.oldDiscountBehaviour ? l.discount ?? "0" : String((Number(l.discount ?? "0") * Number(q[l.ID]!)) / Number(l.qty)) }));
       this.docs.set(id, { ID: id, Status: "DRAFT", DocumentNumber: "", ref: "", lines, total: "0" });
       this.converts.push({ source: src.ID, target: id, type: (body as { target_type: string }).target_type, quantities: q });
       this.maybeCrash("after-convert");

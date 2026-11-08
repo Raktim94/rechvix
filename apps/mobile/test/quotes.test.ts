@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createItem, createParty, getItem, getQuote, getSale, listQuotes, setProfile, DEFAULT_PROFILE } from "../src/db/repo";
 import { migrate } from "../src/db/schema";
 import { buildLedgers } from "../src/lib/receivables";
-import { invoiceHtml, paymentSummary, type InvoiceData, type InvoiceTemplate } from "../src/lib/invoice";
+import { invoiceHtml, invoiceTitle, paymentSummary, type InvoiceData, type InvoiceTemplate } from "../src/lib/invoice";
 import { calcInvoice } from "../src/lib/tax";
 import { unitPriceFor } from "../src/lib/sale";
 import { cartActions, getCart } from "../src/state/cart";
@@ -73,3 +73,26 @@ for (const t of ["classic", "modern", "thermal"] as InvoiceTemplate[]) {
     assert.match(inv, /Credit note CN-1/); assert.match(inv, /Balance due/);
   });
 }
+
+test("the invoice title follows the business: TAX INVOICE with a GSTIN, BILL OF SUPPLY without one in India, INVOICE abroad", () => {
+  const html = (b: Partial<typeof business>, t: InvoiceTemplate) => invoiceHtml(base({ business: { ...business, ...b } }), t);
+  for (const t of ["classic", "modern", "thermal"] as InvoiceTemplate[]) {
+    assert.match(html({ gstin: "20ABCDE1234F1Z5", country: "IN" }, t), /TAX INVOICE|Invoice/);
+    assert.match(html({ gstin: "", country: "IN" }, t), /BILL OF SUPPLY|Bill of supply/);
+    assert.doesNotMatch(html({ gstin: "", country: "IN" }, t), /TAX INVOICE/);
+    assert.doesNotMatch(html({ gstin: "", country: "GB" }, t), /TAX INVOICE|BILL OF SUPPLY/);
+  }
+  assert.equal(invoiceTitle({ country: "IN", gstin: "20ABCDE1234F1Z5" }), "TAX INVOICE");
+});
+
+test("a delivery note lists items and quantities only: no prices, tax, totals or payment status, and a place to sign", () => {
+  const h = invoiceHtml(base({ kind: "delivery" }), "thermal");
+  assert.match(h, /DELIVERY NOTE/); assert.match(h, /Bolt/); assert.match(h, /Received by/);
+  for (const bad of [/₹/, /Total/, /Balance due/, /GST/, /UNPAID|PAID/, /TAX INVOICE/]) assert.doesNotMatch(h, bad);
+});
+
+test("a phone linked to a GST-registered company prints TAX INVOICE even before a GSTIN is typed into the phone's own details", () => {
+  const b = { ...business, gstin: "", country: "IN" };
+  assert.match(invoiceHtml(base({ business: b, gstRegistered: true }), "classic"), /TAX INVOICE/);
+  assert.match(invoiceHtml(base({ business: b }), "classic"), /BILL OF SUPPLY/);
+});

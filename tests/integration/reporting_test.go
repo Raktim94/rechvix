@@ -9,19 +9,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	accountingapp "rechvix/internal/modules/accounting/app"
 	accountingdomain "rechvix/internal/modules/accounting/domain"
 	contactsapp "rechvix/internal/modules/contacts/app"
 	contactspg "rechvix/internal/modules/contacts/pg"
 	inventoryapp "rechvix/internal/modules/inventory/app"
+	inventorydomain "rechvix/internal/modules/inventory/domain"
 	orgapp "rechvix/internal/modules/organisation/app"
 	purchasesapp "rechvix/internal/modules/purchases/app"
 	purchasesdomain "rechvix/internal/modules/purchases/domain"
 	reportingapp "rechvix/internal/modules/reporting/app"
 	reportingdomain "rechvix/internal/modules/reporting/domain"
 	reportingpg "rechvix/internal/modules/reporting/pg"
+	salesapp "rechvix/internal/modules/sales/app"
 	salesdomain "rechvix/internal/modules/sales/domain"
+	taxdomain "rechvix/internal/modules/taxation/domain"
 	"rechvix/internal/platform/audit"
 	"rechvix/internal/platform/permissions"
 )
@@ -788,5 +792,91 @@ func TestReporting_GSTReports_SubtractCreditNotes(t *testing.T) {
 	}
 	if len(g1) != 2 || negative != 1 {
 		t.Fatalf("GSTR-1 rows = %d (negative %d), want 2 rows with the credit note negative", len(g1), negative)
+	}
+}
+
+// The dashboard must not count a finalized quotation as a sale, must subtract a return, and "overdue" is what is still unpaid on
+// invoices past their due date, not their full value.
+func TestReporting_Dashboard_SalesExcludeQuotationsSubtractReturns_OverdueIsUnpaid(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, _ := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	yesterday := time.Now().AddDate(0, 0, -1)
+	doc, err := salesSvc.CreateDocument(ctx, fx.Principal, salesapp.CreateDocumentParams{
+		LegalEntityID: fx.LegalEntityID, BranchID: fx.BranchID, WarehouseID: fx.WarehouseID, CustomerPartyID: fx.CustomerID,
+		DocumentType: salesdomain.DocTaxInvoice, PlaceOfSupplyStateCode: "27", CurrencyCode: "INR", BaseCurrencyCode: "INR",
+		PricingMode: taxdomain.PricingExclusive, DueDate: &yesterday,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := salesSvc.AddLine(ctx, fx.Principal, salesapp.AddLineParams{DocumentID: doc.ID, ProductVariantID: fx.VariantID, UnitID: fx.PCS, Quantity: mustDecimal(t, "10"), UnitPrice: mustDecimal(t, "100")}); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := salesSvc.FinalizeDocument(ctx, fx.Principal, doc.ID) // 1180, due yesterday
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalizeTaxInvoiceAs(t, ctx, salesSvc, fx, salesdomain.DocQuotation, "4", "100") // 472: an offer, not a sale
+	_, lines, err := salesSvc.GetDocument(ctx, fx.Principal, inv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ret, err := salesSvc.ConvertDocument(ctx, fx.Principal, inv.ID, salesdomain.DocSalesReturn, map[uuid.UUID]decimal.Decimal{lines[0].ID: mustDecimal(t, "2")}) // 236
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := salesSvc.FinalizeDocument(ctx, fx.Principal, ret.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accountingSvc.RecordReceipt(ctx, fx.Principal, accountingapp.RecordReceiptParams{
+		PartyID: fx.CustomerID, SalesDocumentID: &inv.ID, Amount: mustDecimal(t, "400"), Method: accountingdomain.MethodCash, ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := reportingSvc.Dashboard(ctx, fx.Principal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := d.TodaySales.StringFixed(0); got != "944.00" {
+		t.Fatalf("TodaySales = %s, want 944.00 (1180 invoice - 236 return; the 472 quotation is not a sale)", got)
+	}
+	if got := d.OverdueReceivable.StringFixed(0); got != "780.00" {
+		t.Fatalf("OverdueReceivable = %s, want 780.00 (1180 - 400 received)", got)
+	}
+}
+
+// A product's low-stock level can be read back (default 0 when unset), and setting it makes the product count as running low.
+func TestInventory_StockPolicy_DefaultSetAndDashboardLowStock(t *testing.T) {
+	ctx := context.Background()
+	salesSvc, _, accountingSvc, inventorySvc := newTestAccountingServices(t)
+	reportingSvc := newTestReportingService(t, accountingSvc)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100") // leaves 90 on hand
+
+	p, err := inventorySvc.GetStockPolicy(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if err != nil {
+		t.Fatalf("GetStockPolicy: %v", err)
+	}
+	if !p.ReorderLevel.IsZero() || p.AllowNegativeStock {
+		t.Fatalf("default policy = %+v, want reorder 0 and no negative stock", p)
+	}
+	d, _ := reportingSvc.Dashboard(ctx, fx.Principal)
+	if d.LowStockCount != 0 {
+		t.Fatalf("LowStockCount before a level is set = %d, want 0", d.LowStockCount)
+	}
+	if err := inventorySvc.SetStockPolicy(ctx, fx.Principal, inventorydomain.StockPolicy{WarehouseID: fx.WarehouseID, ProductVariantID: fx.VariantID, ReorderLevel: mustDecimal(t, "100"), SafetyStock: mustDecimal(t, "0")}); err != nil {
+		t.Fatalf("SetStockPolicy: %v", err)
+	}
+	p, _ = inventorySvc.GetStockPolicy(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+	if !p.ReorderLevel.Equal(mustDecimal(t, "100")) {
+		t.Fatalf("reorder level read back = %s, want 100", p.ReorderLevel)
+	}
+	d, _ = reportingSvc.Dashboard(ctx, fx.Principal)
+	if d.LowStockCount != 1 {
+		t.Fatalf("LowStockCount with 90 on hand and a level of 100 = %d, want 1", d.LowStockCount)
 	}
 }

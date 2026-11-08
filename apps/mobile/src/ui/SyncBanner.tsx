@@ -24,7 +24,7 @@ export function SyncBanner() {
   else if (waiting > 0) { tone = c.warning; bg = c.warningSoft; icon = "time-outline"; text = lastSync?.message ?? `${waiting} sale${waiting === 1 ? "" : "s"} waiting to sync`; }
 
   return (
-    <Tap label={`${text}. ${action}`} onPress={onPress} haptic={false} style={{ backgroundColor: bg, paddingHorizontal: space.lg, paddingVertical: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+    <Tap label={`${text.replace(/[.\s]+$/, "")}. ${action}`} onPress={onPress} haptic={false} style={{ backgroundColor: bg, paddingHorizontal: space.lg, paddingVertical: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
         <Icon name={icon} size={16} color={tone} />
         <T v="small" color={tone} style={{ fontFamily: "IBMPlexSans_600SemiBold", flexShrink: 1 }}>{text}</T>

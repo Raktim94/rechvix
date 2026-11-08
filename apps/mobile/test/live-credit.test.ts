@@ -56,10 +56,11 @@ test("live: a part return restores stock, a money-only credit does not, a whole 
   const docB = await api.get<{ document: { DocumentType: string } }>(`/sales/documents/${notes[1]!.server_doc_id}`);
   assert.equal(docB.document.DocumentType, "CREDIT_NOTE"); assert.equal(await stockOf(), before);
 
-  // 3) A part-return of a discounted line is credited at its share of the discount (needs the server fix), or refused by the phone.
-  await assert.rejects(issueCreditNote(api, db, "disc", [{ index: 0, qty: "1" }], true, "x", "cn-c", 23), /discount/);
-  const whole = await issueCreditNote(api, db, "disc", [{ index: 0, qty: "4" }], true, "whole line", "cn-d", 24);
-  assert.equal(whole.totalMinor, 42480n, "(4 x 100 - 40) + 18% GST = 424.80, the whole line with its whole discount");
+  // 3) A part-return of a discounted line is credited at its share of the discount (40 over 4 = 10 each): (100 - 10) + 18% = 106.20.
+  const part = await issueCreditNote(api, db, "disc", [{ index: 0, qty: "1" }], true, "one back", "cn-c", 23);
+  assert.equal(part.totalMinor, 10620n);
+  const rest = await issueCreditNote(api, db, "disc", [{ index: 0, qty: "3" }], true, "the rest", "cn-d", 24);
+  assert.equal(rest.totalMinor, 31860n, "3 x 100 - 30 = 270, + 18% = 318.60; together 424.80, the whole invoice");
 
   // The server's own receivable for this customer agrees with the phone: invoices 472.00 + 424.80, credits 118 + 118 + 424.80, paid 100.
   const rec = await api.get<{ parties: { PartyName: string; Total: { amount: string } }[] | null }>("/reports/accounting/receivables/detailed");

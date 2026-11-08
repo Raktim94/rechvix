@@ -939,24 +939,27 @@ func (s *Service) GetAgeing(ctx context.Context, principal permissions.Principal
 		date   time.Time
 		amount decimal.Decimal
 	}
+	// Every debit is an open item; every credit (a receipt, a credit note, a return) settles the oldest open items first. Credits are
+	// applied after ALL debits are known, not as they are met in date order: a receipt dated before its invoice (backdated, or entered
+	// first) must still reduce what the customer owes, not vanish.
 	var open []openDebit
+	credits := decimal.Zero
 	for _, r := range rows {
 		if r.Debit.Decimal().IsPositive() {
 			open = append(open, openDebit{date: r.JournalDate, amount: r.Debit.Decimal()})
-			continue
 		}
-		credit := r.Credit.Decimal()
-		for i := range open {
-			if credit.IsZero() {
-				break
-			}
-			if open[i].amount.IsZero() {
-				continue
-			}
-			consume := decimal.Min(open[i].amount, credit)
-			open[i].amount = open[i].amount.Sub(consume)
-			credit = credit.Sub(consume)
+		if r.Credit.Decimal().IsPositive() {
+			credits = credits.Add(r.Credit.Decimal())
 		}
+	}
+	sort.SliceStable(open, func(i, j int) bool { return open[i].date.Before(open[j].date) })
+	for i := range open {
+		if credits.IsZero() {
+			break
+		}
+		consume := decimal.Min(open[i].amount, credits)
+		open[i].amount = open[i].amount.Sub(consume)
+		credits = credits.Sub(consume)
 	}
 	sort.Slice(open, func(i, j int) bool { return open[i].date.Before(open[j].date) })
 

@@ -75,11 +75,26 @@ test("cannot credit more than was sold, in total, or an empty selection, or with
   assert.equal(srv.converts.length, 1);
 });
 
-test("a part return of a discounted line is refused rather than credited at the wrong amount", async () => {
+test("a part return of a discounted line is credited at its share of the discount", async () => {
   const { db, srv } = await setup("20");
-  await assert.rejects(issueCreditNote(srv as unknown as Api, db, "s1", [{ index: 0, qty: "1" }], true, "x", "a", 20), /discount/);
-  await issueCreditNote(srv as unknown as Api, db, "s1", [{ index: 0, qty: "4" }], true, "whole line", "b", 20);
-  assert.equal(srv.converts.length, 1);
+  await issueCreditNote(srv as unknown as Api, db, "s1", [{ index: 0, qty: "1" }], true, "x", "a", 20);
+  const draft = [...srv.docs.values()].find((d) => d.ID === srv.converts[0]!.target)!;
+  assert.equal(draft.lines[0]!.discount, "5", "a quarter of the 20 discount for 1 of 4");
+  assert.equal((await creditNotesForSale(db, "s1"))[0]!.state, "issued");
+  await issueCreditNote(srv as unknown as Api, db, "s1", [{ index: 0, qty: "3" }], true, "rest", "b", 21);
+});
+
+test("an older server that would credit the whole discount on a part-return is never allowed to issue it", async () => {
+  const { db, srv } = await setup("20");
+  srv.oldDiscountBehaviour = true;
+  const before = srv.finalizeCount;
+  await assert.rejects(issueCreditNote(srv as unknown as Api, db, "s1", [{ index: 0, qty: "1" }], true, "x", "a", 20), /older version/);
+  assert.equal(srv.finalizeCount, before, "nothing was finalized");
+  assert.equal(await stock(db), "96", "stock untouched");
+  assert.equal((await creditNotesForSale(db, "s1"))[0]!.state, "pending");
+  // The whole line is fine on any server: its discount is the line's whole discount.
+  await issueCreditNote(srv as unknown as Api, db, "s1", [{ index: 0, qty: "4" }], true, "whole", "w", 22);
+  assert.equal((await creditNotesForSale(db, "s1")).filter((n) => n.state === "issued").length, 1);
 });
 
 test("an invoice the server does not hold yet cannot be credited, and the sale is untouched", async () => {

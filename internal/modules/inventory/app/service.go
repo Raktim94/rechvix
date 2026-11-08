@@ -679,6 +679,27 @@ func (s *Service) ListLowStock(ctx context.Context, principal permissions.Princi
 	return result, err
 }
 
+// GetStockPolicy returns the stocking policy of a product in a warehouse, or the system default (reorder level 0, no safety stock,
+// negative stock not allowed) when none has been set.
+func (s *Service) GetStockPolicy(ctx context.Context, principal permissions.Principal, warehouseID, variantID uuid.UUID) (domain.StockPolicy, error) {
+	if err := s.view(ctx, principal); err != nil {
+		return domain.StockPolicy{}, err
+	}
+	out := domain.StockPolicy{OrganisationID: principal.OrganisationID, WarehouseID: warehouseID, ProductVariantID: variantID}
+	err := s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
+		p, err := s.policies.Get(ctx, principal.OrganisationID, warehouseID, variantID)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		out = *p
+		return nil
+	})
+	return out, err
+}
+
 func (s *Service) SetStockPolicy(ctx context.Context, principal permissions.Principal, p domain.StockPolicy) error {
 	if err := s.manage(ctx, principal, p.WarehouseID); err != nil {
 		return err

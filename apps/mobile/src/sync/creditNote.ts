@@ -19,7 +19,7 @@ export function creditedQty(notes: CreditNote[]): Map<number, bigint> {
   return m;
 }
 
-interface ServerDoc { document: { ID: string; Status: string; DocumentNumber: string; GrandTotalAmount: { amount: string } | null }; lines: { ID: string; LineNumber: number; Quantity: string }[] }
+interface ServerDoc { document: { ID: string; Status: string; DocumentNumber: string; GrandTotalAmount: { amount: string } | null }; lines: { ID: string; LineNumber: number; Quantity: string; LineDiscountAmount?: { amount: string } | null }[] }
 
 /** Returns goods (or credits money) against an invoice the server already holds, the audited way: the server issues a numbered
  *  document that reduces what the customer owes (and, for returned goods, puts the stock back). Nothing on the original invoice is
@@ -47,8 +47,6 @@ export async function issueCreditNote(api: Api, db: Db, saleLocalId: string, pic
       if (qty <= 0n) continue;
       const left = dec(orig.qty) - (earlier.get(p.index) ?? 0n);
       if (qty > left) throw new CreditNoteError(`Only ${decToString(left)} of ${orig.name} can still be credited.`);
-      // The server copies a line's discount whole, so a part-return of a discounted line would be credited too much. Refuse, never guess.
-      if (dec(orig.discount || "0") > 0n && qty < dec(orig.qty)) throw new CreditNoteError(`${orig.name} was sold with a discount. Credit the whole line, or cancel and re-issue the invoice.`);
       lines.push({ ...orig, qty: p.qty, lineIndex: p.index });
     }
     if (lines.length === 0) throw new CreditNoteError("Choose at least one item to credit.");
@@ -75,6 +73,7 @@ export async function issueCreditNote(api: Api, db: Db, saleLocalId: string, pic
     draftId = created.ID;
     await setCreditDraft(db, localId, draftId);
   }
+  await checkDraft(api, draftId, note, sale.payload.lines);
   try {
     await api.post(`/sales/documents/${draftId}/finalize`);
   } catch (e) {
@@ -87,4 +86,23 @@ export async function issueCreditNote(api: Api, db: Db, saleLocalId: string, pic
   await setCreditIssued(db, localId, doc.DocumentNumber, total);
   if (note.payload.goodsReturned) for (const l of note.payload.lines) await adjustStockEverywhere(db, l.variantId, Number(l.qty));
   return { number: doc.DocumentNumber, totalMinor: parseMinor(total) };
+}
+
+/** Before anything is issued, the server's draft must carry exactly the returned share of each line's discount. Older servers copied a
+ *  line's whole discount into a part-return, which would credit too much; for them the draft is simply left unissued (a draft changes
+ *  nothing) and the seller is told to update the server. */
+async function checkDraft(api: Api, draftId: string, note: CreditNote, sold: SaleLine[]): Promise<void> {
+  const draft = await api.get<ServerDoc>(`/sales/documents/${draftId}`);
+  const got = [...draft.lines].sort((a, b) => a.LineNumber - b.LineNumber);
+  const want = [...note.payload.lines].sort((a, b) => (a.lineIndex ?? 0) - (b.lineIndex ?? 0));
+  if (got.length !== want.length) throw new CreditNoteError("The server's draft has a different number of lines than expected. Nothing was issued; try again.");
+  want.forEach((l, i) => {
+    const orig = sold[l.lineIndex!]!;
+    const origQty = dec(orig.qty);
+    const share = origQty === 0n ? 0n : (dec(orig.discount || "0") * dec(l.qty)) / origQty;   // the returned part of the line's discount
+    const diff = toMinor(share) - toMinor(dec(got[i]!.LineDiscountAmount?.amount ?? "0"));
+    if ((diff < 0n ? -diff : diff) > 1n) {
+      throw new CreditNoteError("Your Rechvix server is an older version and would credit too much discount on a part-return. Update the server, or credit the whole line. Nothing was issued.");
+    }
+  });
 }

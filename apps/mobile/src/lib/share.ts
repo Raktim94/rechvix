@@ -1,9 +1,10 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
-import { creditNotesForSale, getCreditNote, getParty, getQuote, getSale, paymentsForSale, type Profile } from "../db/repo";
+import { buildBackup } from "./backup";
+import { creditNotesForSale, getCreditNote, getOrg, getParty, getQuote, getSale, paymentsForSale, type Profile } from "../db/repo";
 import type { Db } from "../db/types";
-import { invoiceHtml, paperFor, paymentSummary, type InvoiceData, type InvoiceTemplate } from "./invoice";
+import { invoiceHtml, invoiceTitle, paperFor, paymentSummary, type InvoiceData, type InvoiceTemplate } from "./invoice";
 import { parseMinor } from "./decimal";
 import { creditsBySale, livePayments, payloadCalc, salePaidMinor, saleTotalMinor } from "./sale";
 
@@ -14,10 +15,11 @@ export async function buildInvoiceData(db: Db, localId: string, business: Profil
   const party = await getParty(db, s.payload.customerId);
   const ps = await paymentsForSale(db, localId);
   const total = saleTotalMinor(s);
+  const registered = !!(await getOrg(db))?.gstStateCode;
   const notes = (await creditNotesForSale(db, localId)).filter((n) => n.state === "issued");
   const credited = creditsBySale(notes).get(localId) ?? 0n;
   return {
-    number: s.doc_number ?? s.local_number ?? localId.slice(0, 8), date: s.created_at, business,
+    number: s.doc_number ?? s.local_number ?? localId.slice(0, 8), date: s.created_at, business, gstRegistered: registered,
     customerName: s.payload.customerName, customerGstin: party?.gstin || undefined, customerPhone: party?.phone || undefined,
     placeOfSupply: s.payload.customerState ? `State code ${s.payload.customerState}` : undefined,
     lines: s.payload.lines, calc: payloadCalc(s.payload), currency, payment: paymentSummary(total, salePaidMinor(s, ps), credited),
@@ -55,6 +57,12 @@ export async function buildCreditData(db: Db, creditId: string, business: Profil
   };
 }
 
+/** A delivery note for an invoice: the same items and quantities, no prices. Printing it changes nothing (no stock, no balance). */
+export async function shareDeliveryNote(db: Db, localId: string, business: Profile, currency: string): Promise<void> {
+  const d = await buildInvoiceData(db, localId, business, currency);
+  if (d) await shareInvoice({ ...d, kind: "delivery", payments: undefined, credits: undefined, number: d.number }, "classic");
+}
+
 export async function shareQuote(db: Db, quoteId: string, business: Profile, currency: string, template?: InvoiceTemplate): Promise<void> {
   const d = await buildQuoteData(db, quoteId, business, currency);
   if (d) await shareInvoice(d, template ?? business.invoiceTemplate);
@@ -71,26 +79,35 @@ export async function shareSale(db: Db, localId: string, business: Profile, curr
 
 /** Renders the invoice to a PDF and opens the system share sheet (WhatsApp, email, print, save...). */
 export async function shareInvoice(d: InvoiceData, template: InvoiceTemplate = "classic"): Promise<void> {
-  const { uri } = await Print.printToFileAsync({ html: invoiceHtml(d, template), ...paperFor(template) });
+  const { uri } = await Print.printToFileAsync({ html: invoiceHtml(d, template), ...paperFor(d.kind === "delivery" ? "classic" : template) });
   // Name the file after the invoice, so the customer receives "Invoice-INV-0001.pdf" rather than a random id.
-  const word = d.kind === "quotation" ? "Quotation" : d.kind === "credit" ? "CreditNote" : "Invoice";
+  const word = d.kind === "quotation" ? "Quotation" : d.kind === "credit" ? "CreditNote" : d.kind === "delivery" ? "DeliveryNote" : invoiceTitle({ ...d.business, gstRegistered: d.gstRegistered }) === "BILL OF SUPPLY" ? "BillOfSupply" : "Invoice";
   const named = new File(Paths.cache, `${word}-${d.number.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf`);
   if (named.exists) named.delete();
   new File(uri).copy(named);
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(named.uri, { mimeType: "application/pdf", UTI: ".pdf", dialogTitle: `${d.kind === "quotation" ? "Quotation" : d.kind === "credit" ? "Credit note" : "Invoice"} ${d.number}` });
+  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(named.uri, { mimeType: "application/pdf", UTI: ".pdf", dialogTitle: `${d.kind === "quotation" ? "Quotation" : d.kind === "credit" ? "Credit note" : d.kind === "delivery" ? "Delivery note" : "Invoice"} ${d.number}` });
 }
 
-/** Everything on the phone as one JSON file. For a standalone phone this is the safety net; linking a server is the better one. */
+/** Everything on the phone as one JSON file (every record, payments included). For a standalone phone this is the safety net; linking a server is the better one. */
 export async function exportBackup(db: Db): Promise<void> {
-  const dump = {
-    app: "rechvix-mobile", exportedAt: new Date().toISOString(),
-    kv: await db.all("SELECT key, value FROM kv WHERE key != 'server'"),
-    products: await db.all("SELECT * FROM products"), parties: await db.all("SELECT * FROM parties"),
-    sales: await db.all("SELECT * FROM sales"), id_map: await db.all("SELECT * FROM id_map"),
-  };
   const f = new File(Paths.cache, `rechvix-backup-${new Date().toISOString().slice(0, 10)}.json`);
   if (f.exists) f.delete();
   f.create();
-  f.write(JSON.stringify(dump, null, 2));
+  f.write(JSON.stringify(await buildBackup(db), null, 2));
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(f.uri, { mimeType: "application/json", dialogTitle: "Rechvix backup" });
+}
+
+/** Lets the user pick a backup file and reads it. null when they cancel. Nothing is changed yet. */
+export async function pickBackup(): Promise<{ text: string; name: string } | null> {
+  const r = await File.pickFileAsync({ mimeTypes: ["application/json", "text/plain", "*/*"] });
+  if (r.canceled) return null;
+  return { text: await r.result.text(), name: r.result.name };
+}
+
+/** Saves what is on the phone right now next to the app's own files, so a restore that turns out to be the wrong file can be undone. */
+export async function saveSafetyCopy(db: Db): Promise<string> {
+  const f = new File(Paths.document, `before-restore-${Date.now()}.json`);
+  f.create();
+  f.write(JSON.stringify(await buildBackup(db)));
+  return f.name;
 }

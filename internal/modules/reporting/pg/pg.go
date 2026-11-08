@@ -984,8 +984,9 @@ func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) 
 	dayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
 	const q = `
 		SELECT
-			COALESCE((SELECT SUM(COALESCE(grand_total_base_amount, grand_total_amount)) FROM sales_documents
-				WHERE organisation_id = $1 AND status = 'FINALIZED' AND issue_date = $2::date), 0) AS today_sales,
+			COALESCE((SELECT SUM(COALESCE(sd.grand_total_base_amount, sd.grand_total_amount) * ` + sdSignSQL + `) FROM sales_documents sd
+				WHERE sd.organisation_id = $1 AND sd.status = 'FINALIZED' AND sd.issue_date = $2::date
+				  AND sd.document_type IN ` + salesRevenueTypesSQL + `), 0) AS today_sales,
 			COALESCE((SELECT SUM(rc.amount) FROM receipts rc
 				WHERE rc.organisation_id = $1 AND rc.received_at >= $3 AND rc.reversed_at IS NULL), 0) AS today_collections,
 			COALESCE((SELECT SUM(pdl.line_total_amount) FROM purchase_documents pd
@@ -1002,8 +1003,10 @@ func (r *Repo) Dashboard(ctx context.Context, orgID uuid.UUID, today time.Time) 
 			COALESCE((SELECT COUNT(*) FROM stock_balances sb JOIN stock_policies sp
 				ON sp.organisation_id = sb.organisation_id AND sp.warehouse_id = sb.warehouse_id AND sp.product_variant_id = sb.product_variant_id
 				WHERE sb.organisation_id = $1 AND sb.quantity_on_hand <= sp.reorder_level), 0) AS low_stock_count,
-			COALESCE((SELECT SUM(COALESCE(sd.grand_total_base_amount, sd.grand_total_amount)) FROM sales_documents sd
-				WHERE sd.organisation_id = $1 AND sd.status = 'FINALIZED' AND sd.due_date IS NOT NULL AND sd.due_date < $2::date), 0) AS overdue_receivable`
+			COALESCE((SELECT SUM(COALESCE(sd.grand_total_base_amount, sd.grand_total_amount) * GREATEST(sd.grand_total_amount - COALESCE((SELECT SUM(r.amount) FROM receipts r
+					WHERE r.sales_document_id = sd.id AND r.reversed_at IS NULL), 0), 0) / NULLIF(sd.grand_total_amount, 0)) FROM sales_documents sd
+				WHERE sd.organisation_id = $1 AND sd.status = 'FINALIZED' AND sd.document_type IN ('TAX_INVOICE','POS_INVOICE','DEBIT_NOTE')
+				  AND sd.due_date IS NOT NULL AND sd.due_date < $2::date), 0) AS overdue_receivable`
 	var todaySales, todayCollections, todayPurchases, outstandingRec, outstandingPay, stockValue, overdue decimal.Decimal
 	var lowStockCount int
 	err := r.pool.Q(ctx).QueryRow(ctx, q, orgID, dayStart, dayStart).Scan(

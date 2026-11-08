@@ -11,10 +11,13 @@ import (
 	"testing"
 	"time"
 
+	accountingapp "rechvix/internal/modules/accounting/app"
+	accountingdomain "rechvix/internal/modules/accounting/domain"
 	backupapp "rechvix/internal/modules/backup/app"
 	catalogueapp "rechvix/internal/modules/catalogue/app"
 	"rechvix/internal/platform/audit"
 	appcrypto "rechvix/internal/platform/crypto"
+	"rechvix/internal/platform/money"
 	"rechvix/internal/platform/permissions"
 )
 
@@ -187,5 +190,69 @@ func TestBackup_RunScheduled_WritesVerifiedFileAndPrunes(t *testing.T) {
 	}
 	if leftovers, _ := filepath.Glob(filepath.Join(dir, "*.partial")); len(leftovers) != 0 {
 		t.Errorf("partial files left behind: %v", leftovers)
+	}
+}
+
+// A restore must bring back the business's own records exactly as they were at backup time: the customer, the invoice with its
+// payments, and the stock. Anything recorded after the backup (here a second payment and a second sale) must be gone.
+func TestBackup_Restore_PreservesInvoicesCustomersPaymentsAndStock(t *testing.T) {
+	ctx := context.Background()
+	backupSvc := newTestBackupService(t)
+	salesSvc, _, accountingSvc, inventorySvc := newTestAccountingServices(t)
+	fx := setupAccountingFixture(t, ctx, accountingSvc)
+
+	inv := finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "10", "100") // 1180, leaves 90 on hand
+	if _, err := accountingSvc.RecordReceipt(ctx, fx.Principal, accountingapp.RecordReceiptParams{
+		PartyID: fx.CustomerID, SalesDocumentID: &inv.ID, Amount: mustDecimal(t, "300"), Method: accountingdomain.MethodCash, ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func() (paid, total string, stock string, ledger string) {
+		docs, err := salesSvc.ListDocuments(ctx, fx.Principal, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range docs {
+			if d.ID == inv.ID {
+				paid, total = d.PaidAmount.String(), d.GrandTotalAmount.StringFixed(money.RoundHalfUp)
+			}
+		}
+		bal, err := inventorySvc.GetBalance(ctx, fx.Principal, fx.WarehouseID, fx.VariantID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, err := accountingSvc.GetPartyLedger(ctx, fx.Principal, fx.CustomerID, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return paid, total, bal.QuantityOnHand.String(), entries[len(entries)-1].RunningBalance.StringFixed(money.RoundHalfUp)
+	}
+	paid0, total0, stock0, ledger0 := snapshot()
+	if paid0 != "300" || ledger0 != "880.00" {
+		t.Fatalf("before backup: paid=%s ledger=%s, want 300 / 880.00", paid0, ledger0)
+	}
+
+	data, _, err := backupSvc.Export(ctx, fx.Principal)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// After the backup: another payment and another sale.
+	if _, err := accountingSvc.RecordReceipt(ctx, fx.Principal, accountingapp.RecordReceiptParams{
+		PartyID: fx.CustomerID, SalesDocumentID: &inv.ID, Amount: mustDecimal(t, "500"), Method: accountingdomain.MethodCash, ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	finalizeSimpleTaxInvoice(t, ctx, salesSvc, fx, "5", "100")
+	if paid1, _, stock1, _ := snapshot(); paid1 == paid0 || stock1 == stock0 {
+		t.Fatalf("test setup: the later activity should have changed paid (%s) and stock (%s)", paid1, stock1)
+	}
+
+	if err := backupSvc.Restore(ctx, fx.Principal, data, backupapp.RestoreConfirmationPhrase); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	paid2, total2, stock2, ledger2 := snapshot()
+	if paid2 != paid0 || total2 != total0 || stock2 != stock0 || ledger2 != ledger0 {
+		t.Fatalf("after restore: paid=%s total=%s stock=%s ledger=%s; at backup time they were %s %s %s %s", paid2, total2, stock2, ledger2, paid0, total0, stock0, ledger0)
 	}
 }

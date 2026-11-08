@@ -51,6 +51,9 @@ The phone's own invoice numbers are replaced by the server's when each sale sync
   what was sold is refused. Credit notes lower the invoice's net bill everywhere (invoice, To collect, PDF); money already received beyond
   the net bill is shown as *owed back to the customer*, never converted into a payment or a refund (that is your decision).
 - **Low stock.** Each item can have its own low-stock level (item editor, even for server items; blank = 5; kept on the phone by SKU, not uploaded). Home counts items at or below their level and says how many are out; Items has All / Low stock / Out of stock filters with a "low" mark on each row; while billing, a line warns when the sale would leave the item at or below its level, or use up all of it, besides the existing "more than in stock" warning.
+- **Bill of supply, delivery note.** The document title follows the business: a GST-registered business (a GSTIN typed in, or a linked server company that is registered) issues a TAX INVOICE; an Indian business with no GSTIN gets BILL OF SUPPLY; outside India it is a plain INVOICE. *Share delivery note* on an invoice prints the items and quantities only (no prices, tax, totals or payment status) with a signature line; it changes no stock or balance.
+- **Backup and restore** (More). *Export a backup* writes every record (invoices, payments, customers, items, quotations, credit notes, edit history, low-stock levels, counters; never the server link). *Restore from a backup* shows what the file holds, saves a copy of the current data, then replaces everything, all or nothing (a failure part-way leaves the phone untouched). A file from a newer app is refused; an old-format file (made before 2.3.0, which never held payments) restores its records and leaves the phone's payments alone.
+- **HSN guard.** In India an item with a GST rate but no HSN/SAC code is held back from upload (it stays editable) with a message naming it, because the server taxes by HSN and, once uploaded, the item could not be edited here.
 - **Keyboard.** The total / Save bar on New sale lifts above the on-screen keyboard (measured, so it works with or without Android resizing the window).
 
 
@@ -77,7 +80,7 @@ only exist for sales, and those never conflict: every invoice is new and numbere
 
 ```bash
 npm install
-npm test            # 120 tests: sync saga under crashes, engine, API client (real SQLite via node:sqlite)
+npm test            # 130+ tests: sync saga under crashes, engine, API client (real SQLite via node:sqlite)
 npm run typecheck
 RECHVIX_URL=http://localhost:8099 RECHVIX_EMAIL=... RECHVIX_PASSWORD=... npm run test:live   # same code vs a real server
 npx expo start      # needs a dev build (expo-sqlite, camera); Expo Go is not enough

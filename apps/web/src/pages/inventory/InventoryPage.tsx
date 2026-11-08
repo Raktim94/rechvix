@@ -101,6 +101,28 @@ function StockCard({ product, warehouseId, baseUOMID }: { product: LookupResult;
     queryFn: () => api.get<{ committed_on_sales_orders: string; incoming_on_purchase_orders: string; projected_available: string }>(
       `/inventory/projection?warehouse_id=${warehouseId}&product_variant_id=${product.ProductVariantID}`),
   });
+  // The low-stock level: the stock count at or below which this product shows up as running low (and on the dashboard).
+  const policyKey = ["inventory-policy", warehouseId, product.ProductVariantID];
+  const policy = useQuery({
+    queryKey: policyKey,
+    queryFn: () => api.get<{ reorder_level: string; safety_stock: string; allow_negative_stock: boolean }>(`/inventory/policies?warehouse_id=${warehouseId}&product_variant_id=${product.ProductVariantID}`),
+  });
+  const [level, setLevel] = useState<string | null>(null);
+  const savePolicy = useMutation({
+    mutationFn: () =>
+      api.put("/inventory/policies", {
+        warehouse_id: warehouseId,
+        product_variant_id: product.ProductVariantID,
+        reorder_level: level ?? policy.data?.reorder_level ?? "0",
+        safety_stock: policy.data?.safety_stock ?? "0",
+        allow_negative_stock: policy.data?.allow_negative_stock ?? false,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: policyKey });
+      void queryClient.invalidateQueries({ queryKey: ["report-table"] });
+      setLevel(null);
+    },
+  });
   const onHand = Number(balance.data?.QuantityOnHand ?? "0");
   const reserved = Number(balance.data?.QuantityReserved ?? "0");
 
@@ -153,6 +175,28 @@ function StockCard({ product, warehouseId, baseUOMID }: { product: LookupResult;
           </div>
         </div>
       )}
+
+      <h3 style={{ marginBottom: 8 }}>Low-stock level</h3>
+      <div className={ui.formGrid} style={{ marginBottom: 20 }}>
+        <div className={ui.field}>
+          <label htmlFor="reorder-level">Warn me when stock is at or below</label>
+          <input
+            id="reorder-level"
+            className={ui.input}
+            inputMode="decimal"
+            value={level ?? (policy.data ? String(Number(policy.data.reorder_level)) : "")}
+            onChange={(e) => setLevel(e.target.value.replace(/[^0-9.]/g, ""))}
+          />
+        </div>
+        <button type="button" className={ui.btnSecondary} disabled={level === null || level === "" || savePolicy.isPending} onClick={() => savePolicy.mutate()}>
+          {savePolicy.isPending ? "Saving…" : "Save level"}
+        </button>
+      </div>
+      {savePolicy.isError ? (
+        <p role="alert" style={{ color: "var(--color-negative)", marginBottom: 12 }}>
+          {savePolicy.error instanceof ApiError ? savePolicy.error.message : "Could not save the low-stock level."}
+        </p>
+      ) : null}
 
       <h3 style={{ marginBottom: 8 }}>Stock adjustment</h3>
       <div className={ui.formGrid}>

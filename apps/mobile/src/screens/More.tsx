@@ -1,7 +1,8 @@
 import * as Print from "expo-print";
 import React, { useState } from "react";
 import { Alert, ScrollView, Switch, View } from "react-native";
-import { exportBackup } from "../lib/share";
+import { exportBackup, pickBackup, saveSafetyCopy } from "../lib/share";
+import { BackupError, inspectBackup, restoreBackup } from "../lib/backup";
 import { ago } from "../lib/hooks";
 import { type Profile } from "../db/repo";
 import { GST_RATES } from "../lib/tax";
@@ -24,8 +25,28 @@ function Row({ icon, title, sub, onPress, tone }: { icon: IconName; title: strin
 }
 
 export function More({ openCustomers, openProfile, openItems, openDesign, openQuotes }: { openCustomers: () => void; openProfile: () => void; openItems: () => void; openDesign: () => void; openQuotes: () => void }) {
-  const { profile, saveProfile, linked, server, email, lastSyncAt, counts, syncNow, syncing, online, logout, disconnect, startLinking, db, businessName } = useApp();
+  const { changed, profile, saveProfile, linked, server, email, lastSyncAt, counts, syncNow, syncing, online, logout, disconnect, startLinking, db, businessName } = useApp();
   const c = usePalette();
+  async function startRestore() {
+    if (!db) return;
+    try {
+      const picked = await pickBackup();
+      if (!picked) return;
+      const { file, counts } = inspectBackup(picked.text);
+      const lines = [`${counts.sales ?? 0} invoices`, `${counts.payments ?? "no"} payments`, `${counts.parties ?? 0} customers`, `${counts.products ?? 0} items`, `${counts.quotes ?? 0} quotations`].join(", ");
+      Alert.alert("Replace everything on this phone?", `${picked.name} was made ${file.exportedAt ? new Date(file.exportedAt).toLocaleString() : "at an unknown time"} and holds ${lines}.\n\nEverything now on this phone is replaced. A copy of what is there now is saved first.`, [
+        { text: "Keep what I have", style: "cancel" },
+        { text: "Replace", style: "destructive", onPress: async () => {
+          try {
+            await saveSafetyCopy(db);
+            await restoreBackup(db, picked.text);
+            changed();
+            Alert.alert("Restored", "Your records are back. Check Home and Invoices.");
+          } catch (e) { Alert.alert("Nothing was changed", e instanceof BackupError || e instanceof Error ? e.message : "The backup could not be restored."); }
+        } },
+      ]);
+    } catch (e) { Alert.alert("Couldn't open that file", e instanceof BackupError || e instanceof Error ? e.message : "Try another file."); }
+  }
   async function guard(fn: () => Promise<string | null>) { const m = await fn(); if (m) Alert.alert("Not yet", m); }
   return (
     <Screen>
@@ -75,7 +96,9 @@ export function More({ openCustomers, openProfile, openItems, openDesign, openQu
 
           <Label>Your data</Label>
           <Card style={{ padding: 0 }}>
-            <Row icon="download-outline" title="Export a backup" sub="One file with everything on this phone" onPress={() => db && void exportBackup(db)} />
+            <Row icon="download-outline" title="Export a backup" sub="One file with everything on this phone, payments included" onPress={() => db && void exportBackup(db)} />
+            <View style={{ height: 1, backgroundColor: c.border }} />
+            <Row icon="cloud-upload-outline" title="Restore from a backup" sub="Replaces everything on this phone with a backup file" onPress={() => void startRestore()} />
           </Card>
           <T v="small" muted style={{ textAlign: "center" }}>Rechvix {version}</T>
         </View>
