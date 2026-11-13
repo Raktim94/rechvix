@@ -18,7 +18,7 @@ Run it on your own server with Docker Compose or CasaOS/ZimaOS, and use the resp
 
 ## What you can do with Rechvix
 
-- **Create invoices in one workspace.** Search existing customers or create one inline, scan/search products, check stock, edit quantities and discounts, hold drafts, and finalize invoices without repeatedly switching pages.
+- **Create invoices in one workspace, one click from anywhere.** A **Create Invoice** button is on the dashboard, in the top bar of every screen and on each customer's page (which pre-fills that customer). Search existing customers or create one inline, scan/search products, check stock, edit quantities and discounts, hold drafts, and finalize invoices without repeatedly switching pages.
 - **Manage products and stock.** Maintain products, variants, SKUs, barcodes, units, selling prices, categories and brands. Review warehouse balances, reservations, valuation, low stock and movement history; record reasoned stock adjustments.
 - **Track purchases and payments.** Record supplier purchases, receive stock, manage returns, allocate customer receipts and supplier payments to invoices, and review outstanding balances.
 - **Keep connected accounts.** Finalized documents post accounting entries alongside their supported tax and stock effects. Review ledgers, receivables/payables, ageing, trial balance, fiscal periods and expenses with supporting attachments.
