@@ -15,7 +15,11 @@
 
 ## Unreleased
 
-## 0.23.1
+## 0.23.2
+
+(0.23.1 was published with Go 1.27.3 and is superseded by this release; the application code is identical.)
+
+- **Go 1.27.4** (was 1.27.3), fixing the net/http advisory GO-2026-6859 that turned the `govulncheck` CI job red. No application code change.
 
 - **"Create Invoice" is one click away.** A prominent **Create Invoice** button now sits in the dashboard header, the top bar of every screen (it replaces "Add sale"), the first dashboard quick tile, and each customer's page, where it opens the invoice form with that customer already selected (hidden for supplier-only contacts). Every button opens the existing invoice form directly, with no page in between. Translated in all eight interface languages. Web only: no server, API, database or invoice-data change, and the mobile app's Home button still reads "New sale". Verified in Chrome against a real server and PostgreSQL (dashboard, top bar from Sales/Contacts/Reports, customer pre-fill, and an unchanged draft, finalized and part-paid invoice), plus a new Playwright spec at 375, 768 and 1440 px (`tests/e2e/specs/create-invoice-button.spec.ts`).
 
