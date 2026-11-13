@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import ui from "../../components/ui.module.css";
 import { api, ApiError } from "../../lib/api-client";
 import { GST_STATE_CODES } from "../../lib/gstStateCodes";
@@ -505,6 +506,7 @@ function LedgerPanel({ partyId }: { partyId: string }) {
 }
 
 export function ContactDetailPage({ id }: { id: string }) {
+  const { t } = useTranslation();
   const party = useQuery({
     queryKey: ["party", id],
     queryFn: () => api.get<Party>(`/contacts/parties/${id}`),
@@ -541,9 +543,16 @@ export function ContactDetailPage({ id }: { id: string }) {
             {p.Email ? ` · ${p.Email}` : ""}
           </p>
         </div>
-        <Link to="/contacts" className={ui.btnSecondary}>
-          Back to contacts
-        </Link>
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+          {p.PartyType !== "SUPPLIER" ? (
+            <Link to="/sales/new" search={{ customer: p.ID }} className={ui.btnPrimary}>
+              {t("shell.createInvoice")}
+            </Link>
+          ) : null}
+          <Link to="/contacts" className={ui.btnSecondary}>
+            Back to contacts
+          </Link>
+        </div>
       </div>
 
       <LedgerPanel partyId={p.ID} />

@@ -152,11 +152,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className={styles.topbarSpacer} />
         <CompanySwitcher />
         <div className={styles.primaryActions}>
-          <Link to="/sales/new" className={styles.actionPrimary} aria-label={t("shell.addSale")}>
+          <Link to="/sales/new" className={styles.actionPrimary} aria-label={t("shell.createInvoice")}>
             <span className={styles.actionPlus} aria-hidden="true">
               +
             </span>
-            <span className={styles.actionLabel}>{t("shell.addSale")}</span>
+            <span className={styles.actionLabel}>{t("shell.createInvoice")}</span>
           </Link>
           <Link to="/purchases" className={styles.actionSecondary} aria-label={t("shell.addPurchase")}>
             <span className={styles.actionPlus} aria-hidden="true">

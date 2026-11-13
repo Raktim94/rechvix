@@ -444,6 +444,9 @@ export function DashboardPage() {
           </p>
         </div>
         <div className={styles.headTools}>
+          <Link to="/sales/new" className={styles.createInvoice}>
+            <span aria-hidden="true">+</span> {t("shell.createInvoice")}
+          </Link>
           <div className={styles.segmented} role="group" aria-label={t("dashboard.period", { defaultValue: "Period" })}>
             {PERIODS.map((p) => (
               <button key={p} type="button" aria-pressed={days === p} onClick={() => setDays(p)}>

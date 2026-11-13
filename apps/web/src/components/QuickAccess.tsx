@@ -9,7 +9,7 @@ import styles from "./QuickAccess.module.css";
 // (brief §24's "best user flow" direction) rather than mirroring the full
 // nav.
 const ACTIONS = [
-  { to: "/sales/new", labelKey: "quick.newSale", icon: <path d="M4 3h11l4 4v14H4z M15 3v5h5 M9 13h6 M9 17h6" /> },
+  { to: "/sales/new", labelKey: "shell.createInvoice", icon: <path d="M4 3h11l4 4v14H4z M15 3v5h5 M9 13h6 M9 17h6" /> },
   { to: "/purchases", labelKey: "quick.newPurchase", icon: <path d="M3 6h2l2.4 12h11.2L21 8H7 M9 21a1 1 0 100-2 1 1 0 000 2z M18 21a1 1 0 100-2 1 1 0 000 2z" /> },
   { to: "/contacts", labelKey: "quick.newContact", icon: <path d="M12 12a4 4 0 100-8 4 4 0 000 8z M4 21c1.5-4.5 5-6 8-6s6.5 1.5 8 6" /> },
   { to: "/catalogue", labelKey: "quick.newProduct", icon: <path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8" /> },
