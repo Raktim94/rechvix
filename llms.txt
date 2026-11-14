@@ -1,0 +1,13 @@
+# Rechvix
+
+> Self-hosted billing, inventory, double-entry accounting and CRM by NodeDR, with multiple companies, interface languages, invoice currencies and documented country tax scope. Scoped REST API, signed webhooks and a read-only MCP server (sales, stock, receivables, GST). Requires running your own instance. Not a certified tax filing service.
+
+## Integrate
+- [AI integration prompt](https://github.com/Raktim94/rechvix/blob/main/prompts/AI_INTEGRATION_PROMPT.md)
+- [API overview](https://github.com/Raktim94/rechvix/blob/main/docs/api.md)
+- [OpenAPI (in progress)](https://github.com/Raktim94/rechvix/blob/main/api/openapi/openapi.yaml)
+
+## Product
+- [Product site](https://rechvix.nodedr.com/)
+- [Repository](https://github.com/Raktim94/rechvix)
+- [NodeDR AI integration catalog](https://www.nodedr.com/ai-integrations)

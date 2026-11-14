@@ -16,6 +16,10 @@ Run it on your own server with Docker Compose or CasaOS/ZimaOS, and use the resp
 
 **[Read the complete tutorial: every page, with 48 screenshots](tutorial.md)** · [Install Rechvix](#install-rechvix) · [Explore the product website](https://rechvix.nodedr.com/) · [Tax and accountant exports](#tax-calculation-and-accountant-exports) · [Documentation](#documentation)
 
+## Integrate with AI Coding Agents
+
+Use [`prompts/AI_INTEGRATION_PROMPT.md`](prompts/AI_INTEGRATION_PROMPT.md) to have a coding agent build dashboards or sync against Rechvix (scoped API keys, signed webhooks, read-only MCP). See [`AGENTS.md`](AGENTS.md) and [`llms.txt`](llms.txt).
+
 ## What you can do with Rechvix
 
 - **Create invoices in one workspace, one click from anywhere.** A **Create Invoice** button is on the dashboard, in the top bar of every screen and on each customer's page (which pre-fills that customer). Search existing customers or create one inline, scan/search products, check stock, edit quantities and discounts, hold drafts, and finalize invoices without repeatedly switching pages.
