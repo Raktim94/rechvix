@@ -25,6 +25,10 @@ A business running Rechvix needs a custom dashboard, a customer/product sync, in
 | MCP | local **stdio** process `apps/mcp`; 10 **read-only** tools: `search_products`, `get_product`, `get_inventory`, `get_customer`, `get_invoice`, `list_invoices`, `get_sales_summary`, `get_receivables`, `get_stock_summary`, `get_gst_summary`. Each call is audited. No tool takes an organisation id (tenant fixed by the key). |
 | SDK | none |
 
+Real route examples (confirmed against a running build; paths are not `/invoices` or `/customers`): `GET /api/v1/sales/documents`, `/catalogue/products`, `/contacts/parties`, `/reports/sales/summary`, `/reports/accounting/receivables`, `/reports/inventory/valuation`, `/reports/tax/summary`, plus `/api-keys` (owner session only). Module base paths are in `docs/api.md`.
+
+Tested live (local build, 2026-11-14): a key with `invoices:read reports:read products:read inventory:read` got `200` on sales documents, catalogue products and reports, `403` on `/contacts/parties` (no `customers:read`) and on `/api-keys`; a bad key got `401`. Key format is `bp_live_…`. The MCP process listed exactly the 10 tools above, ran them, and exits at startup on a bad `MCP_API_KEY`. MCP tools carry no `readOnlyHint` annotation, so rely on the server being read-only by design, not on client hints. Not verified: write scopes (`invoices:write`, `customers:write`) and webhook delivery.
+
 ## Credentials
 Create a key with only what the integration needs (dashboard: `invoices:read reports:read inventory:read products:read`).
 ```env
