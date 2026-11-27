@@ -71,6 +71,16 @@ npm run build
 A change isn't "done" until both unit and (where relevant) integration tests
 pass, and the frontend still builds clean under strict TypeScript.
 
+For changes to the packaged systemd units, install the candidate `.deb` on a
+Debian or Ubuntu test machine. Run the check from the repository root.
+
+```bash
+bash scripts/test-deb-units.sh
+```
+
+The check verifies both installed units and confirms that systemd rejects a
+temporary copy of the worker with its `ExecStart` directive removed.
+
 ## Code conventions
 
 - **Money is never `float32`/`float64`.** Always the internal `Money` type

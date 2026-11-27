@@ -18,6 +18,7 @@ chmod 0644 "$DEB"; cp "$DEB" /var/tmp/rechvix-test.deb; chmod 0644 /var/tmp/rech
 
 # 1. install
 apt-get install -y -qq /var/tmp/rechvix-test.deb >/dev/null || fail "apt install failed"
+bash "$(dirname "$0")/test-deb-units.sh"
 relax; wait_ready
 [ "$(systemctl is-active rechvix)" = active ] && [ "$(systemctl is-active rechvix-worker)" = active ] || fail "services are not active"
 [ "$(systemctl is-enabled rechvix)" = enabled ] || fail "rechvix is not enabled at boot"

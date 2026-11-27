@@ -1,16 +1,16 @@
 name: Debian package
 
 # Builds the Ubuntu/Debian package (amd64 and arm64) and proves it works: installs it on a real machine with
-# systemd, creates a business, signs in, writes data, reinstalls, removes and purges it (scripts/test-deb.sh).
+# systemd, verifies both installed units, creates a business, signs in, writes data, reinstalls, removes and purges it (scripts/test-deb.sh).
 # A release is published only by running this workflow by hand with a version: it attaches the .deb files and
 # their SHA-256 checksums to the GitHub release v<version>, which scripts/install-linux.sh downloads.
 
 on:
   pull_request:
-    paths: ["packaging/deb/**", "scripts/test-deb.sh", "scripts/install-linux.sh", ".github/workflows/deb.yml", "apps/**", "internal/**", "migrations/**", "go.mod"]
+    paths: ["packaging/deb/**", "scripts/test-deb*.sh", "scripts/install-linux.sh", ".github/workflows/deb.yml", "apps/**", "internal/**", "migrations/**", "go.mod"]
   push:
     branches: [main]
-    paths: ["packaging/deb/**", "scripts/test-deb.sh", "scripts/install-linux.sh", ".github/workflows/deb.yml"]
+    paths: ["packaging/deb/**", "scripts/test-deb*.sh", "scripts/install-linux.sh", ".github/workflows/deb.yml"]
   workflow_dispatch:
     inputs:
       version:
@@ -60,10 +60,8 @@ jobs:
       - name: Scripts parse and lint
         run: |
           sudo apt-get install -y -qq shellcheck >/dev/null
-          for f in packaging/deb/debian/postinst packaging/deb/debian/prerm packaging/deb/debian/postrm packaging/deb/files/rechvix scripts/test-deb.sh scripts/install-linux.sh packaging/deb/build.sh; do bash -n "$f"; done
-          shellcheck -S error packaging/deb/debian/postinst packaging/deb/debian/prerm packaging/deb/debian/postrm packaging/deb/files/rechvix scripts/install-linux.sh packaging/deb/build.sh
-      - name: systemd units are valid
-        run: systemd-analyze verify packaging/deb/files/rechvix.service packaging/deb/files/rechvix-worker.service 2>&1 | grep -v -E "rechvix.env|/usr/lib/rechvix|User=rechvix|postgresql" || true
+          for f in packaging/deb/debian/postinst packaging/deb/debian/prerm packaging/deb/debian/postrm packaging/deb/files/rechvix scripts/test-deb*.sh scripts/install-linux.sh packaging/deb/build.sh; do bash -n "$f"; done
+          shellcheck -S error packaging/deb/debian/postinst packaging/deb/debian/prerm packaging/deb/debian/postrm packaging/deb/files/rechvix scripts/test-deb*.sh scripts/install-linux.sh packaging/deb/build.sh
 
   # Install, functionality, upgrade, remove and purge, on a real Ubuntu 24.04 machine (PostgreSQL 16).
   test-ubuntu:
@@ -100,6 +98,7 @@ jobs:
           docker exec deb12 mkdir -p /opt/t
           docker cp "$(ls dist/*.deb)" deb12:/opt/t/rechvix.deb
           docker cp scripts/test-deb.sh deb12:/opt/t/
+          docker cp scripts/test-deb-units.sh deb12:/opt/t/
           # A container cannot apply the unit's sandboxing; RELAX_SANDBOX relaxes only that, for this test.
           docker exec -e DEB=/opt/t/rechvix.deb -e RELAX_SANDBOX=1 deb12 bash /opt/t/test-deb.sh
 
