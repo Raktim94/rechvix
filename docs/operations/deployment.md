@@ -50,6 +50,31 @@ curl http://localhost:8080/health/ready   # expect HTTP 200
 To stop: `docker compose down` (keeps your data). To fully reset,
 including deleting all data: `docker compose down -v`.
 
+### Running a second Compose installation
+
+Choose a new directory, a different project name and a free host port. For
+example, with the default installation already using port `8080`, run this
+from the parent directory where you want the second checkout:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Raktim94/rechvix/main/scripts/quickstart.sh | \
+  RECHVIX_INSTALL_DIR=rechvix-test COMPOSE_PROJECT_NAME=rechvix-test HTTP_PORT=8081 bash
+```
+
+Open `http://localhost:8081/setup` for the second instance. Its database
+uses `rechvix-test_postgres-data`. The original still uses
+`rechvix_postgres-data`. Each checkout keeps its project, port, passwords
+and encryption key in its own `deploy/compose/.env`.
+
+To resume after an interrupted install, enter the original checkout and
+run `bash ./install.sh`. If its database volume remains but the
+configuration is missing, restore that installation's original `.env`
+from backup before retrying. PostgreSQL keeps the passwords set at first
+initialization, and existing encrypted credentials require the original
+encryption key. A stopped project still owns its data. For older custom
+installations configured through the shell, use their original project
+name and record it in their `.env` for future runs.
+
 ### Why two database roles
 
 The schema uses PostgreSQL Row-Level Security as a defense-in-depth tenant

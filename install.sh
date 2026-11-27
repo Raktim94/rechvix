@@ -4,8 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Raktim94/rechvix/main/install.sh | bash
 #
 # What this does: clones the repo (if not already inside it), generates the
-# secrets deploy/compose/.env needs, and runs `docker compose up -d`. It
-# does not touch anything outside the clone directory it creates/uses.
+# secrets deploy/compose/.env needs, and starts the selected Docker project.
 #
 # Requires: bash, curl, git, and Docker (Engine + Compose v2 plugin, or
 # Docker Desktop on macOS). Linux and macOS only — see the README/CONTRIBUTING
@@ -54,12 +53,56 @@ else
   REPO_DIR="$(cd "$INSTALL_DIR" && pwd)"
 fi
 
-cd "$REPO_DIR/deploy/compose"
+cd -P "$REPO_DIR/deploy/compose"
 
-# --- generate .env if it doesn't exist yet ---
+project="${COMPOSE_PROJECT_NAME:-rechvix}"
+port="${HTTP_PORT:-8080}"
+fresh=true
 if [ -f .env ]; then
-  log ".env already exists — leaving it untouched. Delete it first if you want fresh secrets."
-else
+  fresh=false
+  # Let Compose parse quotes, comments and interpolation. Older installations
+  # may have supplied their project name only in the shell.
+  settings=$(
+    unset HTTP_PORT
+    if grep -Eq '^[[:space:]]*(export[[:space:]]+)?COMPOSE_PROJECT_NAME[[:space:]]*=' .env; then unset COMPOSE_PROJECT_NAME; fi
+    docker compose config --environment | awk -F= '
+      $1=="COMPOSE_PROJECT_NAME" {p=$2} $1=="HTTP_PORT" {h=$2}
+      END {print (p != "" ? p : "rechvix"), (h != "" ? h : "8080")}'
+  )
+  read -r project port <<< "$settings"
+  if [[ "${COMPOSE_PROJECT_NAME:-$project}" != "$project" || "${HTTP_PORT:-$port}" != "$port" ]]; then
+    die "This checkout is configured for project '$project' on port $port. Clear the conflicting shell overrides and retry."
+  fi
+fi
+[[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "Invalid Compose project name '$project'. Use lowercase letters, digits, hyphens or underscores, starting with a letter or digit."
+if ! [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+  die "HTTP_PORT must be between 1 and 65535."
+fi
+export COMPOSE_PROJECT_NAME="$project" HTTP_PORT="$port"
+
+volume="${project}_postgres-data"
+owner_label=io.rechvix.install-dir
+collision() {
+  die "$1 Restore the original deploy/compose/.env to resume. For a separate instance, choose a fresh checkout, a distinct COMPOSE_PROJECT_NAME and a free HTTP_PORT."
+}
+project_dirs=$(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{or (.Label "com.docker.compose.project.working_dir") "unknown"}}')
+while IFS= read -r dir; do
+  [[ -z "$dir" ]] && continue
+  if "$fresh" || [[ "$dir" != "$PWD" && ! "$dir" -ef . ]]; then
+    collision "Docker project '$project' already has containers from $dir."
+  fi
+done <<< "$project_dirs"
+existing_volume=$(docker volume ls -q --filter "name=^${volume}$")
+if "$fresh"; then
+  [[ -z "$existing_volume" ]] || collision "PostgreSQL volume '$volume' already exists."
+  # A lost .env may have held a custom project name. Look up this checkout
+  # even when its containers were removed with 'docker compose down'.
+  local_volumes=$(docker volume ls -q --filter "label=$owner_label=$PWD")
+  local_projects=$(docker ps -a --filter "label=com.docker.compose.project.working_dir=$PWD" --format '{{.Label "com.docker.compose.project"}}')
+  [[ -z "$local_volumes$local_projects" ]] || collision "Docker still has resources for this checkout, but its .env is missing."
+  published=$(docker ps --format '{{.Ports}}')
+  [[ "$published" != *":$port->"* ]] || die "Host port $port is already published by Docker. Choose a free HTTP_PORT for '$project'."
+
   log "Generating deploy/compose/.env with fresh secrets ..."
   # Hex, not base64: these two feed straight into unescaped postgres://
   # URLs in docker-compose.yml (POSTGRES_PASSWORD, BILLING_APP_PASSWORD).
@@ -72,21 +115,37 @@ else
   gen_key()    { openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64; }
 
   umask 077
-  cp .env.example .env
-  chmod 600 .env
-  # macOS/BSD sed needs `-i ''`; GNU sed needs `-i` with no argument — detect.
-  SED_INPLACE=(-i)
-  if [[ "$(uname)" == "Darwin" ]]; then SED_INPLACE=(-i ''); fi
-
-  sed "${SED_INPLACE[@]}" "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$(gen_secret)#" .env
-  sed "${SED_INPLACE[@]}" "s#^BILLING_APP_PASSWORD=.*#BILLING_APP_PASSWORD=$(gen_secret)#" .env
-  sed "${SED_INPLACE[@]}" "s#^AEAD_ENCRYPTION_KEY=.*#AEAD_ENCRYPTION_KEY=$(gen_key)#" .env
+  temp_env=$(mktemp .env.XXXXXX)
+  trap 'rm -f "$temp_env"' EXIT
+  db_password=$(gen_secret)
+  app_password=$(gen_secret)
+  encryption_key=$(gen_key)
+  sed -e "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$db_password#" \
+      -e "s#^BILLING_APP_PASSWORD=.*#BILLING_APP_PASSWORD=$app_password#" \
+      -e "s#^AEAD_ENCRYPTION_KEY=.*#AEAD_ENCRYPTION_KEY=$encryption_key#" \
+      -e "s#^COMPOSE_PROJECT_NAME=.*#COMPOSE_PROJECT_NAME=$project#" \
+      -e "s#^HTTP_PORT=.*#HTTP_PORT=$port#" .env.example > "$temp_env"
+  ln "$temp_env" .env || die "Another installer created .env in this checkout. Retry from here."
 fi
 
-HTTP_PORT="$(grep -E '^HTTP_PORT=' .env | cut -d= -f2)"
-HTTP_PORT="${HTTP_PORT:-8080}"
+if [[ -z "$existing_volume" ]]; then
+  # Docker creates a named volume once, even when two installations race.
+  # Check the winning directory before either checkout can update services.
+  docker volume create --label "com.docker.compose.project=$project" \
+    --label com.docker.compose.volume=postgres-data --label "$owner_label=$PWD" "$volume" >/dev/null
+fi
+owner=$(docker volume inspect --format "{{with .Labels}}{{index . \"$owner_label\"}}{{end}}" "$volume")
+# Existing volumes from older installations have no directory label.
+if [[ -z "$existing_volume" && -z "$owner" ]] || [[ -n "$owner" && "$owner" != "$PWD" && ! "$owner" -ef . ]]; then
+  if "$fresh" && [[ .env -ef "$temp_env" ]]; then rm .env; fi
+  collision "PostgreSQL volume '$volume' belongs to another installation."
+fi
+if "$fresh"; then
+  rm "$temp_env"
+  trap - EXIT
+fi
 
-log "Starting Rechvix (postgres, migrate, app, worker) via $COMPOSE ..."
+log "Starting Rechvix project '$project' on port $port via $COMPOSE ..."
 $COMPOSE up -d --build --wait --wait-timeout 180
 
 # Compose health and an actual HTTP response must both pass before reporting success.

@@ -118,6 +118,8 @@ curl -fsSL https://raw.githubusercontent.com/Raktim94/rechvix/main/scripts/quick
 
 The installer clones the repository, generates the Compose secrets and starts PostgreSQL, migrations, the app and the worker. Open the URL it prints and complete `/setup`. Review TLS, secure cookies, backups and bootstrap settings before exposing an installation publicly. The [deployment guide](docs/operations/deployment.md) explains operator responsibilities and manual installation.
 
+The first installation uses project `rechvix` and port `8080`. For another instance on the same Docker host, choose a separate checkout, project name and port. See [running a second Compose installation](docs/operations/deployment.md#running-a-second-compose-installation).
+
 For a machine that also needs Docker/git setup, inspect and use the [Linux/macOS quickstart](scripts/quickstart.sh) or [Windows PowerShell quickstart](scripts/quickstart.ps1). The Windows quickstart uses WSL2 for the server stack.
 
 ### CasaOS and ZimaOS
