@@ -21,6 +21,8 @@ jobs:
     defaults: { run: { working-directory: apps/mobile } }
     steps:
       - uses: actions/checkout@v4
+      - name: Check iOS simulator workflow
+        run: ruby test/ios-simulator-workflow.rb
       - uses: actions/setup-node@v4
         with: { node-version: 26, cache: npm, cache-dependency-path: apps/mobile/package-lock.json }
       - run: npm ci
@@ -57,10 +59,15 @@ jobs:
         with: { node-version: 26, cache: npm, cache-dependency-path: apps/mobile/package-lock.json }
       - run: npm ci
       - run: npx expo prebuild --platform ios
-      - run: |
+      - name: Build iOS simulator app
+        shell: bash
+        run: |
           cd ios
           xcodebuild -workspace Rechvix.xcworkspace -scheme Rechvix -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build CODE_SIGNING_ALLOWED=NO | tail -30
       - uses: actions/upload-artifact@v4
-        with: { name: rechvix-ios-simulator-app, path: apps/mobile/ios/build/Build/Products/Release-iphonesimulator/Rechvix.app }
+        with:
+          name: rechvix-ios-simulator-app
+          path: apps/mobile/ios/build/Build/Products/Release-iphonesimulator/Rechvix.app
+          if-no-files-found: error

@@ -121,3 +121,8 @@ npx expo prebuild --platform ios && cd ios && pod install
 
 The Android `applicationId` is `in.nodedr.rechvix`, the same as the earlier web-shell APK, so it installs over it when signed with the same key.
 iOS bundle id: `in.nodedr.rechvix`. A real iPhone build needs your Apple Developer team and signing; the workflow builds for the simulator.
+
+To download the simulator app, run the **Mobile (iOS + Android)** workflow with
+**Also build the iOS simulator app on a macOS runner** enabled. Download
+`rechvix-ios-simulator-app` from the run's artifacts. The iOS job fails if
+Xcode exits with an error or the expected `Rechvix.app` bundle is missing.
