@@ -25,11 +25,15 @@ the `stock_movements` insert (`internal/modules/inventory/app.Service.recordMove
    formula in PL/pgSQL would mean maintaining the costing rule twice, in
    two languages, with no shared test coverage between them — a real risk
    for a number that ends up in stock valuation reports.
-2. **Locking is already explicit and correct without a trigger.**
-   `recordMovement` takes the balance row lock via `SELECT ... FOR UPDATE`
-   (`StockBalanceRepository.GetForUpdate`) before computing the new value,
-   which is exactly the serialization a trigger would otherwise need to
-   provide implicitly. A trigger doesn't buy additional correctness here.
+2. **Concurrent movements lock the balance before calculating quantity and cost.**
+   `StockBalanceRepository.GetForUpdate` locks the row for the organisation,
+   warehouse and variant with `SELECT ... FOR UPDATE`. If the row is missing,
+   it inserts a zero balance with `ON CONFLICT DO NOTHING`, then repeats the
+   locking read in a new statement. Under Read Committed, a writer that
+   waited for another first receipt now sees its committed quantity and
+   average cost. The lock lasts through the movement and balance update.
+   An ordinary balance lookup still returns zero for an unstocked item
+   without creating a row.
 3. **Consistency with this codebase's existing pattern.** Every other
    "derive B from A inside the same transaction" case so far (audit log
    entries, session rotation) is application-layer code, not a trigger —

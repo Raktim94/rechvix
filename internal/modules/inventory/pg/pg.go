@@ -106,19 +106,27 @@ type StockBalanceRepo struct{ pool *database.Pool }
 func NewStockBalanceRepo(pool *database.Pool) *StockBalanceRepo { return &StockBalanceRepo{pool: pool} }
 
 func (r *StockBalanceRepo) Get(ctx context.Context, orgID, warehouseID, variantID uuid.UUID) (domain.StockBalance, error) {
-	return r.get(ctx, orgID, warehouseID, variantID, false)
+	b, err := r.get(ctx, orgID, warehouseID, variantID, false)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.StockBalance{OrganisationID: orgID, WarehouseID: warehouseID, ProductVariantID: variantID,
+			QuantityOnHand: decimal.Zero, QuantityReserved: decimal.Zero, AverageCost: decimal.Zero}, nil
+	}
+	return b, err
 }
 
-// GetForUpdate takes a row lock via SELECT ... FOR UPDATE so the
-// read-modify-write in app.Service.RecordMovement serializes against
-// concurrent movements on the same (warehouse, variant) — Scenario D's
-// building block ("two operators selling the last unit simultaneously").
-// A missing row (never-moved product) has nothing to lock; the caller's
-// subsequent Upsert INSERTs it, and Postgres's normal MVCC/unique-
-// constraint behavior still prevents two concurrent first-inserts from
-// both succeeding silently (one blocks on the other's uncommitted insert,
-// then either sees it after commit or the transaction serializes).
 func (r *StockBalanceRepo) GetForUpdate(ctx context.Context, orgID, warehouseID, variantID uuid.UUID) (domain.StockBalance, error) {
+	b, err := r.get(ctx, orgID, warehouseID, variantID, true)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return b, err
+	}
+
+	// A missing row cannot be locked. A concurrent first writer may win the insert.
+	// Read again in a new statement to lock and see its committed quantity and cost.
+	_, err = r.pool.Q(ctx).Exec(ctx, `INSERT INTO stock_balances (organisation_id, warehouse_id, product_variant_id)
+		VALUES ($1, $2, $3) ON CONFLICT (organisation_id, warehouse_id, product_variant_id) DO NOTHING`, orgID, warehouseID, variantID)
+	if err != nil {
+		return domain.StockBalance{}, fmt.Errorf("inventory: initializing stock_balance: %w", err)
+	}
 	return r.get(ctx, orgID, warehouseID, variantID, true)
 }
 
@@ -131,12 +139,6 @@ func (r *StockBalanceRepo) get(ctx context.Context, orgID, warehouseID, variantI
 	row := r.pool.Q(ctx).QueryRow(ctx, q, orgID, warehouseID, variantID)
 	var b domain.StockBalance
 	if err := row.Scan(&b.OrganisationID, &b.WarehouseID, &b.ProductVariantID, &b.QuantityOnHand, &b.QuantityReserved, &b.AverageCost, &b.UpdatedAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// No movements yet for this (warehouse, variant): an implicit
-			// zero balance, not an error — see the interface doc comment.
-			return domain.StockBalance{OrganisationID: orgID, WarehouseID: warehouseID, ProductVariantID: variantID,
-				QuantityOnHand: decimal.Zero, QuantityReserved: decimal.Zero, AverageCost: decimal.Zero}, nil
-		}
 		return domain.StockBalance{}, fmt.Errorf("inventory: querying stock_balance: %w", err)
 	}
 	return b, nil

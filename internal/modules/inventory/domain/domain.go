@@ -250,10 +250,8 @@ type StockBalanceRepository interface {
 	// (not an error) if none exists yet — a product with no movements has
 	// an implicit zero balance, not a "not found" error.
 	Get(ctx context.Context, orgID, warehouseID, variantID uuid.UUID) (StockBalance, error)
-	// GetForUpdate is Get but takes a row lock (SELECT ... FOR UPDATE),
-	// used by app.Service.RecordMovement so two concurrent movements
-	// against the same (warehouse, variant) serialize instead of racing
-	// on a read-modify-write (Scenario D's building block).
+	// GetForUpdate initializes a missing balance and locks the row until
+	// the caller's transaction ends, including for the first movement.
 	GetForUpdate(ctx context.Context, orgID, warehouseID, variantID uuid.UUID) (StockBalance, error)
 	Upsert(ctx context.Context, b StockBalance) error
 	ListLowStock(ctx context.Context, orgID, warehouseID uuid.UUID) ([]StockBalance, error)
