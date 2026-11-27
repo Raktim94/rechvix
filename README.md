@@ -120,6 +120,8 @@ The installer clones the repository, generates the Compose secrets and starts Po
 
 For a machine that also needs Docker/git setup, inspect and use the [Linux/macOS quickstart](scripts/quickstart.sh) or [Windows PowerShell quickstart](scripts/quickstart.ps1). The Windows quickstart uses WSL2 for the server stack.
 
+The Linux/macOS quickstart installs the current default branch. To repeat a fresh install at a specific revision, set `RECHVIX_INSTALL_SHA` to its full 40-character commit SHA (requires Git 2.49 or later). Set `RECHVIX_REPO_URL` to install from a trusted fork. The repository smoke test uses both values to build the commit that triggered the run.
+
 ### CasaOS and ZimaOS
 
 Use the platform's custom Compose installation workflow with:

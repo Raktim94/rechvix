@@ -13,6 +13,7 @@ on:
       - install.sh
       - scripts/quickstart.sh
       - scripts/test-installer.sh
+      - scripts/test-quickstart-revision.sh
       - .github/workflows/installer-smoke.yml
 permissions:
   contents: read
@@ -28,12 +29,15 @@ jobs:
         run: echo "RECHVIX_INSTALL_DIR=$RUNNER_TEMP/fresh-rechvix" >> "$GITHUB_ENV"
       - name: Shell safety regressions
         run: bash scripts/test-installer.sh
+      - name: Verify quickstart revision selection
+        run: bash scripts/test-quickstart-revision.sh
       - name: Fresh clone, build and start in isolated runner
         run: |
           if [ "$INSTALLER_SOURCE" = website ]; then
             curl -fsSL https://rechvix.nodedr.com/install.sh | bash
           else
-            bash scripts/quickstart.sh
+            RECHVIX_REPO_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" \
+              RECHVIX_INSTALL_SHA="$GITHUB_SHA" bash scripts/quickstart.sh
           fi
           test "$(git -C "$RECHVIX_INSTALL_DIR" rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(stat -c %a "$RECHVIX_INSTALL_DIR/deploy/compose/.env")" = 600
