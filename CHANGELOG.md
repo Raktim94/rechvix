@@ -13,6 +13,10 @@
 
 # Changelog
 
+## 0.26.2
+
+- **Web: report tables no longer show a column of database IDs.** The CSV, Excel and PDF exports still include it. Packaging release: the Debian packages and server images now carry this fix (the 0.26.1 packages predate it). No server logic, database or phone change.
+
 ## 0.26.1
 
 - **Windows desktop app (MSIX): first start made reliable.** Found by testing on a real Windows laptop. (1) The first start straight after installing could fail with "robocopy exited with code 9" because antivirus still held one of the bundled database files; the copy is now retried (up to six times) and its output is kept in `logs/robocopy.log`. Five clean install-and-open cycles all started first time; where a file was locked the first start takes about 45 s instead of 18 s. (2) An interrupted first start (app closed or PC switched off while the bundled database was being copied or created) could leave the app unable to start for good. The copy and the database creation now finish with a marker, and an unfinished one is completed or rebuilt on the next start; a real database (it has `pg_control`) is never touched. Recovery was tested by removing the database installer and half-deleting the data folder: the app repaired itself in 10.7 s. (3) The bundled Postgres runs with 40 connections and 64 MB of buffers (one user; the server uses 20), and the previous run's `runtime.json` is removed at start. Measured on the laptop: window in 1 to 3 s, about 580 MB in total (mostly the WebView2 window).
