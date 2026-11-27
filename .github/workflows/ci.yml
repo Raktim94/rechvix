@@ -147,6 +147,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test Docker publication rules
+        run: ruby scripts/test-docker-publish.rb
       - name: Build server image
         run: docker build -f deploy/docker/server.Dockerfile -t rechvix-server:ci .
       - name: Build worker image

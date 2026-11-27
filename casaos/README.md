@@ -59,21 +59,18 @@ migrations and exits; `app` and `worker` both wait on it via
 `docker-compose.yml` here pins exact image tags (CasaOS requires pinned,
 not `:latest`, tags). To publish a new version:
 
-1. Bump the version everywhere it's referenced — the `image:` tags for
-   `migrate`, `app`, and `worker` in this file, and `version:` under
-   `x-casaos:`.
-2. Run the **Publish Docker images** workflow
-   (`.github/workflows/docker-publish.yml`) via `workflow_dispatch` with
-   that version, or just push to `main` with changes under
-   `apps/server/`, `apps/worker/`, `internal/`, `migrations/`, or
-   `deploy/docker/` — it also tags a build from the latest git tag
-   automatically. It builds both images for `linux/amd64` **and**
-   `linux/arm64` (a lot of CasaOS/ZimaOS boxes are ARM SBCs) and pushes
-   them to GHCR.
-3. Confirm both new tags exist at
-   `ghcr.io/raktim94/rechvix-server` and `ghcr.io/raktim94/rechvix-worker`
-   before updating this file — CasaOS installs will fail outright if the
-   pinned tag doesn't exist yet.
+1. Select the release commit. The **CI** workflow must pass for a push
+   to `main` at that exact SHA. If CI failed or was cancelled, resolve
+   the failure or rerun CI before retrying publication.
+2. Run **Publish Docker images** for that revision with the release
+   version as input (for example, `0.25.0`). It publishes the server and
+   worker for `linux/amd64` and `linux/arm64`, tagging each image with
+   the version, `:latest`, and `:sha-<commit>`. Automatic builds on
+   image-related pushes to `main` publish `:edge` and `:sha-<commit>`
+   after the same CI check.
+3. Confirm the version tag exists for both `ghcr.io/raktim94/rechvix-server`
+   and `ghcr.io/raktim94/rechvix-worker`. Then update the manifest's
+   `migrate`, `app`, and `worker` image tags and its `x-casaos.version`.
 
 ## Submitting to the official CasaOS App Store
 

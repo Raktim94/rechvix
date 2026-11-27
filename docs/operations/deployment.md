@@ -151,20 +151,9 @@ pre-built, version-pinned images from GHCR instead of building from
 source (CasaOS installs directly from the manifest with no access to this
 repo).
 
-**Not yet installable from a real CasaOS instance as of this version** —
-`.github/workflows/docker-publish.yml` (multi-arch amd64+arm64 image
-build/push) exists but hasn't run against a real version tag yet, so the
-`ghcr.io/raktim94/rechvix-{server,worker}:0.1.0` images the
-manifest references don't exist on GHCR yet. Cut a `v0.1.0` tag (or
-trigger the workflow manually via `workflow_dispatch`) before actually
-submitting to CasaOS-AppStore. The manifest's structure is validated
-(`docker compose config -q` passes) — what's unverified is the actual
-install experience on a real CasaOS box, which needs the images to exist
-first.
-
-Also not yet done: real icon/thumbnail/screenshot assets (the manifest
-references placeholder paths — no logo exists yet, since `apps/web`/brand
-work hasn't started).
+The Docker publishing workflow checks that CI passed for the exact commit
+on `main` before pushing either image to GHCR. To publish the version tags
+used by the manifest, follow the [CasaOS release instructions](../../casaos/README.md#publishing-new-image-versions).
 
 ## CI validation
 

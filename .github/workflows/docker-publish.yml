@@ -41,13 +41,47 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
+  verify-ci:
+    name: Check CI for the image commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for successful main CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          endpoint="repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&head_sha=$GITHUB_SHA&per_page=1"
+          for attempt in {1..120}; do
+            run=$(gh api "$endpoint" --jq '.workflow_runs[0] | [(.status // "missing"), (.conclusion // "-"), (.html_url // "-")] | @tsv')
+            read -r status conclusion url <<< "$run"
+            if [[ "$status" == completed ]]; then
+              echo "CI for $GITHUB_SHA concluded $conclusion ($url)"
+              [[ "$conclusion" == success ]] || exit 1
+              exit 0
+            fi
+            # The push can start this workflow before CI registers its run.
+            if [[ "$status" == missing && "$attempt" -ge 6 ]]; then
+              echo "::error::No main push CI run found for $GITHUB_SHA."
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::Timed out waiting for CI for $GITHUB_SHA."
+          exit 1
+
   publish:
+    needs: verify-ci
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
