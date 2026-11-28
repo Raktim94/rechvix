@@ -391,7 +391,7 @@ func (s *Service) AddLine(ctx context.Context, principal permissions.Principal, 
 	now := s.now()
 	var line *domain.DocumentLine
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
-		doc, err := s.documents.GetByID(ctx, principal.OrganisationID, p.DocumentID)
+		doc, err := s.documents.GetForUpdate(ctx, principal.OrganisationID, p.DocumentID)
 		if err != nil {
 			return err
 		}
@@ -449,7 +449,7 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 	var doc *domain.Document
 	err = s.pool.RunScoped(ctx, principal.OrganisationID, func(ctx context.Context) error {
 		var err error
-		doc, err = s.documents.GetByID(ctx, principal.OrganisationID, documentID)
+		doc, err = s.documents.GetForUpdate(ctx, principal.OrganisationID, documentID)
 		if err != nil {
 			return err
 		}
@@ -462,6 +462,12 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 		}
 		if len(lines) == 0 {
 			return domain.ErrEmptyDocument
+		}
+		// A line may have committed while the document query waited for its lock.
+		// Return and post the total of the lines read after acquiring that lock.
+		doc.LinesTotal = decimal.Zero
+		for _, line := range lines {
+			doc.LinesTotal = doc.LinesTotal.Add(line.LineTotal.Decimal())
 		}
 
 		// Inward tax calculation (GSTR-3B follow-up to GSTR-1, migrations/
@@ -614,9 +620,7 @@ func (s *Service) FinalizeDocument(ctx context.Context, principal permissions.Pr
 				// No GST registration on file for this supplier — same
 				// lump-sum-onto-Purchases behavior this method has always
 				// had, since there is no tax breakdown to split.
-				for _, l := range lines {
-					grandTotal = grandTotal.Add(l.LineTotal.Decimal())
-				}
+				grandTotal = doc.LinesTotal
 				docLines = []accountingapp.JournalLineRequest{
 					{AccountCode: accountingdomain.CodePurchases, Debit: grandTotal, Description: "Purchase " + doc.DocumentNumber},
 					{AccountCode: accountingdomain.CodeAccountsPayable, PartyID: &supplierID, Credit: grandTotal, Description: "Purchase " + doc.DocumentNumber},

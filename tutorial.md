@@ -259,6 +259,8 @@ A purchase opens in the same `/purchases` page rather than a separate detail URL
 
 ![Finalized purchase and payment panel](docs/assets/tutorial/30-purchase-detail.png)
 
+If two people work on the same purchase, finalizing it includes every line saved before finalization. If the purchase is already finalized when you save a line, reopen the purchase and check its items, stock receipt and supplier payable before recording a correction.
+
 Use **+ Record payment made** to allocate a payment to this supplier bill, choose amount/method/reference and save. Confirm the remaining outstanding amount. Use **Cancel purchase** only when appropriate and review its stock/accounting effects.
 
 ## 10. Expenses
