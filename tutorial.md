@@ -253,6 +253,8 @@ Search by number or supplier and filter status/date. Open a purchase number to i
 5. Compare the lines with the supplier invoice, including units, taxes and references.
 6. Finalize only when the receipt/invoice is correct. Verify the new stock movement and supplier payable.
 
+If the connection drops during finalization or cancellation, reopen the same purchase and check its status. Repeating either action on that purchase records its stock and ledger effects only once, even if the first request is still running.
+
 ![Start a purchase](docs/assets/tutorial/29-new-purchase.png)
 
 A purchase opens in the same `/purchases` page rather than a separate detail URL. The detail screen may retain the **New purchase** heading even when the selected document is finalized; use the status badge to determine whether it is editable.
